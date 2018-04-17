@@ -1,0 +1,97 @@
+ACKNOWLEDGEMENTS for: SOCCOM Assesment and Graphical Evaluation for Oxygen (SAGE_O2) , for use with Argo data. 
+
+
+AUTHORS:
+	Tanya Maurer, tmaurer@mbari.org
+	Josh Plant, jplant@mbari.org
+	
+LICENSE:
+	** This software is copyright under MIT license.  **
+	** Please see SAGEO2Argo_MITLicense.txt for more information.  **
+
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, 
+	WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR 
+	IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+	
+FUNDING:
+	SAGE_O2Argo GUI development was supported by the Monterey Bay Aquarium Research institute
+	through funding from The David and Lucile Packard Foundation, by the National Science Foundation,
+	Division of Polar Programs (NSF PLR -1425989), supplemented by NOAA and NASA, as well as
+	funding from NSF grant 0825348, National Ocean Partnership Program grant N00014 09 10052
+	and NOAA grant NA17RJ1232, part 2 to the University of Washington.
+	
+AUTHORS USING ARGO FLOAT DATA SHOULD ACKNOWLEDGE:
+	"Data were collected and made freely available by the 
+	International Argo Program and the NOAA programs that contribute to it. (http://www.argo.ucsd.edu(link is external), http://argo.jcommops.org(link is external)). 
+	The Argo Program is part of the Global Ocean Observing System."
+
+AUTHORS USING SAGE_O2Argo MATLAB GUI SOFTWARE SHOULD ACKNOWLEDGE:
+	"Software was developed and made freely available by the Monterey Bay Aquarium Research Institute in support of the Southern Ocean Carbon Climate Observations and Modeling (SOCCOM) project."
+	
+DATA / MATLAB FUNCTIONS:
+	Freely available comparison data sets were generously supplied or estimated from multiple sources:
+
+	Global Ocean Data Analysis Project Version 2 (GLODAPv2, http://cdiac.ornl.gov/oceans/GLODAPv2/)
+	
+	World Ocean Atlas 2013 (https://www.nodc.noaa.gov/OC5/woa13/)
+	
+	NOAA National Center for Atmospheric Research (NCAR)/National Center for Environmental Protection (NCEP) renalysis project (https://www.esrl.noaa.gov/psd/data/reanalysis/reanalysis.shtml)
+	
+	European Centre for Medium-Range Weather Forecasts (ECMWF) ERA-interim reanalysis product (https://www.ecmwf.int/en/forecasts/datasets/reanalysis-datasets/era-interim)
+
+	
+LITERATURE / DATA REFERENCES:
+Benson, B.B. and D. Krause. 1984.  The concentration and isotopic fractionation of gases dissolved 
+	in freshwater and seawater in equilibrium with the atmosphere.  Limnol. Oceanogr. 29: 620-632.
+	
+Bittig, H.C., A. Kortzinger.  2015. Tackling oxygen optode drift: near-surface and in-air oxygen 
+	optode measurements on a float provide an accurate in situ reference. JAOT. 32: 1536-1543.
+	
+Bittig HC, Körtzinger A, Neill C, van Ooijen E, Plant JN, Hahn J, Johnson KS, Yang B and Emerson SR (2018) 
+	Oxygen Optode Sensors: Principle, Characterization, Calibration, and Application in the Ocean. 
+	Front. Mar. Sci. 4:429. doi: 10.3389/fmars.2017.00429.
+	
+Dee, D.P., S.M. Uppala, A.J. Simmons, P. Berrisford, P. Poli, S. Kobayashi, U. Andrae, M.A. Balmaseda, G. Balsamo, Pl Bauer, P. Bechtold, A.C.M.
+	Beljaars, L. van de Berg, J. Bidlot, N. Bormann, C. Delsol, R. Dragani, M. Fuentes, A.J. Geer, L. Haimberger, S.B. Healy, H. Hersbach, E.V. Holm, L. Isaksen, Pl. Kallberg, M. Kohler, M. Matricardi, A.P. McNally, B.M. Monge-Sanz, J.J. Morcrette, B.K. Park, C. Puebey, P. deRosnay, C. Tavolato, J.N. Thepaut, and F. Vitart.  2011. The ERA-interim reanalysis: configuration and performance of the data assimilation system.  Quarterly Journal of the Royal Meteorological Society. 137(656A): 553-597.
+	
+Garcia, H.E. and L. Gordon. 1992. Oxygen solubility in seawater: Better fitting equations.  
+	Limnol. Oceanogr. 37(6), 1307-1312.
+	
+Johnson, K.S, J.N. Plant, S.C. Riser, D. Gilbert. 2015. Air oxygen calibration of oxygen optodes 
+	on a profiling float array.  JAOT.  32: 2160-2172.
+
+Jones, R.H. & I. Dey.  1995.  Determining one or more change points. Chemistry and Physics of Lipids. 
+	76: 1-6.
+
+Kalnay, E. M., and Coauthors, 1996: The NCEP/NCAR 40-Year Reanalysis Project. Bull. Amer. Meteor. 
+	Soc., 77, 437–470, doi:10.1175/1520-0477(1996)077,0437:TNYRP.2.0.CO;2.
+	
+Key, R.M., A. Olsen, S. van Heuven, S. K. Lauvset, A. Velo, X. Lin, C. Schirnick, A. Kozyr,
+	T. Tanhua, M. Hoppema, S. Jutterström, R. Steinfeldt, E. Jeansson, M. Ishi, F. F. Perez,
+	and T. Suzuki. 2015. Global Ocean Data Analysis Project, Version 2 (GLODAPv2), ORNL/CDIAC-162,
+	ND-P093. Carbon Dioxide Information Analysis Center, Oak Ridge National Laboratory,
+	US Department of Energy, Oak Ridge, Tennessee. doi: 10.3334/CDIAC/OTG.NDP093_GLODAPv2.
+	
+Kistler, R., E. Kalnay, W. Collins, S. Saha, G. White, J. Woollen, M. Chelliah, W. Ebisuzaki, M. Kanamitsu, V. Kousky, H. van den Dool, R. Jenne and
+	M. Fiorino. 2001. The NCEP-NCAR 50-year reanalysis: monthly means CD-ROM and documentation. Bulletin of the American Meteorological Society. 82(2): 247-268
+	
+NCEP, 2015: NCEP/NCAR Reanalysis 1. National Centers for Environmental
+	Prediction, accessed 2 April 2015. [Available online at
+	http://www.esrl.noaa.gov/psd/data/gridded/data.ncep.reanalysis.html.]
+
+Olsen, A., R. M. Key, S. van Heuven, S. K. Lauvset, A. Velo, X. Lin, C. Schirnick, A. Kozyr,
+	T. Tanhua, M. Hoppema, S. Jutterström, R. Steinfeldt, E. Jeansson, M. Ishii,
+	F. F. Pérez and T. Suzuki. The Global Ocean Data Analysis Project version 2
+	(GLODAPv2) – an internally consistent data product for the world ocean,
+	Earth Syst. Sci. Data, 8, 297–323, 2016, doi:10.5194/essd-8-297-2016.
+	
+Owens, W.B. & A.P.S. Wong.  2009.  An improved calibration method for the drift of the conductivity 
+	sensor on autonomous CTD profiling floats by theta-S climatology. Deep-Sea Research I. 56: 450-457.	
+	
+Takeshita, Y., T. R. Martz, K. S. Johnson, J. N. Plant, D. Gilbert, S. C. Riser, C. Neill, and B. Tilbrook.  2013.  
+    A climatology-based quality control procedure for profiling float oxygen data.  
+    J. Geophys. Res. Oceans, 118, 5640-5650, doi:10.1002/jgrc.20399.
+
