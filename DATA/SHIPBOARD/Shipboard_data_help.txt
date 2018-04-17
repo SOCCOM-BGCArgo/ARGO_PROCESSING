@@ -1,1 +1,1 @@
-Place shipboard reference data files and associated parsing routines here.
+Place shipboard reference data files and associated parsing routines in this directory.

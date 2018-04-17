@@ -1,1 +1,1 @@
-Place DAC/float-specific QCadjustment lists here.
+Place DAC/float-specific QCadjustment lists in this directory.
