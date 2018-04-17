@@ -1,0 +1,1 @@
+Run /ARGO_PROCESSING/MFILES/GUIS/SAGE_O2Argo/INSTALL_sageO2Argo.m to populate this directory with NCEP surface pres netCDF data files, or download manually from ftp.cdc.noaa.gov/Datasets/ncep.reanalysis/surface_gauss/.
