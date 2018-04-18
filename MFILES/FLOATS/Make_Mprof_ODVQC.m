@@ -4,6 +4,7 @@ function tf = Make_Mprof_ODVQC(handles)
 % CORRECTIONS FILE. THIS IS DESIGNED ONLY FOR MPROF FILES WHERE NO MESSAGE
 % FILES EXIST & NO ARGO FILES.
 
+fp = filesep; % File separator for current platform
 tf = 0;
 % CHECK TO MAKE SURE THIS IS AN MPROF FILE
 if handles.info.Mprof == 0
@@ -246,7 +247,7 @@ if ~isdir([handles.info.file_path, 'QC\'])
     mkdir([handles.info.file_path, 'QC\']);
 end
     
-fvqc_path  = [handles.info.file_path, 'QC\',handles.info.float_name, ...
+fvqc_path  = [handles.info.file_path, 'QC',fp,handles.info.float_name, ...
               'QC.TXT'];
 fid_qc  = fopen(fvqc_path, 'W');
 fid_raw = fopen(fv_path);
@@ -364,11 +365,14 @@ for sample_ct = 1 : qc_r
         std_str = regexprep(std_str,'NaN',MVI_str);
     end   
     
-    data_str = sprintf(ODV_qc_f, dummy_out(sample_ct,:));
+    Dout = dummy_out(sample_ct,:);
+    Dout(Dout<-100000000) = nan;
+    data_str = sprintf(ODV_qc_f, Dout);
     out_str = [std_str,data_str];
 
     % replace NaN' w/ missing value indicator
-    out_str = regexprep(out_str,'NaN',MVI_str);  % replace NaN' w/ missing value indicator
+%     out_str = regexprep(out_str,'NaN',MVI_str);  % replace NaN' w/ missing value indicator
+    out_str = regexprep(out_str,'NaN',MVI_str);  % replace -10000000000 w/ missing value indicator
     fprintf(fid_qc, '%s', out_str);
     line_ct = line_ct+1;
     clear out_str data_str date_str time_str
@@ -381,7 +385,7 @@ fclose(fid_qc);
 clear fid_raw cast_num sample_ct
 
 % MAKE CONFIG FILE FOR FLOATVIZ
-fvqc_path  = [handles.info.file_path, 'QC\',handles.info.float_name, ...
+fvqc_path  = [handles.info.file_path, 'QC',fp,handles.info.float_name, ...
               'QC.CFG'];
 fid_qc  = fopen(fvqc_path,'w');
 fprintf(fid_qc,'//%0.0f\r\n',line_ct);
