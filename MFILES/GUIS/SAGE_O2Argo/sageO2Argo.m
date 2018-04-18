@@ -611,44 +611,45 @@ function gui = createInterface( ~ )
     Blookup = [dirs.bottle,'BottleData_lookup_table.txt'];
     % LOAD BOTTLE DATA LOOK UP TABLE & STORE IN handles STRUCTURE
     % LOOK UP TABLE  HEADER = [UW_ID  WMO   CRUISE   STN   CAST   Data file]
-    fid = fopen(Blookup);
-    d   = textscan(fid, '%s %s %s %s %f %f %s','Delimiter', '\t','HeaderLines',1);
-    fclose(fid);
-    bottle_lookup = d;
-    inputs.floatID
-    ind = strcmp(num2str(str2num(inputs.floatID)), bottle_lookup{1,2});
-    if sum(ind) > 0; % float exists in lookup table
-        bottle_fname = bottle_lookup{1,7}{ind};
-        stn = bottle_lookup{1,5}(ind);
-        
-        cst = bottle_lookup{1,6}(ind);
-        
-        % data file & data exist for float
-        if ~isempty(bottle_fname) && stn ~= -999 && cst ~= -999
-            tic
-            d = get_shipboard_data([dirs.bottle,bottle_fname]);
-            toc
-            iStn  = find(strcmp(d.hdr,'STNNBR') == 1);
-            iCast = find(strcmp(d.hdr,'CASTNO') == 1);
-            tStn  = d.data(:,iStn)  == stn;
-            tCast = d.data(:,iCast) == cst;
-            DATA.bdata.cruise  = d.cruise;
-            DATA.bdata.hdr     = d.hdr;
-            %handles.bdata.units   = d.units;
-            d.data(d.data == -999) = NaN;
-            DATA.bdata.data    = d.data(tStn&tCast,:);
+    if exist(Blookup,'file')
+        fid = fopen(Blookup);
+        d   = textscan(fid, '%s %s %s %s %f %f %s','Delimiter', '\t','HeaderLines',1);
+        fclose(fid);
+        bottle_lookup = d;
+        inputs.floatID
+        ind = strcmp(num2str(str2num(inputs.floatID)), bottle_lookup{1,2});
+        if sum(ind) > 0; % float exists in lookup table
+            bottle_fname = bottle_lookup{1,7}{ind};
+            stn = bottle_lookup{1,5}(ind);
+
+            cst = bottle_lookup{1,6}(ind);
+
+            % data file & data exist for float
+            if ~isempty(bottle_fname) && stn ~= -999 && cst ~= -999
+                tic
+                d = get_shipboard_data([dirs.bottle,bottle_fname]);
+                toc
+                iStn  = find(strcmp(d.hdr,'STNNBR') == 1);
+                iCast = find(strcmp(d.hdr,'CASTNO') == 1);
+                tStn  = d.data(:,iStn)  == stn;
+                tCast = d.data(:,iCast) == cst;
+                DATA.bdata.cruise  = d.cruise;
+                DATA.bdata.hdr     = d.hdr;
+                %handles.bdata.units   = d.units;
+                d.data(d.data == -999) = NaN;
+                DATA.bdata.data    = d.data(tStn&tCast,:);
+            else
+                DATA.bdata.Cruise = '';
+                DATA.bdata.hdr    = '';
+                DATA.bdata.data   = [];
+            end
+            clear bottle_fname stn cst d IStn iCast tStn tCast
         else
             DATA.bdata.Cruise = '';
             DATA.bdata.hdr    = '';
             DATA.bdata.data   = [];
         end
-        clear bottle_fname stn cst d IStn iCast tStn tCast
-    else
-        DATA.bdata.Cruise = '';
-        DATA.bdata.hdr    = '';
-        DATA.bdata.data   = [];
     end
-        
     end %end selectfloat
 
 %-------------------------------------------------------------------------%
@@ -939,12 +940,7 @@ function gui = createInterface( ~ )
     function on_applyO2gain( source, ~ ) 
          handlesODVQC.info.Mprof = 1;
          handlesODVQC.info.float_name = ['ODV',inputs.floatID];
-         % Calling Make_Mprof_ODVQC which also gets used in Sage.  Maintain QCA
-         %structure, as called in this function.
-         handlesODVQC.QCA.NO3 = [];
-         handlesODVQC.QCA.PH_OFFSET = [];
-         handlesODVQC.QCA.PH = [];
-%          handlesODVQC.QCA.CHL = [];
+         % Calling Make_Mprof_ODVQC which also gets used in Sage.  
          if ~isempty(DATA.bigG) && ~isnan(DATA.bigG)
             handlesODVQC.QCA.O2 = [1 DATA.bigG 0 0];
             tf = Make_Mprof_ODVQC(handlesODVQC);
