@@ -770,7 +770,7 @@ function gui = createInterface( ~ )
         else
             inputs.isprof = 0;
             updateInterface()
-            if ~isempty(DATA.O2air{1}) && get(gui.rb2(3),'Value')~=1;
+            if ~isempty(DATA.O2air{1}) && get(gui.rb3(2),'Value')~=1;
                DATA =  redraw_CLIMO_sageO2Argo(dirs,gui,DATA,inputs);
             else
                 DATA = redraw_WOA_sageO2Argo(dirs,gui,DATA,inputs);   
