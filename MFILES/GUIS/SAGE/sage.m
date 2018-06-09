@@ -1224,7 +1224,9 @@ function gui = createInterface( ~ )
             [handles, DATA] = get_LIR_CAN_MLR(handles,DATA);
         end
         updateInterface()
-        close(Omsg)
+		if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified
+			close(Omsg)
+		end
        if inputs.isprof == 1 %profile selected?
            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
        else
