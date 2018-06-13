@@ -22,26 +22,26 @@ function tf = set_sage_paths(user_dir)
 % MFILE PATHS
 % ADD NEW PATHS TO ThE gd STRUCTURE
 
-gd.mCANYON  = 'ARGO_PROCESSING\MFILES\CANYON';
-gd.mFLOATS  = 'ARGO_PROCESSING\MFILES\FLOATS';
-gd.mGLODAP  = 'ARGO_PROCESSING\MFILES\GLODAP';
-gd.mSAGE    = 'ARGO_PROCESSING\MFILES\GUIS\SAGE';
-gd.mSAGE_O2 = 'ARGO_PROCESSING\MFILES\GUIS\SAGE_O2';
-gd.mLIAR    = 'ARGO_PROCESSING\MFILES\LIAR';
-gd.mMFILES  = 'ARGO_PROCESSING\MFILES';
-gd.mMISC    = 'ARGO_PROCESSING\MFILES\MISC';
-gd.mNetCDF  = 'ARGO_PROCESSING\MFILES\NetCDF';
-gd.mSAGE    = 'ARGO_PROCESSING\MFILES\GUIS\SAGE';
-gd.mSAGE_O2 = 'ARGO_PROCESSING\MFILES\GUIS\SAGE_O2';
-gd.mWOA2013 = 'ARGO_PROCESSING\MFILES\WOA2013';
+gd.mCANYON  = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'CANYON'];
+gd.mFLOATS  = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'FLOATS'];
+gd.mGLODAP  = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'GLODAP'];
+gd.mSAGE    = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'GUIS',filesep,'SAGE'];
+gd.mSAGE_O2 = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'GUIS',filesep,'SAGE_O2'];
+gd.mLIAR    = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'LIAR'];
+gd.mMFILES  = ['ARGO_PROCESSING',filesep,'MFILES'];
+gd.mMISC    = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'MISC'];
+gd.mNetCDF  = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'NetCDF'];
+gd.mSAGE    = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'GUIS',filesep,'SAGE'];
+gd.mSAGE_O2 = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'GUIS',filesep,'SAGE_O2'];
+gd.mWOA2013 = ['ARGO_PROCESSING',filesep,'MFILES',filesep,'WOA2013'];
 
 % DATA PATHS
-gd.dCANYON    = 'ARGO_PROCESSING\DATA\CANYON';
-gd.dERA_INT   = 'ARGO_PROCESSING\DATA\ERA_INT';
-gd.dGLODAP    = 'ARGO_PROCESSING\DATA\GLODAP';
-gd.dLIAR      = 'ARGO_PROCESSING\DATA\LIAR';
-gd.dSHIPBOARD = 'ARGO_PROCESSING\DATA\SHIPBOARD';
-gd.dWOA       = 'ARGO_PROCESSING\DATA\WOA2013';
+gd.dCANYON    = ['ARGO_PROCESSING',filesep,'DATA',filesep,'CANYON'];
+gd.dERA_INT   = ['ARGO_PROCESSING',filesep,'DATA',filesep,'ERA_INT'];
+gd.dGLODAP    = ['ARGO_PROCESSING',filesep,'DATA',filesep,'GLODAP'];
+gd.dLIAR      = ['ARGO_PROCESSING',filesep,'DATA',filesep,'LIAR'];
+gd.dSHIPBOARD = ['ARGO_PROCESSING',filesep,'DATA',filesep,'SHIPBOARD'];
+gd.dWOA       = ['ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2013'];
 
 % MISC PATHS
 %gd.nctoolbox  = 'nctoolbox';

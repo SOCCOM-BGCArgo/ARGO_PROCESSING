@@ -87,18 +87,18 @@ function varargout = sage()
 gui = createInterface();
 handles = [];
 % Define paths
-dirs.user_dir = [getenv('USERPROFILE'),'\Documents\MATLAB\']; 
-dirs.mfiles    = [dirs.user_dir,'ARGO_PROCESSING\MFILES\'];
-dirs.mat       = [dirs.user_dir,'ARGO_PROCESSING\DATA\FLOATS\'];
-dirs.cal       = [dirs.user_dir,'ARGO_PROCESSING\DATA\CAL\'];
-dirs.FVlocal   = [dirs.user_dir,'ARGO_PROCESSING\DATA\FLOATVIZ\'];
-dirs.FV        = [dirs.user_dir,'ARGO_PROCESSING\DATA\FLOATVIZ\'];
+dirs.user_dir = [getenv('USERPROFILE'),filesep,'Documents',filesep,'MATLAB',filesep]; 
+dirs.mfiles    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'MFILES',filesep];
+dirs.mat       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATS',filesep];
+dirs.cal       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'CAL',filesep];
+dirs.FVlocal   = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATVIZ',filesep];
+dirs.FV        = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATVIZ',filesep];
 %dirs.FV        = '\\sirocco\wwwroot\lobo\Data\FloatVizData\';
-dirs.QCadj     = [dirs.user_dir,'ARGO_PROCESSING\DATA\CAL\QC_LISTS\'];
-dirs.bottle    = [dirs.user_dir,'ARGO_PROCESSING\DATA\SHIPBOARD\'];
-dirs.QC_images = [dirs.user_dir,'ARGO_PROCESSING\DATA\QC_images\'];
-dirs.ERA       = [dirs.user_dir,'ARGO_PROCESSING\DATA\ERA_INT\'];
-dirs.temp      = 'C:\temp\';
+dirs.QCadj     = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'CAL',filesep,'QC_LISTS',filesep];
+dirs.bottle    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'SHIPBOARD',filesep];
+dirs.QC_images = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA\QC_images',filesep];
+dirs.ERA       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'ERA_INT',filesep];
+dirs.temp      = ['C:',filesep,'temp',filesep];
 dirs.msg       = '\\atlas\ChemWebData\floats\';
 dirs.alt       = '\\atlas\ChemWebData\floats\alternate\'; %alternate msg file directory (MBARI).  Comment out if not used.
 dirs.msg_comb  = '\\atlas\ChemWebData\floats\combined\';
@@ -506,13 +506,13 @@ function gui = createInterface( ~ )
 %-------------------------------------------------------------------------%
     function onhelp( ~, ~ )
         % User has asked for the documentation
-        open([dirs.mfiles,'GUIS\SAGE\README_sage.txt'])
+        open([dirs.mfiles,'GUIS',filesep,'SAGE',filesep,'README_sage.txt'])
     end % onHelp
 
 %-------------------------------------------------------------------------%
     function onack( ~, ~ )
         % User has asked for the documentation
-        open([dirs.mfiles,'GUIS\SAGE\SAGE_Awknowledgements.txt'])
+        open([dirs.mfiles,'GUIS',filesep,'SAGE',filesep,'SAGE_Awknowledgements.txt'])
     end % onHelp
 
 %-------------------------------------------------------------------------%
@@ -605,7 +605,7 @@ function gui = createInterface( ~ )
 
             % TRY TO GET QC DATA NEXT
             %fv_path = [handles.dirs.FVlocal,'QC\' handles.info.float_name,'QC.TXT'];
-            fv_path = [pn,'QC\' handles.info.float_name,'QC.TXT'];
+            fv_path = [pn,'QC',filesep,handles.info.float_name,'QC.TXT'];
             d = get_FloatViz_data(fv_path);
             if ~isempty(d)
                 handles.info.qc_flag = 1; % 1 = QC data exists
@@ -1224,9 +1224,7 @@ function gui = createInterface( ~ )
             [handles, DATA] = get_LIR_CAN_MLR(handles,DATA);
         end
         updateInterface()
-		if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified
-			close(Omsg)
-		end
+        close(Omsg)
        if inputs.isprof == 1 %profile selected?
            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
        else

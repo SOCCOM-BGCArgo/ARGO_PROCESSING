@@ -34,14 +34,14 @@ update_str = 'all';
 % ************************************************************************
 
 %Make FloatViz subdirectories if they don't exist
-if ~exist([dirs.FVlocal,'QC\'], 'dir') 
-    mkdir([dirs.FVlocal,'QC\'])
+if ~exist([dirs.FVlocal,'QC',filesep], 'dir') 
+    mkdir([dirs.FVlocal,'QC',filesep])
 end
-if ~exist([dirs.FVlocal,'HR\'], 'dir') 
-    mkdir([dirs.FVlocal,'HR\'])
+if ~exist([dirs.FVlocal,'HR',filesep], 'dir') 
+    mkdir([dirs.FVlocal,'HR',filesep])
 end
-if ~exist([dirs.FVlocal,'HRQC\'], 'dir') 
-    mkdir([dirs.FVlocal,'HRQC\'])
+if ~exist([dirs.FVlocal,'HRQC',filesep], 'dir') 
+    mkdir([dirs.FVlocal,'HRQC',filesep])
 end
 
 % set(handles.recumpute_text,'String', ...

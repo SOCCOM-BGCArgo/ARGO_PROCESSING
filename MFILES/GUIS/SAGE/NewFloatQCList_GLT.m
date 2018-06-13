@@ -15,7 +15,7 @@ tf = 1;
 % new_float = 0;
 % Make new  FloatQcList.txt locally from float_qc GUI data table changes
 fname        = [dirs.QCadj,handles.info.QCadj_file]; % Existing adjustment file
-new_fname    = 'C:\temp\new_FloatQCList.txt';  %file that will be updated
+new_fname    = ['C:',filesep,'temp',filesep,'new_FloatQCList.txt'];  %file that will be updated
 float_name   = handles.info.float_name;
 
 if exist(fname) == 0 %does not exist (ie new float), create file
