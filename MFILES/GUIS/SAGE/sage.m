@@ -87,7 +87,7 @@ function varargout = sage()
 gui = createInterface();
 handles = [];
 % Define paths
-dirs.user_dir = [getenv('USERPROFILE'),filesep,'Documents',filesep]; 
+dirs.user_dir = [getenv('USERPROFILE'),filesep,'Documents',filesep,'MATLAB',filesep]; 
 dirs.mfiles    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'MFILES',filesep];
 dirs.woa       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2013',filesep];
 dirs.glodap    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'GLODAP',filesep];
