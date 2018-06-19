@@ -1,4 +1,4 @@
-function d = get_GLODAPv2_local(track, tol, depth_bnds)
+function d = get_GLODAPv2_local(datadir, track, tol, depth_bnds)
 % PURPOSE: 
 %   Extract all GLODAPv2 nutrient data within a given distance from each
 %   track position if it exists. Intended use is to find cross overs for
@@ -9,6 +9,7 @@ function d = get_GLODAPv2_local(track, tol, depth_bnds)
 %	d = get_GLODAPv2_local(track, tol, depth_bnds)
 %
 % INPUTS:
+%   datadir    = GLODAP data directory (local)
 %   track      = n x 4 matrix [Matlab_SDN, float cycle, Lat, Lon]
 %   tol        = km distance to expand search from track position
 %   depth_bnds = depth bounds [min depth  max depth]
@@ -46,9 +47,9 @@ function d = get_GLODAPv2_local(track, tol, depth_bnds)
 % ***********************************************************************
 %   SET NAMES DIRS AND PATHS
 % ***********************************************************************
-user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
-GLODAP_dir          = [user_dir,'\Documents\MATLAB\ARGO_PROCESSING\', ...
-                      'DATA\GLODAP\'];
+% user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+% GLODAP_dir          = [user_dir,'\Documents\MATLAB\ARGO_PROCESSING\', ...
+%                       'DATA\GLODAP\'];
 GLODAP_fn           = 'GLODAPv2 Merged Master 102716.mat';
 %GLODAP_expocode_fn  = 'GLODAPv2_ExpoCodes_102716.txt';
 
@@ -174,7 +175,7 @@ for i = 1: size(G_INFO,1)
 end
 
 % LOAD DESIRED VARIABLES & CONTAIN IN A STRUCTURE
-d = load([GLODAP_dir,GLODAP_fn],load_vars{:});
+d = load([datadir,GLODAP_fn],load_vars{:});
 
 % NOW SUBSET AND PACK INTO A MATRIX
 tP = d.G2pressure >= depth_bnds(1) & d.G2pressure <= depth_bnds(2);

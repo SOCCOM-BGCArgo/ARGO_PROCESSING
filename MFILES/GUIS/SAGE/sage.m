@@ -90,6 +90,7 @@ handles = [];
 dirs.user_dir = [getenv('USERPROFILE'),filesep,'Documents',filesep]; 
 dirs.mfiles    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'MFILES',filesep];
 dirs.woa       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2013',filesep];
+dirs.glodap    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'GLODAP',filesep];
 dirs.mat       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATS',filesep];
 dirs.cal       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'CAL',filesep];
 dirs.FVlocal   = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATVIZ',filesep];
@@ -729,7 +730,7 @@ function gui = createInterface( ~ )
 %                 'String','LOADING GLODAPv2 DATA ....')
 %             drawnow
 %             track = DATA.track;
-            d = get_GLODAPv2_local(DATA.track (:,[1,2,4,3]), ...
+            d = get_GLODAPv2_local(dirs.glodap,DATA.track (:,[1,2,4,3]), ...
                 inputs.GLDPkm, [0 2000]);
             handles.GLODAP = d;
             clear track d cycles i t1
