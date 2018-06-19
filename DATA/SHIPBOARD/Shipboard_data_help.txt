@@ -1,1 +1,2 @@
 Place shipboard reference data files and associated parsing routines in this directory.
+The pre-existing ones located within this folder are SOCCOM-specific sample files.
