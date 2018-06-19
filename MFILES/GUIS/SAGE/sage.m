@@ -87,8 +87,9 @@ function varargout = sage()
 gui = createInterface();
 handles = [];
 % Define paths
-dirs.user_dir = [getenv('USERPROFILE'),filesep,'Documents',filesep,'MATLAB',filesep]; 
+dirs.user_dir = [getenv('USERPROFILE'),filesep,'Documents',filesep]; 
 dirs.mfiles    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'MFILES',filesep];
+dirs.woa       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2013',filesep];
 dirs.mat       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATS',filesep];
 dirs.cal       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'CAL',filesep];
 dirs.FVlocal   = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATVIZ',filesep];
@@ -698,7 +699,7 @@ function gui = createInterface( ~ )
 %             set(handles.recumpute_text, ...
 %                 'String','LOADING WOA 2013 NITRATE DATA ....')
 
-            WOA_NO3 = get_WOA2013_local(DATA.track(:,[1,4,3]), [0 2000], 'NO3');
+            WOA_NO3 = get_WOA2013_local(dirs.woa,DATA.track(:,[1,4,3]), [0 2000], 'NO3');
             % NOW MATCH WOA DATA TO RAW PROFILE DATA, sample by sample
 
             WNO3 = ones(size(handles.raw_data.data(:,1))) * NaN; % predim

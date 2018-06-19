@@ -1,4 +1,4 @@
-function data = get_WOA2013_local(track, depth_bnds, ocean_var)
+function data = get_WOA2013_local(data_site,track, depth_bnds, ocean_var)
 % PURPOSE: 
 %   Extract a subset from the monthly WOA2013 climatology for a given
 %   variable and then interpolate data along the provided track. Access
@@ -9,9 +9,10 @@ function data = get_WOA2013_local(track, depth_bnds, ocean_var)
 %   [1 x m x n x p]             => [12 x m x n x p]
 %
 % USAGE:
-%	data = get_WOA2013(track, depth_bnds, ocean_var)
+%	data = get_WOA2013(data_site,track, depth_bnds, ocean_var)
 %
 % INPUTS:
+%   data_site = path to local WOA2013 data repo
 %   track      = n x 3 matrix [Matlab_SDN, Lat, Lon]
 %   depth_bnds = depth bounds [min depth  max depth]
 %	ocean_var  = a string, ocean parameter
@@ -61,8 +62,8 @@ function data = get_WOA2013_local(track, depth_bnds, ocean_var)
 % ***********************************************************************
 
 plot_it = 0; % 0 to turn off plotting
-user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
-data_site  = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\WOA2013\'];
+% user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+% data_site  = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\WOA2013\'];
 ST_path    = '';  % ARGO FLOAT BASED 2005 - 2012, 1 deg
 NUT_path   = '';   % All nutrients, 1 deg
 
