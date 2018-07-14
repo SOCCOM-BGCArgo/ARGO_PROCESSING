@@ -327,7 +327,7 @@ else
             %checking "CONFIG_OptodeVerticalPressureOffset_dbar" in meta
             %file could give a more precise measure of optode location -->
             %more datapoints.
-            PRESthresh = 0.16;
+            PRESthresh = 0.10;
             bp = find(myp<PRESthresh); 
             myO2 = myO2(bp);
             myph2o = myph2o(bp);
