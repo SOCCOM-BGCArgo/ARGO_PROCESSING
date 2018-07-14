@@ -435,10 +435,10 @@ fclose(fid_raw);
 clear fid_raw cast_num sample_ct
 
 % % % MAKE CONFIG FILE FOR FLOATVIZ - not needed for SAGE-O2
-% % fid_raw  = fopen([outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.CFG'],'w');
-% % fprintf(fid_raw,'//%0.0f\r\n',line_ct);
-% % fclose(fid_raw);
-% % clear fid_raw line_ct dummy_out
+fid_raw  = fopen([outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.CFG'],'w');
+fprintf(fid_raw,'//%0.0f\r\n',line_ct);
+fclose(fid_raw);
+clear fid_raw line_ct dummy_out
 
 
 
