@@ -8,8 +8,8 @@ function tf = get_ARGOifremer_files(WMOs,DAC,savedir)
 % user-specified local directory.
 %
 %
-% USE AS:  tf = get_ARGOgdac_files('6901582','coriolis','C:\Users\tmaurer\Documents\ARGO\CORIOLIS\CORIOLIS_files\')
-%          tf = get_ARGOgdac_files({'6901582';'6900889';'6900890'},'coriolis','C:\Users\tmaurer\Documents\ARGO\CORIOLIS\CORIOLIS_files\')
+% USE AS:  tf = get_ARGOifremer_files({'6901582'},'coriolis','C:\Users\tmaurer\Documents\ARGO\CORIOLIS\CORIOLIS_files\')
+%          tf = get_ARGOifremer_files({'6901582';'6900889';'6900890'},'coriolis','C:\Users\tmaurer\Documents\ARGO\CORIOLIS\CORIOLIS_files\')
 %
 % INPUTS:  
 %       WMOs    = Cell array of WMO number(s) for float(s) of interest
@@ -47,9 +47,7 @@ function tf = get_ARGOifremer_files(WMOs,DAC,savedir)
 %
 % ************************************************************************
 
-fp = filesep; % File separator for current platform
-
-if nargin < 3;
+if nargin < 3
   help get_ARGOifremer_files
   return
 end
@@ -68,7 +66,7 @@ for i = 1:length(WMOs)
 
     % Connect to FTP server------------------------------------------------
     %----------------------------------------------------------------------
-    ftp_dir = ['ifremer',fp,'argo',fp,'dac',fp,DAC,fp,WMO];
+    ftp_dir = ['ifremer/argo/dac/',DAC,'/',WMO];
     ftp_target = 'ftp.ifremer.fr';
     disp(['CONNECTING TO FTP TARGET AT ',ftp_target,'...'])
     disp('-----------------------------------------------')
