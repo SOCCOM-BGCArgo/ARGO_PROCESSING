@@ -28,9 +28,14 @@ function d = get_shipboard_data(file_path)
 %   08/15,2017 Added code to calculate depth if NaN's in depth col (HOT
 %       ALOHA data)
 %   01/09/2018 Added code to capture chlorophyll data fron files. This
-%       incudes two new parameters & theier QC fields: 'CHLORA' &
+%       incudes two new parameters & their QC fields: 'CHLORA' &
 %       'TOT_CHL_A'. The latter is HPLC derived while the former is
 %       presumabley fluorometrically derived. -jp
+%   08/0/2018 Added code to estimate missing Si & PO4 if NO3 exists using
+%       Redfield approximation. Si & PO4 are used for inputs into CO2SYS to
+%       estimate pH in situ. The nutrient estimates are not returned to the
+%       data set for output. This is added around line 319. SR1B cruise
+%       (floats 9652 9655 9657 9662) has no Silicate data.  - jp
 
 % TESTING             
 % file_path = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\', ...
@@ -43,6 +48,8 @@ function d = get_shipboard_data(file_path)
 
 %file_path = ' C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\096U20160426.exc.csv';
 %file_path = ' C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\096U20160314.exc.csv';
+
+%file_path = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\74JC20151217_hy1.csv';
 
 % ************************************************************************
 % LIST OF DESIRED VARIBLES AND FORMAT STRING
@@ -207,6 +214,8 @@ iPHSW = find(strcmp('PH_SWS',hdr)  == 1);
 iPHT  = find(strcmp('PH_TMP',hdr)  == 1);
 iSI   = find(strcmp('SILCAT',hdr)  == 1);
 iPO4  = find(strcmp('PHSPHT',hdr)  == 1);
+iNO3  = find(strcmp('NITRAT',hdr)  == 1);
+
 
 iLAT  = find(strcmp('LATITUDE',hdr)  == 1); % THESE ARE NEEDED FOR LIAR
 iLON  = find(strcmp('LONGITUDE',hdr) == 1); % TO ESTIMATE ALKALINITY IF
@@ -303,7 +312,26 @@ PRESOUT = data(:,iP);
 SI      = data(:,iSI);
 PO4     = data(:,iPO4);
 
+%testing
+% t_nan = isnan(data(:,iSI));
+% data(:,iSI) = 20;
+% SI = data(:,iSI);
 
+% ***********************
+% SOME TIMES NEED TO ESTIMATE SILICATE OR PHOSPHATE BOTTLE DATA
+% USE REDFILED RATIO TO APROXIMATE IF GOOD NITRATE EXISTS, OTHERWISE SET = 0
+% JP FIX 08/08/2018 (ie SR1B cruise & floats 9652 9655 9657 9662) 
+nan_SI  = isnan(SI)  & ~isnan(data(:,iNO3));
+nan_PO4 = isnan(PO4) & ~isnan(data(:,iNO3));
+if sum(nan_SI) > 0 || sum(nan_PO4) > 0
+    disp('NO3 data exists but some complimentary Si or PO4 data is missing')
+    disp('Estimating missing data with Redfield ratio aproximation')
+
+    SI(nan_SI)   = data(nan_SI, iNO3) * 2.5;  % APROX WITH REDFIELD
+    PO4(nan_PO4) = data(nan_PO4, iPO4) / 16;
+end
+clear nan_SI nan_PO4
+% ***********************
 
 if ~isempty(iALK) && ~isempty(iPH) % check first: Alkalinity & pH exist
     PAR1 = data(:,iALK);
