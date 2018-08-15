@@ -1034,7 +1034,7 @@ function gui = createInterface( ~ )
    function on_GLODAP( source, ~ ) 
        GDkm = get(source,'String');
        inputs.GLDPkm = str2double(GDkm);
-       d = get_GLODAPv2_local(DATA.track (:,[1,2,4,3]), ...
+       d = get_GLODAPv2_local(dirs.glodap,DATA.track (:,[1,2,4,3]), ...
         inputs.GLDPkm, [0 2000]);
         handles.GLODAP = d;
         % GET GLODAPv2 DATA & SET INDICES
@@ -1226,7 +1226,9 @@ function gui = createInterface( ~ )
             [handles, DATA] = get_LIR_CAN_MLR(handles,DATA);
         end
         updateInterface()
-        close(Omsg)
+        if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified
+            close(Omsg)
+        end
        if inputs.isprof == 1 %profile selected?
            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
        else

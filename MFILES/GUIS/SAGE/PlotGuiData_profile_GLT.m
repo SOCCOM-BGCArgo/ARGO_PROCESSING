@@ -222,7 +222,6 @@ if ~isempty(vdata)
 % AXIS 3: diff vs time
 %**************************************************************************
     cla(gui.whichAX(3),'reset')            
-
     if ~strcmp(DATA.paramtag, 'O2')
         tnan = ~isnan(mDIFF_Xi);
         if sum(tnan) > 0
@@ -237,7 +236,7 @@ if ~isempty(vdata)
         ylabel(gui.whichAX(3),'Pressure, dbar')
     else
         % GET 1st CAST
-        casts       = unique(DATA.datatype(:,2));
+        casts       = unique(DATA.datatype.data(:,2));
         start_ind  = find(casts >0, 1, 'first');
         if size(start_ind,2) == 1
             start_cast = casts(start_ind(1));
@@ -310,7 +309,7 @@ if ~isempty(vdata)
             plot(DATA.b.data(:,DATA.bIND), DATA.b.data(:,DATA.ibP), 'ko', ...
                 'MarkerSize',6, 'MarkerFaceColor',[255 255 0]/255,...
                 'parent',gui.whichAX(4),'MarkerEdgeColor', 'k')
-            if strcmp(DATA.paramtag, 'PH')
+            if strcmp(DATA.paramtag, 'PH') && ~isempty(DATA.bIND2)
                 plot(DATA.b.data(:,DATA.bIND2), DATA.b.data(:,DATA.ibP), 'ko', ...
                     'MarkerSize',6, 'MarkerFaceColor',[255 255 0]/255,...
                     'parent',gui.whichAX(4),'MarkerEdgeColor', 'r')
