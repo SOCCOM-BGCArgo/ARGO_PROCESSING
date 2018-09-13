@@ -542,6 +542,9 @@ function gui = createInterface( ~ )
         set(gui.rb3(3),'Enable','on')
         set(gui.rb3(4),'Enable','on')
         set(gui.rb3(5),'Enable','on')
+		set(gui.rb2(1),'Value',0)
+		set(gui.rb2(2),'Value',1)
+		set(gui.rb2(3),'Value',0)
         % CHOOSE FILE
         [fn,pn] = uigetfile([dirs.FVlocal,'*.txt'],'SELECT FILE');
         if ~isequal(fn, 0)  

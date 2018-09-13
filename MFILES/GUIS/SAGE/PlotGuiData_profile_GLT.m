@@ -11,7 +11,12 @@ GLODAP_color = [0   255 255;... % keep color and symbol count equal
                 255 51 255;
                 255 128 0]./255;
 GLODAP_symbols = {'^' 'd' 's' '*' '<' 'x'};
-y_lim   = [0 1600];
+%y_lim   = [0 1600];
+y_lim       = [inputs.depthedit(1) inputs.depthedit(2)];
+
+% gui
+% inputs
+% DATA.datatype.hdr
 
 if isempty(DATA.IND) %parameter doesn't exist
     cla(gui.whichAX(1),'reset')
@@ -30,9 +35,14 @@ if isempty(DATA.IND) %parameter doesn't exist
     return
 end
 
-
 cmp_str = DATA.reftag;
-profdata = DATA.datatype.data;
+
+profile_lim = [inputs.profedit(1) inputs.profedit(2)];
+iSTA        = strcmp(DATA.datatype.hdr,'Station');
+tSTA        = DATA.datatype.data(:,iSTA) >= profile_lim(1) & ...
+              DATA.datatype.data(:,iSTA) <= profile_lim(2);
+profdata    = DATA.datatype.data(tSTA,:);
+
 tvert   = profdata(:,DATA.iP) >= y_lim(1) & profdata(:,DATA.iP) <= y_lim(2);
 vdata   = profdata(tvert,:); % subset
 vMLR_X  = DATA.refdata(tvert);
@@ -66,7 +76,8 @@ if ~isempty(vdata)
      end
      clear i tmp t1 SX MLR_X_tmp DIFF_X_tmp
 
-    z      = [8,11:5:100,111:10:400,450:50:1000,1100:100:1600]';
+    %z      = [8,11:5:100,111:10:400,450:50:1000,1100:100:1600]';
+    z      = [8,11:5:100,111:10:400,450:50:1000,1100:100:2000]';
     max_z  = max(vdata(:,DATA.iP));
     z(z > max_z) =[];
     r_z     = size(z,1);
@@ -157,7 +168,9 @@ if ~isempty(vdata)
             ylabel(gui.whichAX(1),'Depth')
             title(inputs.data_str,'parent',gui.whichAX(1))
             %title({'Depth interpolated Float - MLR',['(',MLR_flavor,')']})
-            colorbar(gui.whichAX(1),'Position',[0.915 0.566 0.033 .33]);
+            cb = colorbar(gui.whichAX(1),'NorthOutside');
+            ax_pos = gui.whichAX(1).Position;
+            set(cb, 'Position', [ax_pos(1) .85 ax_pos(3) .05]);
         end
     end
 
@@ -236,7 +249,8 @@ if ~isempty(vdata)
         ylabel(gui.whichAX(3),'Pressure, dbar')
     else
         % GET 1st CAST
-        casts       = unique(DATA.datatype.data(:,2));
+		%casts       = unique(DATA.datatype.data(:,2));
+        casts       = unique(DATA.datatype(:,2));
         start_ind  = find(casts >0, 1, 'first');
         if size(start_ind,2) == 1
             start_cast = casts(start_ind(1));
