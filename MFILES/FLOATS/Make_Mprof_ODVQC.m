@@ -243,8 +243,8 @@ end
 
 qc_var_ct = size(ODV_adj,1);
 
-if ~isdir([handles.info.file_path, 'QC\'])
-    mkdir([handles.info.file_path, 'QC\']);
+if ~isdir([handles.info.file_path, 'QC',fp])
+    mkdir([handles.info.file_path, 'QC',fp]);
 end
     
 fvqc_path  = [handles.info.file_path, 'QC',fp,handles.info.float_name, ...

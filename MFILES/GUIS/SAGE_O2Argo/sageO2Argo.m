@@ -387,14 +387,14 @@ function gui = createInterface( ~ )
         inputs.rorq = 1;
         x=1;
         while x==1
-            [pn] = uigetdir([dirs.Argo],'SELECT FLOAT')
+            [pn] = uigetdir([dirs.Argo],'SELECT FLOAT');
             x=0;
             pattern='\w*';
             [Idx1,debut,fin] = regexp(pn, pattern,'match','start','end');
-            inputs.floatID = cell2mat(Idx1(end))
+            inputs.floatID = cell2mat(Idx1(end));
         end
         fp = filesep; % File separator for current platform
-        thedatadir = [pn,fp]
+        thedatadir = [pn,fp];
         handlesODVQC.info.file_path = thedatadir;
         set( gui.Fbutton,'String',inputs.floatID);
         DATA = getall_floatdata_sO2Argo(thedatadir,inputs.floatID);
@@ -443,7 +443,7 @@ function gui = createInterface( ~ )
         DATA.rawGAINS_WOA{1} = DATA.WOAsurf'./DATA.RAWorQCwoa(:,2);
         DATA.rawGAINS_WOA{3} = [];
 %         DATA.O2air{1}
-        if ~isempty(DATA.O2air{1}); %AIRCAL EXISTS SO USE NCEP OR ERA
+        if ~isempty(DATA.O2air{1}) && sum(~isnan(DATA.O2air{1}{1}(:,10)))>0 %AIRCAL EXISTS SO USE NCEP OR ERA
             [~,inputs.intersect_cycles,~] = intersect(DATA.track(:,2),DATA.O2air{1}{1}(:,2));
             %______________________________________________________________
             %TRY NCEP FIRST (REALTIME).  DATA IS GRABBED FROM THE WEB.  IF WEBSITE IS
@@ -573,7 +573,10 @@ function gui = createInterface( ~ )
         % NOW SET DEFAULT TO WOA IF NO AIRCAL OR IF BOTH NCEP AND ERA
         % FAILED (WEB-GET NOT WORKING, AND NEWER FLOAT)
 %         if isempty(DATA.O2air{1}) || (isempty(DATA.NCEP.PRES) && isempty(DATA.ERA.PRES))
-        if isempty(DATA.O2air{1}) || (isempty(DATA.NCEP.PRES))
+        if isempty(DATA.O2air{1}) || (isfield(DATA,'NCEP') && isempty(DATA.NCEP.PRES)) || sum(~isnan(DATA.O2air{1}{1}(:,10)))==0
+            if isempty(DATA.O2air{1}) || sum(~isnan(DATA.O2air{1}{1}(:,10)))==0
+                msgbox('NO USABLE IN-AIR DATA.  CALIBRATE TO WOA.');
+            end
             set(gui.rb3(1),'Value',0,'Enable','off');
 %             set(gui.rb3(2),'Value',0,'Enable','off');
             set(gui.rb3(2),'Value',1);
@@ -940,7 +943,12 @@ function gui = createInterface( ~ )
     function on_applyO2gain( source, ~ ) 
          handlesODVQC.info.Mprof = 1;
          handlesODVQC.info.float_name = ['ODV',inputs.floatID];
-         % Calling Make_Mprof_ODVQC which also gets used in Sage.  
+         % Calling Make_Mprof_ODVQC which also gets used in Sage.  Maintain QCA
+         %structure, as called in this function.
+         handlesODVQC.QCA.NO3 = [];
+         handlesODVQC.QCA.PH_OFFSET = [];
+         handlesODVQC.QCA.PH = [];
+%          handlesODVQC.QCA.CHL = [];
          if ~isempty(DATA.bigG) && ~isnan(DATA.bigG)
             handlesODVQC.QCA.O2 = [1 DATA.bigG 0 0];
             tf = Make_Mprof_ODVQC(handlesODVQC);

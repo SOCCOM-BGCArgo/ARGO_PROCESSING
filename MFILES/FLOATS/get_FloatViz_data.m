@@ -33,36 +33,43 @@ function floatviz_data = get_FloatViz_data(floatviz_file)
 % *************************************************************************
 % SET PATHS & COPY FILE TO LOCAL & OPEN
 % *************************************************************************
-%data_source = 'internet';
-data_source = 'network';
+data_source = 'internet';
+%data_source = 'network'; %MBARI USE ONLY 
 
-floatviz_dir  = '\\sirocco\wwwroot\lobo\Data\FloatVizData\';
-floatviz_url  = 'http://www.mbari.org/lobo/Data/FloatVizData/';
+%floatviz_dir  = '\\sirocco\wwwroot\lobo\Data\FloatVizData\'; %MBARI USE ONLY
+floatviz_url  = 'http://www3.mbari.org/lobo/Data/FloatVizData/';
 
-temp_dir      = 'C:\temp\';
+% create temporary folder for housing files pulled from internet or network
+if ~isempty(strfind(computer,'PC'))
+    temp_dir = ['C:',filesep,'temp',fp]; % change this filepath to wherever you want your temp dir to be
+else
+    temp_dir = ['temp',filesep];  % creates temp dir in local path.  Can change this line to define an upper-level permanent temp dir location, if preferred
+end
+
 if ~exist(temp_dir,'dir')
     mkdir(temp_dir) 
 end
+
     
 floatviz_data =[];
 
 switch data_source
     % GET TEXT FILE FROM DIRECT PATH OR SIROCCO AND STORE LOCALY
     case 'network'       
-        if regexp(floatviz_file,'\\','once') % direct path (dir included)
+        if regexp(floatviz_file,filesep) % direct path (dir included)
             from_str = floatviz_file;
             to_str   = [temp_dir, regexpi(floatviz_file, ...
                         '\d{3}\d+\w+\.txt','once','match')];
         elseif regexp(floatviz_file,'HRQC','once') % QC DIR
-            floatviz_dir  = [floatviz_dir,'HRQC\'];
+            floatviz_dir  = [floatviz_dir,'HRQC',filesep];
             from_str = [floatviz_dir, floatviz_file, '.txt'];
             to_str   = [temp_dir, floatviz_file, '.txt'];                    
         elseif regexp(floatviz_file,'HR','once') % QC DIR
-            floatviz_dir  = [floatviz_dir,'HR\'];
+            floatviz_dir  = [floatviz_dir,'HR',filesep];
             from_str = [floatviz_dir, floatviz_file, '.txt'];
             to_str   = [temp_dir, floatviz_file, '.txt'];                                
         elseif regexp(floatviz_file,'QC','once') % QC DIR
-            floatviz_dir  = [floatviz_dir,'QC\'];
+            floatviz_dir  = [floatviz_dir,'QC',filesep];
             from_str = [floatviz_dir, floatviz_file, '.txt'];
             to_str   = [temp_dir, floatviz_file, '.txt']; 
         else
@@ -83,12 +90,26 @@ switch data_source
         end
         
     case 'internet'
-        if regexp(floatviz_file,'QC','once')
-            floatviz_url  = [floatviz_url,'QC/'];
+         if regexp(floatviz_file,filesep) % direct path (dir included)
+            from_str = floatviz_file;
+            to_str   = [temp_dir, regexpi(floatviz_file, ...
+                        '\w{3}\d+\w+\.txt','once','match')];
+         elseif regexp(floatviz_file,'HRQC','once') % QC DIR
+            floatviz_dir  = [floatviz_dir,'HRQC',filesep];
+            from_str = [floatviz_dir, floatviz_file, '.txt'];
+            to_str   = [temp_dir, floatviz_file, '.txt'];                    
+        elseif regexp(floatviz_file,'HR','once') % QC DIR
+            floatviz_dir  = [floatviz_dir,'HR',filesep];
+            from_str = [floatviz_dir, floatviz_file, '.txt'];
+            to_str   = [temp_dir, floatviz_file, '.txt'];                                
+        elseif regexp(floatviz_file,'QC','once') % QC DIR
+            floatviz_dir  = [floatviz_dir,'QC',filesep];
+            from_str = [floatviz_dir, floatviz_file, '.txt'];
+            to_str   = [temp_dir, floatviz_file, '.txt']; 
+        else
+            from_str = [floatviz_dir, floatviz_file, '.txt'];
+            to_str   = [temp_dir, floatviz_file, '.txt'];   
         end
-        from_str = [floatviz_url,floatviz_file,'.txt']; % build target string
-        to_str   = [temp_dir,floatviz_file,'.txt'];    % build destination string
-        
         
         [~,url_chk] = urlread(from_str); % See if file exisit on the web
         if url_chk == 1
@@ -98,14 +119,24 @@ switch data_source
                 floatviz_url]);
             disp(['Saved as  ',f]);
         else
-            disp('No file found!')
-            return
+            disp('No file found online!')
+            
+            if strcmpi(from_str, to_str) % destination and source equal
+                disp(['File already exists at ',to_str, ...
+                    ' .... Parsing existing file'])
+            elseif exist(from_str,'file') == 2
+                copyfile(from_str, to_str)
+            else
+                disp(['Could not find: ',from_str]);
+                %             disp(['SOURCE: ',from_str])
+                %             disp(['DESTINATION: ',to_str])
+                return
+            end
         end
 end
 
 fid = fopen(to_str);
 %fid = fopen(to_str,'r','n','UTF-8');
-
 % *************************************************************************
 % BUILD FORMAT STRING AND PARSE DATA
 % *************************************************************************
