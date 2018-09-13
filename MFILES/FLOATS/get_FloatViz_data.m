@@ -41,7 +41,7 @@ floatviz_url  = 'http://www3.mbari.org/lobo/Data/FloatVizData/';
 
 % create temporary folder for housing files pulled from internet or network
 if ~isempty(strfind(computer,'PC'))
-    temp_dir = ['C:',filesep,'temp',fp]; % change this filepath to wherever you want your temp dir to be
+    temp_dir = ['C:',filesep,'temp',filesep]; % change this filepath to wherever you want your temp dir to be
 else
     temp_dir = ['temp',filesep];  % creates temp dir in local path.  Can change this line to define an upper-level permanent temp dir location, if preferred
 end
