@@ -33,10 +33,9 @@ function floatviz_data = get_FloatViz_data(floatviz_file)
 % *************************************************************************
 % SET PATHS & COPY FILE TO LOCAL & OPEN
 % *************************************************************************
-data_source = 'internet';
-%data_source = 'network'; %MBARI USE ONLY 
+%data_source = 'internet';
+data_source = 'network'; %MBARI USE ONLY 
 
-%floatviz_dir  = '\\sirocco\wwwroot\lobo\Data\FloatVizData\'; %MBARI USE ONLY
 floatviz_url  = 'http://www3.mbari.org/lobo/Data/FloatVizData/';
 
 % create temporary folder for housing files pulled from internet or network
@@ -55,7 +54,8 @@ floatviz_data =[];
 
 switch data_source
     % GET TEXT FILE FROM DIRECT PATH OR SIROCCO AND STORE LOCALY
-    case 'network'       
+    case 'network'     
+        floatviz_dir  = '\\sirocco\wwwroot\lobo\Data\FloatVizData\'; %MBARI USE ONLY
         if regexp(floatviz_file,filesep) % direct path (dir included)
             from_str = floatviz_file;
             to_str   = [temp_dir, regexpi(floatviz_file, ...
@@ -95,19 +95,19 @@ switch data_source
             to_str   = [temp_dir, regexpi(floatviz_file, ...
                         '\w{3}\d+\w+\.txt','once','match')];
          elseif regexp(floatviz_file,'HRQC','once') % QC DIR
-            floatviz_dir  = [floatviz_dir,'HRQC',filesep];
-            from_str = [floatviz_dir, floatviz_file, '.txt'];
+            floatviz_url  = [floatviz_url,'HRQC/'];
+            from_str = [floatviz_url, floatviz_file, '.txt'];
             to_str   = [temp_dir, floatviz_file, '.txt'];                    
         elseif regexp(floatviz_file,'HR','once') % QC DIR
-            floatviz_dir  = [floatviz_dir,'HR',filesep];
-            from_str = [floatviz_dir, floatviz_file, '.txt'];
+            floatviz_url  = [floatviz_url,'HR/'];
+            from_str = [floatviz_url, floatviz_file, '.txt'];
             to_str   = [temp_dir, floatviz_file, '.txt'];                                
         elseif regexp(floatviz_file,'QC','once') % QC DIR
-            floatviz_dir  = [floatviz_dir,'QC',filesep];
-            from_str = [floatviz_dir, floatviz_file, '.txt'];
+            floatviz_url  = [floatviz_url,'QC/'];
+            from_str = [floatviz_url, floatviz_file, '.txt'];
             to_str   = [temp_dir, floatviz_file, '.txt']; 
         else
-            from_str = [floatviz_dir, floatviz_file, '.txt'];
+            from_str = [floatviz_url, floatviz_file, '.txt'];
             to_str   = [temp_dir, floatviz_file, '.txt'];   
         end
         
