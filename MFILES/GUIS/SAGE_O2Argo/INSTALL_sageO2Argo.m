@@ -36,6 +36,8 @@ workingDIR = pwd;
 XX = strfind(workingDIR,'ARGO_PROCESSING');
 if isempty(XX)
     disp('ERROR: ARGO_PROCESSING DIRECTORY NOT FOUND.  DID YOU MAINTAIN THE ARGO_PROCESSING TOP LEVEL DIRECTORY STRUCTURE?')
+	disp('INSTALL INCOMPLETE!')
+	return
 else
     topdir = workingDIR(1:XX-1);
     disp('INSTALLING "ARGO_PROCESSING\MFILE" PATHS...')
@@ -52,7 +54,7 @@ else
 %     addpath('C:\temp\');
     savepath
 end
-save('sageO2Argo_workingDIR.mat','topdir');
+save([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE_O2Argo',fp,'sageO2Argo_workingDIR.mat'],'topdir');
 
 % CHECK FOR WOA DATA.  IF DOESN'T EXIST, DOWNLOAD IT.
 disp('CHECKING FOR LOCAL WOA2013 FILES...')
