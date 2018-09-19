@@ -30,8 +30,8 @@ workingDIR = pwd;
 XX = strfind(workingDIR,'ARGO_PROCESSING');
 if isempty(XX)
     disp('ERROR: ARGO_PROCESSING DIRECTORY NOT FOUND.  DID YOU MAINTAIN THE ARGO_PROCESSING TOP LEVEL DIRECTORY STRUCTURE?')
-	disp('INSTALL INCOMPLETE!')
-	return
+    disp('INSTALL INCOMPLETE!')
+    return
 else
     topdir = workingDIR(1:XX-1);
     disp('INSTALLING "ARGO_PROCESSING\MFILE" PATHS...')
@@ -45,7 +45,15 @@ else
     disp('INSTALLING "ARGO_PROCESSING\DATA" PATHS...')
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'SHIPBOARD',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'ARGO_REPO',fp]);
-%     addpath('C:\temp\');
+    if ~isempty(strfind(computer,'PC'))
+        tmploc     = ['C:',filesep,'temp',filesep];
+    else
+        tmploc = [getenv('HOME'),filesep,'temp',filesep];
+    end
+    if ~exist(tmploc,'dir')
+        mkdir(tmploc)
+    end
+    addpath(tmploc)
     savepath
 end
 save([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE',fp,'sage_workingDIR.mat'],'topdir');

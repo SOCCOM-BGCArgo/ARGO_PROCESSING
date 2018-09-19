@@ -29,6 +29,8 @@ function floatviz_data = get_FloatViz_data(floatviz_file)
 % CHANGEES:
 % 04/20/2017 - added code to automatically detect HR and HRQC files and
 %   point to the correct directories on sirocco to get them. lines ~57-64
+% 09/19/2018 - TM, lots of mods, enhance functionality across platforms and
+%              for different usage (network, internet...)
 
 % *************************************************************************
 % SET PATHS & COPY FILE TO LOCAL & OPEN
@@ -42,7 +44,7 @@ floatviz_url  = 'http://www3.mbari.org/lobo/Data/FloatVizData/';
 if ~isempty(strfind(computer,'PC'))
     temp_dir = ['C:',filesep,'temp',filesep]; % change this filepath to wherever you want your temp dir to be
 else
-    temp_dir = ['temp',filesep];  % creates temp dir in local path.  Can change this line to define an upper-level permanent temp dir location, if preferred
+    temp_dir = [getenv('HOME'),filesep,'temp',filesep]; % creates temp dir in home path.  Can change this if preferred
 end
 
 if ~exist(temp_dir,'dir')

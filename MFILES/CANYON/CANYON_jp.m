@@ -1,4 +1,4 @@
-function out = CANYON_jp(gtime,lat,lon,pres,temp,psal,doxy,param)
+function out = CANYON_jp(dirs,gtime,lat,lon,pres,temp,psal,doxy,param)
 % Multi-layer perceptron to predict oceanographic variables
 % Neural network training and original R function by Raphaëlle Sauzede,
 % LOV, as Matlab function by Henry Bittig, 24.05.2016, LOV
@@ -70,8 +70,7 @@ function out = CANYON_jp(gtime,lat,lon,pres,temp,psal,doxy,param)
 % ************************************************************************
 % PATHS & LOOKUP TABLE
 % ************************************************************************
-user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
-data_dir = [user_dir,'\Documents\MATLAB\ARGO_PROCESSING\DATA\CANYON\'];
+data_dir = dirs.CANY;
 
 % CHECK TO MAKE SURE DATA DIR EXISTS
 dir_chk = ls(data_dir);
@@ -115,7 +114,7 @@ info(7,:) = {'pCO2', 'Fichier_poids_pCO2_indirect_hidden_ascii18_8.sn', ...
 t1 = strcmp(param,info(:,1));
 if sum(t1) == 1
     wt_tmp = info{t1,2};
-    wt_fn  = ls([data_dir,wt_tmp]);
+    wt_fn  = [data_dir,wt_tmp];
     
     if isempty(wt_fn)
         disp(['Could not find weight file for ',param])
@@ -195,7 +194,7 @@ end
 % ************************************************************************
 % WEIGHTS, BIAS AND NORMALIZATION
 % ************************************************************************
-fid   = fopen([data_dir, wt_fn],'r');
+fid   = fopen(wt_fn,'r');
 poids = fscanf(fid,'%f',[3 inf]);
 fclose(fid);
 poids = poids(3,:)';

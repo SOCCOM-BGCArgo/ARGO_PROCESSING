@@ -8,9 +8,9 @@ tic;
 tf_float     = 0;
 float_IDs    = handles.float_IDs; %MBARI name, UW_ID, WMO#, type
 MBARI_ID_str = handles.info.float_name;
-t1           = strcmpi(MBARI_ID_str,float_IDs(:,1));
-UW_ID_str    = float_IDs{t1,2}; % UW ID str
-float_type   = float_IDs{t1,4};
+MFLOATlist = load([dirs.cal,'MBARI_float_list.mat']);
+t1           = strcmpi(MBARI_ID_str,MFLOATlist.list(:,1));
+float_type   = MFLOATlist.list{t1,4};
 
 
 % ************************************************************************
@@ -73,10 +73,10 @@ end
 
 % ************************************************************************
 % PROCESS MESSAGE FILES
-if strcmp(float_type,'APEX');
+if strcmp(float_type,'APEX')
     tf_float = Process_APEX_float(MBARI_ID_str, dirs,update_str);
     
-elseif strcmp(float_type,'NAVIS');
+elseif strcmp(float_type,'NAVIS')
     tf_float = Process_NAVIS_float(MBARI_ID_str, dirs,update_str);
 else
     disp(['Unknown float type for ',MBARI_ID_str, ...
