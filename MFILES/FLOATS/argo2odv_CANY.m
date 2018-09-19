@@ -480,14 +480,14 @@ if ~isempty(iPH) % empty will be flase
     % CALCULATE CANYON ALKALINITY FOR THE ADJUSTED DATA SET
     % ************************************************************************
     disp('Calculating Alkalinity using CANYON........')
-    Alk_Est = CANYON_jp(adj_data(:,2), adj_data(:,4), adj_data(:,3), ...
+    Alk_Est = CANYON_jp(dirs,adj_data(:,2), adj_data(:,4), adj_data(:,3), ...
         adj_data(:,iP), adj_data(:,iT),adj_data(:,iS), ...
         adj_data(:,iO),'TA');
     
     Alk_QF = max([adj_data(:,iS+1) adj_data(:,iO+1)],[],2);
     
     CANYON_alk_str = ['TALK_CANY = Alkalinity estimated using CANYON ', ...
-        'neural network algorithim (Sauzède et al., SUBMITTED)'];
+        'neural network algorithim (Sauzède et al., 2017: https://doi.org/10.3389/fmars.2017.00128 )'];
     
     t_nan = isnan(Alk_Est);
     Alk_QF(t_nan) = 99; % ARGO QF missing values
@@ -552,7 +552,7 @@ if ~isempty(iPH) % pH data exists
         CANYON_PH25C =  OUT(:,18); % Col 19 in OUT is pH out
         
         % MAKE A BIASED PH DATA ARRAY FOR CALCULATING pCO2 IN ACCORDANCE
-        % WITH WILLIAMS et al 2017, SECT 3.4 EQUATION 2
+        % WITH WILLIAMS et al 2017, SECT 3.4 EQUATION 3
         % CALCULATE BIAS AT CALIBRATION DEPTH (1500m or 1000m) FOR EACH
         % PROFILE AND ADD THIS TO THE PROFILE PH TO MAKE THE BIASED ARRAY
         cycles   = unique(adj_data(:,1));
@@ -1047,7 +1047,7 @@ CO2SYS_str = ['//NOTE ON CO2SYS CARBONATE SYSTEM CALCULATIONS:\r\n',...
 '//be of good quality silicate = nitrate*2.5 and phosphate = nitrate/16,\r\n',...
 '//otherwise the best estimate for both was considered to be 0. When pCO2\r\n',...
 '//was estimated from TALK_CANY and pHinsitu, a bias was first added to pHinsitu\r\n',...
-'//following Williams et al., 2017, doi: XXXXXXXXXX, section 3.4, equation 2.\r\n'];
+'//following Williams et al., 2017, doi: https://doi.org/10.1002/2016GB005541 , section 3.4, equation 3.\r\n'];
 
 CHL_str = ['//NOTE ON Chl_a & Chl_a_corr [mg/m^3] CONCENTRATION:\r\n',...
 '//There is community-established calibration bias of 2 for the WET Labs 413',...
@@ -1076,7 +1076,7 @@ ODV_raw(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP' '' '' ''};
 ODV_raw(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL' '' '' ''};   
 ODV_raw(4,:)  = {'Sigma_theta[kg/m^3]'   '%0.3f' 'SIGMA_THETA' '' '' ''};
 ODV_raw(5,:)  = {'Depth[m]'              '%0.3f' 'DEPTH' '' '' ''};
-ODV_raw(6,:)  = {'Oxygen[µmol/kg]'       '%0.1f' 'DOXY' '' '' ''};   
+ODV_raw(6,:)  = {'Oxygen[µmol/kg]'       '%0.2f' 'DOXY' '' '' ''};   
 ODV_raw(7,:)  = {'OxygenSat[%]'          '%0.1f' 'DOXY_%SAT' '' '' ''};
 ODV_raw(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE' '' '' ''}; 
 ODV_raw(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA' '' '' ''};   
@@ -1138,7 +1138,7 @@ ODV_adj(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP_ADJUSTED' '' '' ''};
 ODV_adj(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL_ADJUSTED' '' '' ''};   
 ODV_adj(4,:)  = {'Sigma_theta[kg/m^3]'   '%0.3f' 'SIGMA_THETA' '' '' ''};
 ODV_adj(5,:)  = {'Depth[m]'              '%0.3f' 'DEPTH' '' '' ''};
-ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.1f' 'DOXY_ADJUSTED' '' '' ''};   
+ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.2f' 'DOXY_ADJUSTED' '' '' ''};   
 ODV_adj(7,:)  = {'OxygenSat[%]'          '%0.1f' 'DOXY_%SAT_ADJUSTED' '' '' ''};
 ODV_adj(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE_ADJUSTED' '' '' ''}; 
 ODV_adj(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA_ADJUSTED' '' '' ''};  
@@ -1328,6 +1328,7 @@ if QC_check == 1
     end
     fprintf(fid_adj,['//Data quality flags: 0=Good, 4=Questionable, 8=Bad, '...
         '1=Missing or not inspected \r\n']);
+    fprintf(fid_adj,['//Note: all timestamps are in GMT. \r\n']);
     
     std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
         'Lon [°E]' 'Lat [°N]' 'QF'}; % SIZE = 8
@@ -1521,6 +1522,7 @@ if QC_check == 1
         end
         fprintf(fid_adj,['//Data quality flags: 0=Good, 4=Questionable, 8=Bad, '...
             '1=Missing or not inspected \r\n']);
+        fprintf(fid_adj,['//Note: all timestamps are in GMT. \r\n']);
         
         % NOW PRINT THE ADJUSTED DATA HEADER
         std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
