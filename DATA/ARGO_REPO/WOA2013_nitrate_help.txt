@@ -1,0 +1,1 @@
+Place subfolders holding Argo netcdf files here (See Section 2.3 of SageO2Argo_Manual).
