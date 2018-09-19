@@ -1,6 +1,6 @@
-function INSTALL_sageO2Argo(DATAdir)
+function INSTALL_sageO2Argo
 % ************************************************************************
-% INSTALL_sageO2.m
+% INSTALL_sageO2Argo.m
 % ************************************************************************
 %
 % Saves all relevant paths to your MATLAB directory, and stores your
@@ -10,7 +10,7 @@ function INSTALL_sageO2Argo(DATAdir)
 % USE AS:  INSTALL_sageO2Argo('\\atlas\ChemWebData\floats\');
 %          INSTALL_sageO2Argo('C:\mymsgfilelocation\')
 %
-% INPUTS:  DATAdir    = path to data files holding airO2 data.
+% INPUTS:  
 %
 % OUTPUTS:
 %
@@ -22,6 +22,10 @@ function INSTALL_sageO2Argo(DATAdir)
 % DATE: 10/25/17
 % UPDATES: 04/15/18: Added file grab for WOA and NCEP files (bring to
 % local)
+%          09/17/18: removed input to function.  DataDir defaults to
+%          /ARGO_PROCESSING/DATA/ARGO_REPO/.  User can navigate to files if
+%          held elsewhere.  This makes install easier (one less
+%          definition).
 % NOTES:   
 % ************************************************************************
 %
@@ -44,11 +48,11 @@ else
 
     disp('INSTALLING "ARGO_PROCESSING\DATA" PATHS...')
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'SHIPBOARD',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'ARGO_REPO',fp]);
 %     addpath('C:\temp\');
-    addpath(DATAdir);
     savepath
 end
-save('sageO2Argo_workingDIR.mat','topdir','DATAdir');
+save('sageO2Argo_workingDIR.mat','topdir');
 
 % CHECK FOR WOA DATA.  IF DOESN'T EXIST, DOWNLOAD IT.
 disp('CHECKING FOR LOCAL WOA2013 FILES...')

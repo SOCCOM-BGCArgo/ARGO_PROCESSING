@@ -943,12 +943,12 @@ function gui = createInterface( ~ )
     function on_applyO2gain( source, ~ ) 
          handlesODVQC.info.Mprof = 1;
          handlesODVQC.info.float_name = ['ODV',inputs.floatID];
-         % Calling Make_Mprof_ODVQC which also gets used in Sage.  Maintain QCA
-         %structure, as called in this function.
+         % Calling Make_Mprof_ODVQC which also gets used in Sage. 
+         %Maintain QCA structure, as called in this function
          handlesODVQC.QCA.NO3 = [];
          handlesODVQC.QCA.PH_OFFSET = [];
          handlesODVQC.QCA.PH = [];
-%          handlesODVQC.QCA.CHL = [];
+         
          if ~isempty(DATA.bigG) && ~isnan(DATA.bigG)
             handlesODVQC.QCA.O2 = [1 DATA.bigG 0 0];
             tf = Make_Mprof_ODVQC(handlesODVQC);
