@@ -87,30 +87,12 @@ function varargout = sage()
 gui = createInterface();
 handles = [];
 % Define paths
-dirs.user_dir = [getenv('USERPROFILE'),filesep,'Documents',filesep,'MATLAB',filesep]; 
-dirs.mfiles    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'MFILES',filesep];
-dirs.woa       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2013',filesep];
-dirs.glodap    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'GLODAP',filesep];
-dirs.mat       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATS',filesep];
-dirs.cal       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'CAL',filesep];
-dirs.FVlocal   = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATVIZ',filesep];
-dirs.FV        = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATVIZ',filesep];
-%dirs.FV        = '\\sirocco\wwwroot\lobo\Data\FloatVizData\';
-dirs.QCadj     = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'CAL',filesep,'QC_LISTS',filesep];
-dirs.bottle    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'SHIPBOARD',filesep];
-dirs.QC_images = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA\QC_images',filesep];
-dirs.ERA       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'ERA_INT',filesep];
-dirs.temp      = ['C:',filesep,'temp',filesep];
-dirs.msg       = '\\atlas\ChemWebData\floats\';
-dirs.alt       = '\\atlas\ChemWebData\floats\alternate\'; %alternate msg file directory (MBARI).  Comment out if not used.
-dirs.msg_comb  = '\\atlas\ChemWebData\floats\combined\';
+dirs = SetupDirs_sage;
+
+
 % Initialize variables
 DATA = [];
 inputs = [];
-
-
-% Set some paths
-tf = set_sage_paths(dirs.user_dir);
 
 % % Define my colors
 % 
@@ -546,12 +528,12 @@ function gui = createInterface( ~ )
 		set(gui.rb2(2),'Value',1)
 		set(gui.rb2(3),'Value',0)
         % CHOOSE FILE
-        [fn,pn] = uigetfile([dirs.FVlocal,'*.txt'],'SELECT FILE');
+        [fn,pn] = uigetfile([dirs.FVlocal,'*.TXT'],'SELECT FILE');
         if ~isequal(fn, 0)  
             str = [pn,fn];
             set( gui.Fbutton,'String',fn);
             handles.info.file_name  = fn;
-            handles.info.file_path  = pn
+            handles.info.file_path  = pn;
             handles.info.float_name = regexpi(fn,'\w+(?=\QC.txt)|\w+(?=\.txt)', ...
                 'match', 'once');
             handles.info.UW_ID  = regexp(handles.info.float_name, ...
@@ -750,7 +732,7 @@ function gui = createInterface( ~ )
             DATA.iGPH  = find(strcmp('ph_insitu',DATA.G.hdr)     == 1);
  
             
-            [handles, DATA] = get_LIR_CAN_MLR(handles,DATA);
+            [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA);
 % % % %         
 % % % %             % ********************************************************************
 % % % %             % GET CANYON NEURAL NETWORK, LINR & LIPHER APROXIMATIONs FOR NO3 AND PH

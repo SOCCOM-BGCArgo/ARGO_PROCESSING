@@ -1,4 +1,4 @@
-function [handles, DATA] = get_LIR_CAN_MLR(handles,DATA)
+function [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA)
 
 % function to calculate reference data for use in SAGE
 
@@ -25,9 +25,9 @@ function [handles, DATA] = get_LIR_CAN_MLR(handles,DATA)
 %                 set(handles.recumpute_text, ...
 %                     'String','LOADING CANYON NEURAL NETWORK NO3  & PH ESTIMATES ....')
 %                 drawnow
-        canyon_no3 = CANYON_jp(d.data(:,1),d.data(:,4),d.data(:,3), ...
+        canyon_no3 = CANYON_jp(dirs,d.data(:,1),d.data(:,4),d.data(:,3), ...
             d.data(:,6),d.data(:,8),d.data(:,10),O2data,'NO3');
-        canyon_ph = CANYON_jp(d.data(:,1),d.data(:,4),d.data(:,3), ...
+        canyon_ph = CANYON_jp(dirs,d.data(:,1),d.data(:,4),d.data(:,3), ...
             d.data(:,6),d.data(:,8),d.data(:,10),O2data,'PH');     
         handles.canyon.hdr  = [d.hdr([1,2,6]),'canyon_no3','canyon_ph'];
         handles.canyon.data = [d.data(:,[1,2,6]), canyon_no3, canyon_ph];
