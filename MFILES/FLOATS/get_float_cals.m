@@ -53,10 +53,13 @@ function cal = get_float_cals(MBARI_ID_str, dirs)
 % 07/19/17 Added functionality to extract comments line at bottom of
 %   *FloatConfig.txt files if they exist. These comments can then be
 %   printed to the ODV txt files in argo2ODV*. m files
+% 09/10/18 Added code to look for seconday pH pressure coefficients. At
+%   this point this change onlly afects 0690. -jp
 
 % ************************************************************************
 % FOR TESTING
 % dirs =[];
+% MBARI_ID_str = '0690SOOCN';
 % %MBARI_ID_str = '0569SoOcn';
 % MBARI_ID_str = '7614SoOcn';
 % ************************************************************************
@@ -582,6 +585,17 @@ elseif strcmp(info.float_type,'NAVIS')
         pH.k0     = ph_tmp(1);
         pH.k2     = ph_tmp(2);
         pH.pcoefs = ph_tmp(3:end);
+        
+        % OK NOW CHECK FOR SCONDARY PCOEF LINE - will be next line
+        tline = fgetl(fid);
+        if ischar(tline) && ~isempty(regexp(tline,'^pH sensor secondary','once'))
+            comma_ct = regexp(tline,',','once');
+            ph_tmp   = textscan(tline(comma_ct+1:end),'%f','Delimiter',',', ...
+                'CollectOutput',1);
+            ph_tmp     = ph_tmp{1}; % cell to number array
+            pH.secondary_Zlimits = [ph_tmp(1) ph_tmp(2)];
+            pH.secondary_pcoefs = ph_tmp(3:end);
+        end
     end
     clear ph_info comma_ct ph_tmp
 end

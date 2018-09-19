@@ -3,6 +3,7 @@ function out = parse_bad_sensor_list(file_path)
 % CHANGE HISTORY
 % 08/28/17 Added code to look for "NO_WMO" floats in addition to those with
 %   WMO #'s -jp
+% 09/12/2018 TM, added flag option (final column)  THESE FLAG ENTRIES ARE ARGO FORMAT!!! (QF=3 IS QUESTIONABLE, QF=4 IS BAD)
 
 % TEST
 % file_path  = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
@@ -13,7 +14,7 @@ out.hdr    = []; % Output if function fails
 out.list   = [];    
 
 format_str = '%s%s%s%s';
-cell_list  = cell(1000,4); % for pasing text file
+cell_list  = cell(1000,5); % for pasing text file
 list  = cell(1000,5); % for final output
 max_cycles = 1000; % # way greater than the max # of cycles a float can do 
 
@@ -42,7 +43,7 @@ fclose(fid);
 cell_list = cell_list(1:ct,:);
 
 % CREATE FINAL OUTPUT
-hdr  = [txt_hdr, 'CYCLE BLOCKS'];
+hdr  = [txt_hdr(1:4), 'CYCLE BLOCKS', txt_hdr(5)];
 
 % GET HEADER INDICES
 iWMO = find(strcmp('WMO #',hdr) == 1);
@@ -50,10 +51,11 @@ iM   = find(strcmp('MBARI ID STR',hdr) == 1);
 iSEN = find(strcmp('SENSOR',hdr) == 1);
 iCYC = find(strcmp('CYCLES',hdr) == 1); % idividual bad profiles
 iCB  = find(strcmp('CYCLE BLOCKS',hdr) == 1); % start block of bad
-
+iFLAG = find(strcmp('FLAG',hdr) == 1); %flag (ODV style, 8 = 'bad', 4 = 'questionable')
 
 for i = 1:ct
     list(i,[iWMO,iM,iSEN]) = cell_list(i,1:3);
+    list(i,iFLAG) = cell_list(i,end);
     cycle_str = regexprep(cell_list{i,iCYC}, ' ', ''); % remove any spaces
     
     % Get indvidual profile list - look for a block of #'s followed by a comma

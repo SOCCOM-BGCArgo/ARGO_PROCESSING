@@ -207,7 +207,7 @@ while ischar(tline)
     end
     
     FlbbMode_ind = regexp(tline,'\$ FlbbMode', 'once');
-    if ~isempty(FlbbMode_ind) % flag may exist stating whether flbb on
+    if ~isempty(FlbbMode_ind) % flag may exist stating whether Flbb on
         data.FlbbMode = str2double(regexp(tline,'\d+','once','match'));
         clear FlbbMode_ind
     end
@@ -420,6 +420,7 @@ else
     end
     
 end
+
 
 clearvars -except data
 

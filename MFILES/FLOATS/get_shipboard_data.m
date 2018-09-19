@@ -36,6 +36,7 @@ function d = get_shipboard_data(file_path)
 %       estimate pH in situ. The nutrient estimates are not returned to the
 %       data set for output. This is added around line 319. SR1B cruise
 %       (floats 9652 9655 9657 9662) has no Silicate data.  - jp
+%   08/28/2018 Fixed QF screening.  Now only allows "2 = No problems noted".
 
 % TESTING             
 % file_path = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\', ...
@@ -190,12 +191,22 @@ data(data == -999) = NaN;
 
 ind  = regexp(hdr,'_FLAG_W');
 tfQC = ~cellfun(@isempty,ind); % quality flag cols
-tfD  = logical(tfQC*0); % predim for data cols
-tfD(1:end-1) = tfQC(2:end); % shifted by -1 for data index assoc with QC flag
-QCtmp = data(:,tfQC) == 4; % Flag bad data for removal
-Dtmp = data(:,tfD );
-Dtmp(QCtmp) = NaN; % bad values to nan
-data(:,tfD) = Dtmp; % put back into data matrix
+for i = 1:length(tfQC)
+    if tfQC(i) == 1 %QF flag
+        QCtmp = find(data(:,i)~=2);
+        if ~isempty(QCtmp)
+            data(QCtmp,i-1) = nan;
+        end
+    end
+end
+
+% tfD  = logical(tfQC*0); % predim for data cols
+% tfD(1:end-1) = tfQC(2:end); % shifted by -1 for data index assoc with QC flag
+% % QCtmp = data(:,tfQC) == 4; % Flag bad data for removal, 4 = "did not trip correctly"
+% QCtmp = data(:,tfQC) ~= 2; % Flag bad data for removal.  2 = "no problems noted"
+% Dtmp = data(:,tfD );
+% Dtmp(QCtmp) = NaN; % bad values to nan
+% data(:,tfD) = Dtmp; % put back into data matrix
 data(:,tfQC) = []; % remove QC cols -don't need any more
 hdr(tfQC)    = []; % remove QC cols -don't need any more
 clear ind tfQC tfD QCtmp Dtmp

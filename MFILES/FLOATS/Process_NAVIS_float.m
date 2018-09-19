@@ -6,7 +6,8 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 %    (P, T, S, O2, NO3, pH, CHl, Bbp, CDOM) and then merges these results
 %    for a given profile.
 %
-%    Each profile is saved as a *.mat file with the following format:
+%    Each profile is saved as a *.mat file with the following
+%    format:
 %    WMO_ID.PROFILE_#.mat (Ex 5904683.006.mat) in a directory using the
 %    WMO_ID for its name. Each file contains 3 structures with variables
 %    inside named using ARGO definitions:
@@ -85,6 +86,21 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 %   NPQ only gets applied to HR NAVIS data. low res is below 1000m. -jp
 % 02/5/2018 - Added code for including "<param>_DATA_MODE" variables in Argo mat files
 %	This is used in identifying whether a cycle is real-time or delayed mode, for BRtransfer purposes.
+% 05/25/18 Add code so that CHL_ADJUSTED is always calculated if the raw
+%           data exists. If an in situ DC can't be determined the factory
+%           DC is used. - jp
+% 05/31/2018 Added spiketest for DOXY, NITRATE, PH_IN_SITU_TOTAL (raw and adjusted)
+% 08/14/2018 Added secial case for 0948 and 0949 processing (Fassbender
+%       EXPORTS floats).  These have not pH temp, and also different FLBB
+%       column headers.  However, moving forward all NAVIS will not have pH
+%       temp, so need a more permanent solution.
+% 08/23/2018  Added special case for 0948 and 0949 N processing (Fassbender
+%       EXPORTS floats).  These have a spike in nitrate toward surface due to
+%       high NO3 gradient and the lag in sample timing btwn SUNA and CTD. 
+% 
+% 09/10/18 Added code to process floats with seconday pH pressure coefficients.
+%     At this point this change onlly afects 0690. -jp
+% 09/11/2018, TM changed calls to isbadsensor.m in support of adding QF='questionable' to bad sensor list capabilities.
 % ************************************************************************
 
 % FOR TESTING
@@ -144,7 +160,7 @@ if isempty(dirs)
     elseif ~isstruct(dirs)
         disp('Check "dirs" input. Must be an empty variable or a structure')
         return
-    end
+end
 
 % ************************************************************************
 % SET MSG DIRECTORIES FOR SPECIAL CASE FLOATS. SO FAR THIS INCLUDES FLOATS
@@ -270,6 +286,7 @@ end
 % CREATE ANONYMOUS FONCTION TO TEST FOR FILE AGE LESS THEN 4 HOURS OLD
 % REMOVE THESE FILES FROM LIST
 age_test = @(x) x > (now-4/24);
+% age_test = @(x) x > (now);
 
 if ~isempty(mlist) && ~isempty(mlist.reg_list)
     t1 = cellfun(age_test, mlist.reg_sdn, 'UniformOutput', 1);
@@ -470,7 +487,14 @@ for msg_ct = 1:size(msg_list,1)
     
     %disp(['Processing float ' cal.info.name, ' profile ',cast_num])
     d = parse_NAVISmsg4ARGO([dirs.temp,msg_file]);
-
+    if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) %Quick hack to get around different column headers in msg file for flbb!!
+        d.lr_hdr{7} = 'Fl'; %'Mch1'
+        d.lr_hdr{8} = 'Bb'; %'Mch2'
+        d.lr_hdr{9} = 'Cdm'; %'Mch3'
+        d.hr_hdr{6} = 'Fl'; %'Mch1'
+        d.hr_hdr{7} = 'Bb'; %'Mch2'
+        d.hr_hdr{8} = 'Cdm'; %'Mch3'
+    end
     % IF MSG FILE EXIST BUT NO LR DATA REMOVE FROM NEW LIST AND
     % PUT IN BAD LIST
     if isempty(d.lr_d)
@@ -620,30 +644,30 @@ for msg_ct = 1:size(msg_list,1)
     
     % ADD SALINITY & TEMP QF BECAUSE BAD S PERCOLATES TO 
     % O, N and pH, density
-    BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
+    [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
     LRQF_S   = LR.PSAL < RCR.S(1) | LR.PSAL > RCR.S(2);
     t_bio  = LR.PSAL ~= fv.bio;
     
     LR.PSAL_QC(LRQF_S)  = 4;  % BAD
     LR.PSAL_QC(~LRQF_S & LR.PSAL ~= fv.bio) = 1; % GOOD
-    LR.PSAL_QC(t_bio) = LR.PSAL_QC(t_bio) * ~BSLflag + BSLflag*4;
+    LR.PSAL_QC(t_bio) = LR.PSAL_QC(t_bio) * ~BSLflag + BSLflag*theflag;
     LR.PSAL_ADJUSTED_QC(LRQF_S)  = 4;  % BAD
     LR.PSAL_ADJUSTED_QC(~LRQF_S & LR.PSAL_ADJUSTED ~= fv.bio) = 1;
     LR.PSAL_ADJUSTED_QC(t_bio) = LR.PSAL_ADJUSTED_QC(t_bio) * ...
-        ~BSLflag + BSLflag*4;% GOOD
+        ~BSLflag + BSLflag*theflag;% GOOD
     
     
-    BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
+    [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
     LRQF_T  = LR.TEMP < RCR.T(1) | LR.TEMP > RCR.T(2);
     t_bio   = LR.TEMP ~= fv.bio;
     
     LR.TEMP_QC(LRQF_T)  = 4;  % BAD
     LR.TEMP_QC(~LRQF_T & LR.TEMP ~= fv.bio) = 1; % GOOD
-    LR.TEMP_QC(t_bio) = LR.TEMP_QC(t_bio) * ~BSLflag + BSLflag*4;
+    LR.TEMP_QC(t_bio) = LR.TEMP_QC(t_bio) * ~BSLflag + BSLflag*theflag;
     LR.TEMP_ADJUSTED_QC(LRQF_T)  = 4;  % BAD
     LR.TEMP_ADJUSTED_QC(~LRQF_T & LR.TEMP_ADJUSTED ~= fv.bio) = 1; % GOOD
     LR.TEMP_ADJUSTED_QC(t_bio) = LR.TEMP_ADJUSTED_QC(t_bio) * ...
-        ~BSLflag + BSLflag*4;
+        ~BSLflag + BSLflag*theflag;
 
     % HIGH RES DATA
     if r_hr > 0
@@ -659,29 +683,29 @@ for msg_ct = 1:size(msg_list,1)
         HR.TEMP_QC = HR.PSAL_QC;
         HR.TEMP_ADJUSTED_QC = HR.PSAL_QC;
         
-        BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
+        [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
         HRQF_S  = HR.PSAL < RCR.S(1) | HR.PSAL > RCR.S(2);
         t_bio   = HR.PSAL ~= fv.bio;
         
         HR.PSAL_QC(HRQF_S) = 4;  % BAD
         HR.PSAL_QC(~HRQF_S & HR.PSAL ~= fv.bio) = 1; % GOOD
-        HR.PSAL_QC(t_bio) = HR.PSAL_QC(t_bio) * ~BSLflag + BSLflag*4;
+        HR.PSAL_QC(t_bio) = HR.PSAL_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         HR.PSAL_ADJUSTED_QC(HRQF_S)  = 4;  % BAD
         HR.PSAL_ADJUSTED_QC(~HRQF_S & HR.PSAL_ADJUSTED ~= fv.bio) = 1; % GOOD
         HR.PSAL_ADJUSTED_QC(t_bio) = HR.PSAL_ADJUSTED_QC(t_bio) * ...
-            ~BSLflag + BSLflag*4;
+            ~BSLflag + BSLflag*theflag;
         
-        BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
+        [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
         HRQF_T   = HR.TEMP < RCR.T(1) | HR.TEMP > RCR.T(2);
         t_bio   = HR.TEMP ~= fv.bio;
         
         HR.TEMP_QC(HRQF_T)  = 4;  % BAD
         HR.TEMP_QC(~HRQF_T & HR.TEMP ~= fv.bio) = 1; % GOOD
-        HR.TEMP_QC(t_bio) = HR.TEMP_QC(t_bio) * ~BSLflag + BSLflag*4;
+        HR.TEMP_QC(t_bio) = HR.TEMP_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         HR.TEMP_ADJUSTED_QC(HRQF_T)  = 4;  % BAD
         HR.TEMP_ADJUSTED_QC(~HRQF_T & HR.TEMP_ADJUSTED ~= fv.bio) = 1; % GOOD
         HR.TEMP_ADJUSTED_QC(t_bio) = HR.TEMP_ADJUSTED_QC(t_bio) * ...
-            ~BSLflag + BSLflag*4;
+            ~BSLflag + BSLflag*theflag;
     
         if isempty(iNO3) % nitrate exists need to add +1 to bin index)
             index_add = 0;
@@ -828,25 +852,32 @@ for msg_ct = 1:size(msg_list,1)
         end
         
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-        BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'O');
+        [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'O');
         t_bio = LR.DOXY ~= fv.bio;
         tST   = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect O2
         t_chk = t_bio & (LR.DOXY < RCR.O(1)|LR.DOXY > RCR.O(2) | tST);
+        tz = LR.PRES == max(LR.PRES) & t_bio; % 1st sample at depth always bad on NAVIS
         
         
         LR.DOXY_QC(t_chk) = 4;
+        LR.DOXY_QC(tz) = 4;
         LR.PHASE_DELAY_DOXY_QC(t_chk) = 4;
-        LR.DOXY_QC(t_bio) = LR.DOXY_QC(t_bio) * ~BSLflag + BSLflag*4;
+        LR.PHASE_DELAY_DOXY_QC(tz) = 4;
+        LR.DOXY_QC(t_bio) = LR.DOXY_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.PHASE_DELAY_DOXY_QC(t_bio) = LR.PHASE_DELAY_DOXY_QC(t_bio) * ...
-            ~BSLflag + BSLflag*4;
+            ~BSLflag + BSLflag*theflag;
+        
+        
         
         t_bio = LR.DOXY_ADJUSTED ~= fv.bio;
         tST   = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect O2
         t_chk = t_bio & ...
             (LR.DOXY_ADJUSTED < RC.O(1)|LR.DOXY_ADJUSTED > RC.O(2) | tST);
+        tz = LR.PRES == max(LR.PRES) & t_bio; %
         LR.DOXY_ADJUSTED_QC(t_chk) = 4;
+        LR.DOXY_ADJUSTED_QC(tz) = 4;
         LR.DOXY_ADJUSTED_QC(t_bio) = LR.DOXY_ADJUSTED_QC(t_bio) * ...
-            ~BSLflag + BSLflag*4;
+            ~BSLflag + BSLflag*theflag;
         
         if r_hr > 0
             t_bio = HR.DOXY ~= fv.bio;
@@ -855,9 +886,9 @@ for msg_ct = 1:size(msg_list,1)
             
             HR.DOXY_QC(t_chk) = 4;
             HR.PHASE_DELAY_DOXY_QC(t_chk) = 4;
-            HR.DOXY_QC(t_bio) = HR.DOXY_QC(t_bio) * ~BSLflag + BSLflag*4;
+            HR.DOXY_QC(t_bio) = HR.DOXY_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             HR.PHASE_DELAY_DOXY_QC(t_bio) = HR.PHASE_DELAY_DOXY_QC(t_bio) ...
-                * ~BSLflag + BSLflag*4;
+                * ~BSLflag + BSLflag*theflag;
             
             t_bio = HR.DOXY_ADJUSTED ~= fv.bio;
             tST   = HR.PSAL_ADJUSTED_QC == 4 | HR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect O2
@@ -865,9 +896,50 @@ for msg_ct = 1:size(msg_list,1)
                 (HR.DOXY_ADJUSTED < RC.O(1)|HR.DOXY_ADJUSTED > RC.O(2) | tST);
             HR.DOXY_ADJUSTED_QC(t_chk) = 4;
             HR.DOXY_ADJUSTED_QC(t_bio) = HR.DOXY_ADJUSTED_QC(t_bio) * ...
-                ~BSLflag + BSLflag*4;
+                ~BSLflag + BSLflag*theflag;
         end
-        
+        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
+        % DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
+        % (BAD).  BGC_spiketest screens for nans and fill values and pre-identified bad values.
+        %
+        % RUN TEST ON LR DOXY AND DOXY_ADJUSTED
+        QCscreen_O = LR.DOXY_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.DOXY],'O2',dirs.cal,fv.bio,QCscreen_O);
+        if ~isempty(spike_inds)
+            LR.DOXY_QC(spike_inds) = quality_flags;
+            disp(['LR.DOXY QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO LR.DOXY SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        QCscreen_Oadj = LR.DOXY_ADJUSTED_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.DOXY_ADJUSTED],'O2',dirs.cal,fv.bio,QCscreen_Oadj);
+        if ~isempty(spike_inds)
+            LR.DOXY_ADJUSTED_QC(spike_inds) = quality_flags;
+            disp(['LR.DOXY_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO LR.DOXY_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        clear QCscreen_O QCscreenOadj
+        %
+        % RUN TEST ON HR DOXY AND DOXY_ADJUSTED
+        QCscreen_O = HR.DOXY_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[HR.PRES HR.DOXY],'O2',dirs.cal,fv.bio,QCscreen_O);
+        if ~isempty(spike_inds)
+            HR.DOXY_QC(spike_inds) = quality_flags;
+            disp(['HR.DOXY QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO HR.DOXY SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        QCscreen_Oadj = HR.DOXY_ADJUSTED_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[HR.PRES HR.DOXY_ADJUSTED],'O2',dirs.cal,fv.bio,QCscreen_Oadj);
+        if ~isempty(spike_inds)
+            HR.DOXY_ADJUSTED_QC(spike_inds) = quality_flags;
+            disp(['HR.DOXY_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO HR.DOXY_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        clear QCscreen_O QCscreenOadj
+        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
     end
     clear lr_nan hr_nan
     
@@ -932,74 +1004,81 @@ for msg_ct = 1:size(msg_list,1)
                 end
             end
             
+            % FIGURE OUT WHICH DC TO USE BUT ALWAYS CREATE ADJUSTED CHL
+            % DATA IF RAW EXISTS
             if isfield(cal.CHL, 'SWDC')
-                LR.CHLA_ADJUSTED(~lr_nan) = (lr_d(~lr_nan,iChl) - ...
-                    cal.CHL.SWDC.DC) .* cal.CHL.ChlScale ./ 2;
-                LR.CHLA_ADJUSTED_QC(~lr_nan) =  2;
-                LR.CHLA_ADJUSTED_ERROR(~lr_nan) = ...
-                    abs(LR.CHLA_ADJUSTED(~lr_nan) * 2);
-                
-                if r_hr > 0 % ONLY NEED TO DO NPQ ON HR DATA, LR DEEP ONLY
-                    HR.CHLA_ADJUSTED(~hr_nan) = (hr_d(~hr_nan,iChl) - ...
-                        cal.CHL.SWDC.DC) .* cal.CHL.ChlScale ./ 2;
-                    HR.CHLA_ADJUSTED_QC(~hr_nan) =  2;
-                    
-                    % NPQ NEXT
-                    NPQ_CHL = HR.CHLA_ADJUSTED;
-                    NPQ_CHL(hr_nan) = NaN; % fill back to NaN 
-                    NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
-                        [hr_d(:,[iP,iT,iS]),NPQ_CHL], dirs);
-                    NPQ.data(hr_nan,2:end) = fv.bio; % nan back to fill
-                    
-                    if ~isempty(NPQ.data)
-                        iXing   = find(strcmp('Xing_MLD',NPQ.hdr) == 1);
-                        iSPIKE  = find(strcmp('CHLspike',NPQ.hdr) == 1);
-                        tNPQ = hr_d(:,iP) <= NPQ.XMLDZ;
-                        HR.CHLA_ADJUSTED(tNPQ & ~hr_nan) = ...
-                            NPQ.data(tNPQ & ~hr_nan,iXing) + ...
-                            NPQ.data(tNPQ & ~hr_nan,iSPIKE);
-                        HR.CHLA_ADJUSTED_QC(tNPQ & ~hr_nan) =  5;
-                        
-                        
-%                       if INFO.cast == 60, pause, end
-%                         figure(10) % TESTING
-%                         p_fill = HR.CHLA_ADJUSTED == 99999;
-%                         plot(NPQ.data(~p_fill,2),NPQ.data(~p_fill,1), ...
-%                             'go-','MarkerFaceColor','g')
-%                         hold on
-%                         plot(HR.CHLA_ADJUSTED(~p_fill),NPQ.data(~p_fill,1),...
-%                             'b*-',NPQ.data(tNPQ&~p_fill,iXing) + ...
-%                             NPQ.data(tNPQ&~p_fill,iSPIKE), ...
-%                             NPQ.data(tNPQ&~p_fill,1),'ko-', ...
-%                             NPQ.data(~p_fill,3),NPQ.data(~p_fill,1),'r-')
-%                         plot(xlim,xlim*0+NPQ.XMLDZ,'y','LineWidth',2)
-%                         set(gca,'Ydir','reverse','Ylim',[0 100])
-%                         legend('SWDC & *0.5', 'Corrected', 'Xing + spike', ...
-%                             '3pt median','NPQ start')
-%                         hold off
-%                         pause
-                        
-                    end
-                    
-                    HR.CHLA_ADJUSTED_ERROR(~hr_nan) = ...
-                        abs(HR.CHLA_ADJUSTED(~hr_nan) * 2);
-                end
-                
-                INFO.CHLA_SCI_CAL_EQU  = ['CHLA_ADJUSTED=CHLA/A, '...
-                    'NPQ corrected (Xing et al., 2012), spike profile ', ...
-                    'added back in'];
-                INFO.CHLA_SCI_CAL_COEF = 'A=2';
-                INFO.CHLA_SCI_CAL_COM  =['A is best estimate ', ...
-                    'from Roesler et al., 2017, doi: 10.1002/lom3.10185'];
+                CHL_DC = cal.CHL.SWDC.DC;
+            else
+                CHL_DC = cal.CHL.ChlDC; % NO IN SITU DARKS YET OR EVER
             end
             
+            LR.CHLA_ADJUSTED(~lr_nan) = (lr_d(~lr_nan,iChl) - ...
+                CHL_DC) .* cal.CHL.ChlScale ./ 2;
+            LR.CHLA_ADJUSTED_QC(~lr_nan) =  2;
+            LR.CHLA_ADJUSTED_ERROR(~lr_nan) = ...
+                abs(LR.CHLA_ADJUSTED(~lr_nan) * 2);
+            
+            if r_hr > 0 % ONLY NEED TO DO NPQ ON HR DATA, LR DEEP ONLY
+                HR.CHLA_ADJUSTED(~hr_nan) = (hr_d(~hr_nan,iChl) - ...
+                    CHL_DC) .* cal.CHL.ChlScale ./ 2;
+                HR.CHLA_ADJUSTED_QC(~hr_nan) =  2;
+                
+                % NPQ NEXT
+                NPQ_CHL = HR.CHLA_ADJUSTED;
+                NPQ_CHL(hr_nan) = NaN; % fill back to NaN
+                NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
+                    [hr_d(:,[iP,iT,iS]),NPQ_CHL], dirs);
+                NPQ.data(hr_nan,2:end) = fv.bio; % nan back to fill
+                
+                if ~isempty(NPQ.data)
+                    iXing   = find(strcmp('Xing_MLD',NPQ.hdr) == 1);
+                    iSPIKE  = find(strcmp('CHLspike',NPQ.hdr) == 1);
+                    tNPQ = hr_d(:,iP) <= NPQ.XMLDZ;
+                    HR.CHLA_ADJUSTED(tNPQ & ~hr_nan) = ...
+                        NPQ.data(tNPQ & ~hr_nan,iXing) + ...
+                        NPQ.data(tNPQ & ~hr_nan,iSPIKE);
+                    HR.CHLA_ADJUSTED_QC(tNPQ & ~hr_nan) =  5;
+                    
+                    
+%                     if INFO.cast == 60, pause, end
+%                     figure(10) % TESTING
+%                     p_fill = HR.CHLA_ADJUSTED == 99999;
+%                     plot(NPQ.data(~p_fill,2),NPQ.data(~p_fill,1), ...
+%                         'go-','MarkerFaceColor','g')
+%                     hold on
+%                     plot(HR.CHLA_ADJUSTED(~p_fill),NPQ.data(~p_fill,1),...
+%                         'b*-',NPQ.data(tNPQ&~p_fill,iXing) + ...
+%                         NPQ.data(tNPQ&~p_fill,iSPIKE), ...
+%                         NPQ.data(tNPQ&~p_fill,1),'ko-', ...
+%                         NPQ.data(~p_fill,3),NPQ.data(~p_fill,1),'r-')
+%                     plot(xlim,xlim*0+NPQ.XMLDZ,'y','LineWidth',2)
+%                     set(gca,'Ydir','reverse','Ylim',[0 100])
+%                     legend('SWDC & *0.5', 'Corrected', 'Xing + spike', ...
+%                         '3pt median','NPQ start')
+%                     hold off
+%                     pause
+                    
+                end
+                
+                HR.CHLA_ADJUSTED_ERROR(~hr_nan) = ...
+                    abs(HR.CHLA_ADJUSTED(~hr_nan) * 2);
+            end
+            
+            INFO.CHLA_SCI_CAL_EQU  = ['CHLA_ADJUSTED=CHLA/A, '...
+                'NPQ corrected (Xing et al., 2012), spike profile ', ...
+                'added back in'];
+            INFO.CHLA_SCI_CAL_COEF = 'A=2';
+            INFO.CHLA_SCI_CAL_COM  =['A is best estimate ', ...
+                'from Roesler et al., 2017, doi: 10.1002/lom3.10185'];
+            
+            
             % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-            BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'CHL');
+            [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'CHL');
             t_bio   = LR.CHLA ~= fv.bio;
             t_chk   = t_bio & (LR.CHLA < RCR.CHL(1)|LR.CHLA > RCR.CHL(2));
             LR.FLUORESCENCE_CHLA_QC(t_bio) = LR.FLUORESCENCE_CHLA_QC(t_bio) ...
-                * ~BSLflag + BSLflag*4;
-            LR.CHLA_QC(t_bio) = LR.CHLA_QC(t_bio) * ~BSLflag + BSLflag*4;
+                * ~BSLflag + BSLflag*theflag;
+            LR.CHLA_QC(t_bio) = LR.CHLA_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             LR.CHLA_QC(t_chk) = 4;
             LR.FLUORESCENCE_CHLA_QC(t_chk) = 4;
             
@@ -1007,8 +1086,8 @@ for msg_ct = 1:size(msg_list,1)
                 t_bio = HR.CHLA ~= fv.bio;
                 t_chk = t_bio & (HR.CHLA < RCR.CHL(1)|HR.CHLA > RCR.CHL(2));
                 HR.FLUORESCENCE_CHLA_QC(t_bio) = HR.FLUORESCENCE_CHLA_QC(t_bio) ...
-                    * ~BSLflag + BSLflag*4;
-                HR.CHLA_QC(t_bio) = HR.CHLA_QC(t_bio) * ~BSLflag + BSLflag*4;
+                    * ~BSLflag + BSLflag*theflag;
+                HR.CHLA_QC(t_bio) = HR.CHLA_QC(t_bio) * ~BSLflag + BSLflag*theflag;
                 HR.FLUORESCENCE_CHLA_QC(t_chk) = 4;
                 HR.CHLA_QC(t_chk) = 4;
             end
@@ -1019,7 +1098,7 @@ for msg_ct = 1:size(msg_list,1)
                 t_chk = t_bio & ...
                     (LR.CHLA_ADJUSTED < RC.CHL(1)|LR.CHLA_ADJUSTED > RC.CHL(2));
                 LR.CHLA_ADJUSTED_QC(t_bio) = LR.CHLA_ADJUSTED_QC(t_bio) ...
-                    * ~BSLflag + BSLflag*4;
+                    * ~BSLflag + BSLflag*theflag;
                 LR.CHLA_ADJUSTED_QC(t_chk) = 4;
                 
                 if r_hr > 0
@@ -1027,7 +1106,7 @@ for msg_ct = 1:size(msg_list,1)
                     t_chk = t_bio & ...
                         (HR.CHLA_ADJUSTED < RC.CHL(1)|HR.CHLA_ADJUSTED > RC.CHL(2));
                     HR.CHLA_ADJUSTED_QC(t_bio) = HR.CHLA_ADJUSTED_QC(t_bio) ...
-                        * ~BSLflag + BSLflag*4;
+                        * ~BSLflag + BSLflag*theflag;
                     HR.CHLA_ADJUSTED_QC(t_chk) = 4;
                 end
             end
@@ -1145,12 +1224,12 @@ for msg_ct = 1:size(msg_list,1)
         end
         
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-        BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'BBP');
+        [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'BBP');
         t_bio   = LR.BBP700 ~= fv.bio;
         t_chk = t_bio &(LR.BBP700 < RCR.BB700(1)|LR.BBP700 > RCR.BB700(2));
         LR.BETA_BACKSCATTERING700_QC(t_bio) = ...
-            LR.BETA_BACKSCATTERING700_QC(t_bio) * ~BSLflag + BSLflag*4;
-        LR.BBP700_QC(t_bio) = LR.BBP700_QC(t_bio) * ~BSLflag + BSLflag*4;
+            LR.BETA_BACKSCATTERING700_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        LR.BBP700_QC(t_bio) = LR.BBP700_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.BETA_BACKSCATTERING700_QC(t_chk) = 4;
         LR.BBP700_QC(t_chk) = 4;
         
@@ -1159,7 +1238,7 @@ for msg_ct = 1:size(msg_list,1)
         t_chk = t_bio & (LR.BBP700_ADJUSTED < RC.BB700(1)| ...
              LR.BBP700_ADJUSTED > RC.BB700(2));
         LR.BBP700_ADJUSTED_QC(t_bio) = LR.BBP700_ADJUSTED_QC(t_bio) * ...
-            ~BSLflag + BSLflag*4;
+            ~BSLflag + BSLflag*theflag;
         LR.BBP700_ADJUSTED_QC(t_chk) = 4;
         
         if r_hr > 0
@@ -1167,8 +1246,8 @@ for msg_ct = 1:size(msg_list,1)
             t_chk = t_bio & ...
                 (HR.BBP700 < RCR.BB700(1)|HR.BBP700 > RCR.BB700(2));
             HR.BETA_BACKSCATTERING700_QC(t_bio) = ...
-                HR.BETA_BACKSCATTERING700_QC(t_bio) * ~BSLflag + BSLflag*4;
-            HR.BBP700_QC(t_bio) = HR.BBP700_QC(t_bio) * ~BSLflag + BSLflag*4;
+                HR.BETA_BACKSCATTERING700_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+            HR.BBP700_QC(t_bio) = HR.BBP700_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             HR.BETA_BACKSCATTERING700_QC(t_chk) = 4;
             HR.BBP700_QC(t_chk) = 4;
             
@@ -1176,7 +1255,7 @@ for msg_ct = 1:size(msg_list,1)
             t_chk = t_bio & (HR.BBP700_ADJUSTED < RC.BB700(1)| ...
                 HR.BBP700_ADJUSTED > RC.BB700(2));
             HR.BBP700_ADJUSTED_QC(t_bio) = HR.BBP700_ADJUSTED_QC(t_bio) ...
-                * ~BSLflag + BSLflag*4;
+                * ~BSLflag + BSLflag*theflag;
             HR.BBP700_ADJUSTED_QC(t_chk) = 4;
         end
         
@@ -1245,12 +1324,12 @@ for msg_ct = 1:size(msg_list,1)
         end
         
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-        BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'CDOM');
+        [BSLflag,theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'CDOM');
         t_bio = LR.CDOM ~= fv.bio;
         t_chk = t_bio & (LR.CDOM < RCR.CDOM(1)|LR.CDOM > RCR.CDOM(2));
         LR.FLUORESCENCE_CDOM_QC(t_bio) = LR.FLUORESCENCE_CDOM_QC(t_bio) ...
-            * ~BSLflag + BSLflag*4;
-        LR.CDOM_QC(t_bio) = LR.CDOM_QC(t_bio) * ~BSLflag + BSLflag*4;
+            * ~BSLflag + BSLflag*theflag;
+        LR.CDOM_QC(t_bio) = LR.CDOM_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.FLUORESCENCE_CDOM_QC(t_chk) = 4;
         LR.CDOM_QC(t_chk) = 4;
         
@@ -1258,15 +1337,15 @@ for msg_ct = 1:size(msg_list,1)
         t_chk = t_bio & ...
             (LR.CDOM_ADJUSTED < RC.CDOM(1)|LR.CDOM_ADJUSTED > RC.CDOM(2));
         LR.CDOM_ADJUSTED_QC(t_bio) = LR.CDOM_ADJUSTED_QC(t_bio) *  ...
-            ~BSLflag + BSLflag*4;
+            ~BSLflag + BSLflag*theflag;
         LR.CDOM_ADJUSTED_QC(t_chk) = 4;
         
         if r_hr > 0
             t_bio = HR.CDOM ~= fv.bio;
             t_chk = t_bio & (HR.CDOM < RCR.CDOM(1)|HR.CDOM > RCR.CDOM(2));
             HR.FLUORESCENCE_CDOM_QC(t_bio) = HR.FLUORESCENCE_CDOM_QC(t_bio) ...
-                * ~BSLflag + BSLflag*4;
-            HR.CDOM_QC(t_bio) = HR.CDOM_QC(t_bio) * ~BSLflag + BSLflag*4;
+                * ~BSLflag + BSLflag*theflag;
+            HR.CDOM_QC(t_bio) = HR.CDOM_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             HR.FLUORESCENCE_CDOM_QC(t_chk) = 4;
             HR.CDOM_QC(t_chk) = 4;
             
@@ -1274,7 +1353,7 @@ for msg_ct = 1:size(msg_list,1)
             t_chk = t_bio & ...
                 (HR.CDOM_ADJUSTED < RC.CDOM(1)|HR.CDOM_ADJUSTED > RC.CDOM(2));
             HR.CDOM_ADJUSTED_QC(t_bio) = HR.CDOM_ADJUSTED_QC(t_bio) *  ...
-                ~BSLflag + BSLflag*4;
+                ~BSLflag + BSLflag*theflag;
             HR.CDOM_ADJUSTED_QC(t_chk) = 4;
         end
         
@@ -1455,13 +1534,39 @@ for msg_ct = 1:size(msg_list,1)
         
         LR.VRS_PH(~lr_nan)     = lr_d(~lr_nan,iphV);
         LR.VRS_PH_QC(~lr_nan)  = fv.QC;
-        LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT);
+        if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) %pH temp removed from these floats; use ctd temp
+            LR.TEMP_PH(~lr_nan) = lr_d(~lr_nan,iT);
+        else
+            LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT); % I param
+        end
+%         LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT);
         LR.TEMP_PH_QC(~lr_nan) = fv.QC;
-        
         [lr_phfree, lr_phtot] = phcalc_jp(LR.VRS_PH(~lr_nan), ...
             LR.PRES(~lr_nan), LR.TEMP_PH(~lr_nan), LR.PSAL(~lr_nan), ...
             cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
         
+        if isfield(cal.pH,'secondary_pcoefs')
+            [lr_phfree2, lr_phtot2] = phcalc_jp(LR.VRS_PH(~lr_nan), ...
+                LR.PRES(~lr_nan), LR.TEMP_PH(~lr_nan), LR.PSAL(~lr_nan),...
+                cal.pH.k0, cal.pH.k2, cal.pH.secondary_pcoefs);
+            
+            tz_ph = LR.PRES(~lr_nan) >= cal.pH.secondary_Zlimits(1) & ...
+                LR.PRES(~lr_nan) <= cal.pH.secondary_Zlimits(2);
+            
+            if cal.pH.secondary_Zlimits(1) == 0 % match bottom bound
+                ind = find(LR.PRES(~lr_nan) <= ...
+                      cal.pH.secondary_Zlimits(2),1,'last');
+            else
+                ind = find(LR.PRES(~lr_nan) >= ...
+                      cal.pH.secondary_Zlimits(1),1,'first');
+            end
+            free_offset =  lr_phfree(ind) - lr_phfree2(ind);
+            tot_offset  =  lr_phtot(ind)  - lr_phtot2(ind);
+            
+            lr_phfree(tz_ph) = lr_phfree2(tz_ph) + free_offset;
+            lr_phtot(tz_ph)  = lr_phtot2(tz_ph)  + tot_offset;
+        end
+              
         LR.PH_IN_SITU_FREE(~lr_nan)     = lr_phfree; % I param
         LR.PH_IN_SITU_FREE_QC(~lr_nan)  = fv.QC;
         LR.PH_IN_SITU_FREE_QC(LRQF_S | LRQF_T) = 4;
@@ -1479,12 +1584,40 @@ for msg_ct = 1:size(msg_list,1)
             hr_nan = isnan(hr_d(:,iphV));
             HR.VRS_PH(~hr_nan)    = hr_d(~hr_nan,iphV); % I param
             HR.VRS_PH_QC(~hr_nan) = fv.QC;
-            HR.TEMP_PH(~hr_nan)    = hr_d(~hr_nan,iphT); % I param
+            if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) %pH temp removed from these floats; use ctd temp
+                HR.TEMP_PH(~hr_nan) = hr_d(~hr_nan,iT);
+            else
+                HR.TEMP_PH(~hr_nan)    = hr_d(~hr_nan,iphT); % I param
+            end
             HR.TEMP_PH_QC(~hr_nan) = fv.QC;
             
             [hr_phfree,hr_phtot] = phcalc_jp(HR.VRS_PH(~hr_nan), ...
                 HR.PRES(~hr_nan), HR.TEMP_PH(~hr_nan), ...
                 HR.PSAL(~hr_nan), cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
+            
+            if isfield(cal.pH,'secondary_pcoefs')
+                [hr_phfree2,hr_phtot2] = phcalc_jp(HR.VRS_PH(~hr_nan), ...
+                    HR.PRES(~hr_nan), HR.TEMP_PH(~hr_nan), ...
+                    HR.PSAL(~hr_nan), cal.pH.k0, cal.pH.k2, ...
+                    cal.pH.secondary_pcoefs);
+                
+                tz_ph = HR.PRES(~hr_nan) >= cal.pH.secondary_Zlimits(1) & ...
+                    HR.PRES(~hr_nan) <= cal.pH.secondary_Zlimits(2);
+                
+                if cal.pH.secondary_Zlimits(1) == 0 % match bottom bound
+                    ind = find(HR.PRES(~hr_nan) <= ...
+                        cal.pH.secondary_Zlimits(2),1,'last');
+                else
+                    ind = find(HR.PRES(~hr_nan) >= ...
+                        cal.pH.secondary_Zlimits(1),1,'first');
+                end
+                
+                free_offset =  hr_phfree(ind) - hr_phfree2(ind);
+                tot_offset  =  hr_phtot(ind)  - hr_phtot2(ind);
+                
+                hr_phfree(tz_ph) = hr_phfree2(tz_ph) + free_offset;
+                hr_phtot(tz_ph)  = hr_phtot2(tz_ph)  + tot_offset;
+            end
             
             HR.PH_IN_SITU_FREE(~hr_nan)     = hr_phfree; % I param
             HR.PH_IN_SITU_FREE_QC(~hr_nan)  = fv.QC;
@@ -1557,16 +1690,16 @@ for msg_ct = 1:size(msg_list,1)
         end
         
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-        BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
+        [BSLflag,theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
         t_bio   = LR.PH_IN_SITU_TOTAL ~= fv.bio;
         tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect pH
         t_chk   = t_bio & (LR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
             LR.PH_IN_SITU_TOTAL > RCR.PH(2) | tST);
-        LR.VRS_PH_QC(t_bio) = LR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*4;
+        LR.VRS_PH_QC(t_bio) = LR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.PH_IN_SITU_FREE_QC(t_bio) = LR.PH_IN_SITU_FREE_QC(t_bio) ...
-            * ~BSLflag + BSLflag*4;
+            * ~BSLflag + BSLflag*theflag;
         LR.PH_IN_SITU_TOTAL_QC(t_bio) = LR.PH_IN_SITU_TOTAL_QC(t_bio) ...
-            * ~BSLflag + BSLflag*4;
+            * ~BSLflag + BSLflag*theflag;
         LR.PH_IN_SITU_FREE_QC(t_chk) = 4;
         LR.PH_IN_SITU_TOTAL_QC(t_chk) = 4;
         LR.VRS_PH_QC(t_chk) = 4;
@@ -1576,7 +1709,7 @@ for msg_ct = 1:size(msg_list,1)
         t_chk = t_bio & (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
             LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST);
         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) = ...
-            LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*4;
+            LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk) = 4;
         
         if r_hr > 0
@@ -1584,9 +1717,9 @@ for msg_ct = 1:size(msg_list,1)
             tST     = HR.PSAL_QC == 4 | HR.TEMP_QC == 4; % Bad S or T will affect pH
             t_chk = t_bio & (HR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
                 HR.PH_IN_SITU_TOTAL > RCR.PH(2)| tST);
-            HR.VRS_PH_QC(t_bio) = HR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*4;
+            HR.VRS_PH_QC(t_bio) = HR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             HR.PH_IN_SITU_TOTAL_QC(t_bio) = HR.PH_IN_SITU_TOTAL_QC(t_bio) ...
-                * ~BSLflag + BSLflag*4;
+                * ~BSLflag + BSLflag*theflag;
             HR.PH_IN_SITU_TOTAL_QC(t_chk) = 4;
             HR.VRS_PH_QC(t_chk) = 4;
             
@@ -1595,10 +1728,68 @@ for msg_ct = 1:size(msg_list,1)
             t_chk = t_bio & (HR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
                 HR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST);
             HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) = ...
-                HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*4;
+                HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk) = 4;
         end
-        
+% -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*- 
+% -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
+        % FINALLY DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
+        % (BAD).  BGC_spiketest screens for nans and fill values.
+        %
+        %%%LOW RES FIRST%%%
+        %
+        % RUN TEST ON RAW PH_IN_SITU_TOTAL
+        QCscreen_phT = LR.PH_IN_SITU_TOTAL_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.PH_IN_SITU_TOTAL],'PH',dirs.cal,fv.bio,QCscreen_phT);
+        if ~isempty(spike_inds)
+            % Could add optional code to compare qf already assigned (ie in range
+            % checks above), and qf assigned during spiketest.  Keep
+            % whichever is greater.  (At this point, I'm pre-screening the vector using
+            % current quality flags.  Screening occurs within Function.  Currently assigning 4 (bad) to spikes, although may
+            % be modified in the future).  5/22/18. TM.
+            %spikeQF = LR.PH_INSITU_FREE_QC(spike_inds) < quality_flags;
+            %LR.PH_INSITU_FREE_QC(spike_inds(spikeQF)) = quality_flags(spikeQF);
+            LR.PH_IN_SITU_TOTAL_QC(spike_inds) = quality_flags;
+            disp(['LR.PH_IN_SITU_TOTAL QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO LR.PH_IN_SITU_TOTAL SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        %
+        % RUN TEST ON QC PH_IN_SITU_TOTAL_ADJUSTED
+        QCscreen_phTadj = LR.PH_IN_SITU_TOTAL_ADJUSTED_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.PH_IN_SITU_TOTAL_ADJUSTED],'PH',dirs.cal,fv.bio,QCscreen_phTadj);
+        if ~isempty(spike_inds)
+            LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(spike_inds) = quality_flags;
+            disp(['LR.PH_IN_SITU_TOTAL_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO LR.PH_IN_SITU_TOTAL_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        clear QCscreen_phF QCscreen_phT QCscreen_phTadj
+        %%%HI RES NEXT%%%
+        %
+        % RUN TEST ON RAW PH_IN_SITU_TOTAL
+        QCscreen_phT = HR.PH_IN_SITU_TOTAL_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[HR.PRES HR.PH_IN_SITU_TOTAL],'PH',dirs.cal,fv.bio,QCscreen_phT);
+        if ~isempty(spike_inds)
+            HR.PH_IN_SITU_TOTAL_QC(spike_inds) = quality_flags;
+            disp(['HR.PH_IN_SITU_TOTAL QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO HR.PH_IN_SITU_TOTAL SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        %
+        % RUN TEST ON QC PH_IN_SITU_TOTAL_ADJUSTED
+        QCscreen_phTadj = HR.PH_IN_SITU_TOTAL_ADJUSTED_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[HR.PRES HR.PH_IN_SITU_TOTAL_ADJUSTED],'PH',dirs.cal,fv.bio,QCscreen_phTadj);
+        if ~isempty(spike_inds)
+            HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(spike_inds) = quality_flags;
+            disp(['HR.PH_IN_SITU_TOTAL_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO HR.PH_IN_SITU_TOTAL_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        clear QCscreen_phF QCscreen_phT QCscreen_phTadj        
+% -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*- 
+% -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
+
         clear lr_phfree lr_phtot hr_phfree hr_phtot QCD
     end
     
@@ -1626,6 +1817,9 @@ for msg_ct = 1:size(msg_list,1)
         % IF ISUS FILE & CAL INFO EXIST TRY AND PROCESS IT
         if exist([dirs.temp, NO3_file],'file') && isfield(cal,'N')%
             spec = parse_NO3msg([dirs.temp,NO3_file]); % return struct
+            if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) %If Andrea's EXPORTS NAVIS floats, use 1 deeper CTD T for SUNA processing (eliminates spike at high gradient)
+                [spec, CTD_for_no3, CTDmn_for_no3] = getTRUE_SUNAtemp(spec,HR.TEMP,HR.PRES,HR.PSAL,0);
+            end
             UV_INTEN = spec.UV_INTEN;
             if ~isempty(UV_INTEN)
                 % [SDN, DarkCur, Pres, Temp, Sal, NO3, BL_int,BL_slope,
@@ -1747,13 +1941,13 @@ for msg_ct = 1:size(msg_list,1)
         end
         
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-        BSLflag = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'N');
+        [BSLflag,theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'N');
         t_bio = LR.NITRATE ~= fv.bio;
         tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect nitrate
         t_chk = t_bio &(LR.NITRATE < RCR.NO3(1)| LR.NITRATE > RCR.NO3(2) | tST);
-        LR.NITRATE_QC(t_bio) = LR.NITRATE_QC(t_bio) * ~BSLflag + BSLflag*4;
+        LR.NITRATE_QC(t_bio) = LR.NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) = ...
-            LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) * ~BSLflag + BSLflag*4;
+            LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.NITRATE_QC(t_chk) = 4;
         LR.UV_INTENSITY_DARK_NITRATE_QC(t_chk)  = 4;
         
@@ -1762,9 +1956,60 @@ for msg_ct = 1:size(msg_list,1)
         t_chk = t_bio & (LR.NITRATE_ADJUSTED < RC.NO3(1)| ...
             LR.NITRATE_ADJUSTED > RC.NO3(2) | tST);
         LR.NITRATE_ADJUSTED_QC(t_bio) = LR.NITRATE_ADJUSTED_QC(t_bio) * ...
-            ~BSLflag + BSLflag*4;
+            ~BSLflag + BSLflag*theflag;
         LR.NITRATE_ADJUSTED_QC(t_chk) = 4;
-        
+% -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
+        % DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
+        % (BAD).  BGC_spiketest screens for nans and fill values.
+        %
+        %%% DO LOW RES FIRST%%%
+        % RUN TEST ON RAW NITRATE
+        QCscreen_N = LR.NITRATE_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.NITRATE],'NO3',dirs.cal,fv.bio,QCscreen_N);
+        if ~isempty(spike_inds)
+            LR.NITRATE_QC(spike_inds) = quality_flags;
+            disp(['LR.NITRATE QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO LR.NITRATE SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        %
+        % RUN TEST ON QC NITRATE_ADJUSTED
+        QCscreen_Nadj = LR.NITRATE_ADJUSTED_QC == 4; % screen for BAD data already assigned.
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.NITRATE_ADJUSTED],'NO3',dirs.cal,fv.bio,QCscreen_Nadj);
+        if ~isempty(spike_inds)
+            LR.NITRATE_ADJUSTED_QC(spike_inds) = quality_flags;
+            disp(['LR.NITRATE_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%         else
+%             disp(['NO LR.NITRATE_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+        end
+        clear QCscreen_N QCscreen_Nadj        
+        %%% DO HI RES NEXT %%%
+        %  I don't think there is any Hi-Res Nitrate for any NAVIS floats.
+        %  Keep it in here for now with the added check, just in case.
+        % RUN TEST ON RAW NITRATE
+        if isfield(HR,'NITRATE') == 1
+            QCscreen_N = HR.NITRATE_QC == 4; % screen for BAD data already assigned.
+            [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[HR.PRES HR.NITRATE],'NO3',dirs.cal,fv.bio,QCscreen_N);
+            if ~isempty(spike_inds)
+                HR.NITRATE_QC(spike_inds) = quality_flags;
+                disp(['HR.NITRATE QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%             else
+%                 disp(['NO HR.NITRATE SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+            end
+            %
+            % RUN TEST ON QC NITRATE_ADJUSTED
+            QCscreen_Nadj = HR.NITRATE_ADJUSTED_QC == 4; % screen for BAD data already assigned.
+            [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[HR.PRES HR.NITRATE_ADJUSTED],'NO3',dirs.cal,fv.bio,QCscreen_Nadj);
+            if ~isempty(spike_inds)
+                HR.NITRATE_ADJUSTED_QC(spike_inds) = quality_flags;
+                disp(['HR.NITRATE_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+%             else
+%                 disp(['NO HR.NITRATE_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+            end
+            clear QCscreen_N QCscreen_Nadj  
+        end
+% -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
+
         clear tchk tABS08 tABS11 NO3
     end
    
@@ -2011,7 +2256,8 @@ for msg_ct = 1:size(msg_list,1)
     end
     % CHL
     if isfield(cal,'CHL')
-        if isfield(cal.CHL,'SWDC') && isfield(cal.CHL.SWDC,'DC') % median dark count has been quantified --> adjustment has been made
+%         if isfield(cal.CHL,'SWDC') && isfield(cal.CHL.SWDC,'DC') % median dark count has been quantified --> adjustment has been made
+        if sum(LR.CHLA_ADJUSTED<99999)>0 || sum(HR.CHLA_ADJUSTED<99999)>0 % there is adjusted data for that profile --> adjustment has been made
             INFO.CHLA_DATA_MODE = 'A';
         else
             INFO.CHLA_DATA_MODE = 'R';

@@ -58,8 +58,10 @@ end
 
 % CHL.hdr   = {'Pressure', 'CHL', 'Xing_MLD', 'Sack_MLD', 'Xing_Zeu', ...
 %              'Sack_Zeu', 'Xing_Zchl', 'Sack_Zchl','Xing_Zchl2', 'Sack_Zchl2'};
+% CHL.hdr   = {'Pressure', 'CHL', 'CHLm','CHLspike', 'Xing_MLD', ...
+%              'Xing_Zeu','Xing_Zchl','Xing_Zchl2'}; 
 CHL.hdr   = {'Pressure', 'CHL', 'CHLm','CHLspike', 'Xing_MLD', ...
-             'Xing_Zeu','Xing_Zchl','Xing_Zchl2'};         
+             'Xing_Zeu','Xing_Zchl'};
 %CHL.data  = ones(size(data,1),size(CHL.hdr,2))* NaN;
 CHL.data  = [];
 CHL.Dmld  = [];
@@ -207,9 +209,9 @@ clear CHLmax Kd
 
 % ************************************************************************
 % NOW GET Z AT PAR = 20
-[PAR, ZPAR20] = EstPAR(gps(2), gps(3), gps(1), CHLAm, P,dirs);
-CHL.ZPAR20    = ZPAR20;
-tZPAR         = data(:,iP) <= CHL.ZPAR20;
+% [PAR, ZPAR20] = EstPAR(gps(2), gps(3), gps(1), CHLAm, P,dirs);
+% CHL.ZPAR20    = ZPAR20;
+% tZPAR         = data(:,iP) <= CHL.ZPAR20;
 
 
 % FIND DEPTH OF SHALLOW CHL MAX (ABOVE SHALLOWEST Zref POSIBILITY)
@@ -217,9 +219,10 @@ tZPAR         = data(:,iP) <= CHL.ZPAR20;
 % Zmin2  = nanmin([CHL.Dmld, CHL.Tmld, CHL.ZPAR20]);
 
 Zmin   = nanmin([CHL.Dmld, CHL.Zeu]);
-Zmin2  = nanmin([CHL.Dmld, CHL.ZPAR20]);
+%Zmin2  = nanmin([CHL.Dmld, CHL.ZPAR20]);
 
-chl_chk = ~isnan(data(:,iC)) & data(:,iP) <= Zmin2;
+%chl_chk = ~isnan(data(:,iC)) & data(:,iP) <= Zmin2;
+chl_chk = ~isnan(data(:,iC)) & data(:,iP) <= Zmin;
 if all(~chl_chk) 
     disp('No surface chl data in selected range - exiting')
     CHL.data =[];
@@ -242,13 +245,13 @@ else
 end
 
 
-tZchl2    = data(:,iP) <= Zmin2; % 1's shalow , 0's deep
-chl_tmp  = CHLAm;
-chl_tmp(~tZchl2) = NaN; % Set values below MLD to NaN
-Cmax2 = find(chl_tmp == max(chl_tmp),1, 'last'); % find shallow chl max index
-tZchl2  = data(:,iP) <= data(Cmax2,iP);
-iZchl2    = data(:,iP) == max(data(tZchl2,iP)); % base of Zchl index
-CHL.Zchl2 = max(data(iZchl2,iP)); % depth of base of shallow chl max
+% tZchl2    = data(:,iP) <= Zmin2; % 1's shalow , 0's deep
+% chl_tmp  = CHLAm;
+% chl_tmp(~tZchl2) = NaN; % Set values below MLD to NaN
+% Cmax2 = find(chl_tmp == max(chl_tmp),1, 'last'); % find shallow chl max index
+% tZchl2  = data(:,iP) <= data(Cmax2,iP);
+% iZchl2    = data(:,iP) == max(data(tZchl2,iP)); % base of Zchl index
+% CHL.Zchl2 = max(data(iZchl2,iP)); % depth of base of shallow chl max
 
 
 % GET SUN ANGLE FIRST - IF < 5 deg, work is done
@@ -323,11 +326,11 @@ Cmax = find(chl_tmp == max(chl_tmp),1, 'last'); % max chl above Zchl index
 Xing_Zchl  = CHLA; % Get original chl profile
 Xing_Zchl(1:Cmax) = chl_tmp(Cmax);
 
-chl_tmp = CHLAm;
-chl_tmp(~tZchl2) = NaN; % Set values below Zchl to NaN
-Cmax = find(chl_tmp == max(chl_tmp),1, 'last'); % max chl above Zchl index
-Xing_Zchl2  = CHLA; % Get original chl profile
-Xing_Zchl2(1:Cmax) = chl_tmp(Cmax);
+% chl_tmp = CHLAm;
+% chl_tmp(~tZchl2) = NaN; % Set values below Zchl to NaN
+% Cmax = find(chl_tmp == max(chl_tmp),1, 'last'); % max chl above Zchl index
+% Xing_Zchl2  = CHLA; % Get original chl profile
+% Xing_Zchl2(1:Cmax) = chl_tmp(Cmax);
 
 
 
@@ -355,9 +358,12 @@ Xing_Zchl2(1:Cmax) = chl_tmp(Cmax);
 % out = [data(:,iP), data(:,iC), Xing_MLD, Sack_MLD, Xing_Zeu, Sack_Zeu, ...
 %     Xing_Zchl, Sack_Zchl, Xing_Zchl2, Sack_Zchl2];
 
-out = [data(:,iP), data(:,iC), CHLAm, data(:,iC)-CHLAm, Xing_MLD, ...
-      Xing_Zeu, Xing_Zchl, Xing_Zchl2];
+% out = [data(:,iP), data(:,iC), CHLAm, data(:,iC)-CHLAm, Xing_MLD, ...
+%       Xing_Zeu, Xing_Zchl, Xing_Zchl2];
 
+out = [data(:,iP), data(:,iC), CHLAm, data(:,iC)-CHLAm, Xing_MLD, ...
+      Xing_Zeu, Xing_Zchl];
+  
 if pressure_dir == 1
     out = flip(out,1);
 end
