@@ -1179,6 +1179,11 @@ function gui = createInterface( ~ )
     
 %-------------------------------------------------------------------------%
     function on_addrow( source, ~ ) 
+	%if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
+		if get(gui.rb2(3),'Value')==1
+			msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
+			return
+		end
         celldata = gui.tbl.Data;
         newstrt = celldata(end,1)+1;
         newrow = [newstrt 1 0 0];
@@ -1190,6 +1195,11 @@ function gui = createInterface( ~ )
 
 %-------------------------------------------------------------------------%
     function on_removerow( source, ~ ) 
+		%if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
+		if get(gui.rb2(3),'Value')==1
+			msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
+			return
+		end
         celldata = gui.tbl.Data;
         if size(celldata,1) == 1 %do not clear entire table
             new_celldata = [1 1 0 0];
@@ -1201,6 +1211,11 @@ function gui = createInterface( ~ )
 
 %-------------------------------------------------------------------------%
     function on_celledit( source, callbackdata ) 
+		%if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
+		if get(gui.rb2(3),'Value')==1
+			msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
+			return
+		end
         set(gui.tbl,'Data',source.Data)
         DATA.tableDATA = source.Data;
         handles.QCA.(DATA.paramtag) = DATA.tableDATA;
@@ -1223,6 +1238,11 @@ function gui = createInterface( ~ )
 
 %-------------------------------------------------------------------------%
     function on_calcadj( source, ~)
+		%if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
+		if get(gui.rb2(3),'Value')==1
+			msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
+			return
+		end
         handles.CGOD  = getGUIQC_M_B_GLT(DATA,handles);
         set(gui.tbl,'Data',handles.CGOD)
         handles.QCA.(DATA.paramtag) = handles.CGOD;
@@ -1284,7 +1304,16 @@ function gui = createInterface( ~ )
             
         % REPROCESS FLOATVIZ QC DATAFILE
             if handles.info.Mprof == 0
-                tf = Process_GUI_float_GLT(handles,dirs);
+				if exist(dirs.msg) && exist(dirs.alt) && exist(dirs.msg_comb)
+					tf = Process_GUI_float_GLT(handles,dirs);
+				else
+				%9/19/2018 NOTE: CURRENTLY Process_GUI_float_GLT ACCESSES MBARI FLOAT MSG FILES FOR FULL REPROCESS WITH UPDATED QC.  
+				%                THIS CAN BE MODIFIED TO POTENTIALLY JUST REPROCESS THE MBARI TXT FILE FOR EXTERNAL USERS.
+				%				 COULD PROBABLY DO THIS WITH A SEPARATE CALL TO Make_Mprof_ODVQC, BUT WILL NEED TESTING, AND CHANGES
+				%				 TO QC FILE NAME AND HEADERS (TO INDICATE QC UPDATE TESTING WAS DONE BY EXTERNAL USER.)  
+				%				 SCHEDULED FOR A POTENTIAL FUTURE UPDATE.  -TMAURER
+					msgbox('NO ACCESS TO MSG FILES.  CANNOT REPROCESS.')
+				end
             elseif handles.info.Mprof == 1
                tf = Make_Mprof_ODVQC(handles);     
             end
