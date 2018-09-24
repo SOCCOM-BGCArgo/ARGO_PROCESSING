@@ -376,14 +376,6 @@ function gui = createInterface( ~ )
         end
         set(gui.Pmin,'String',num2str(inputs.depthedit(1))); 
         set(gui.Pmax,'String',num2str(inputs.depthedit(2))); 
-%         if max(DATA.datatype.data(:,6)) > inputs.depthedit(2);
-%             set(gui.Pmax,'String',num2str(ceil(max(DATA.datatype.data(:,6)))));
-%         end
-%         if max(DATA.datatype.data(:,6)) < inputs.depthedit(1) && inputs.SFLT == 1
-%             hmsg = msgbox({'No Data within assigned depth limits','Expanding lower end of range.'},'Depth Range Adjustment');
-%             set(gui.Pmin,'String',num2str(floor(max(DATA.datatype.data(:,6)))-100));
-%         end
-
         set(gui.GLDPkm,'String',num2str(inputs.GLDPkm));
         depthmin = str2double(get(gui.Pmin,'String'));
         depthmax = str2double(get(gui.Pmax,'String'));
@@ -436,17 +428,6 @@ function gui = createInterface( ~ )
                     DATA.refdata = DATA.reftemp(:,DATA.LIND);
                 case {'MLR W50to80','MLR W30to50'}
                     DATA.refdata = DATA.MLRdata.(DATA.paramtag).(DATA.refs);
-%                     MLR = DATA.refs.(DATA.paramtag);
-%                     if ~isempty(MLR) %will be empty for salinity, temp, oxygen
-%                         tMLR = isnan(handles.qc_data.data(:,iO)) | isnan(handles.qc_data.data(:,iS));
-%                         potT = theta(handles.qc_data.data(:,iP), handles.qc_data.data(:,iT), handles.qc_data.data(:,iS),0);
-%                         sig_theta  = density(handles.qc_data.data(:,iS), potT)-1000; %density at p =0 t= pot temp
-%                         DATA.refdata = MLR.cC + handles.qc_data.data(:,iO)*MLR.cO + handles.qc_data.data(:,iS)*MLR.cS + ...
-%                             handles.qc_data.data(:,iT)*MLR.cT + sig_theta*MLR.cST + handles.qc_data.data(:,iP)*MLR.cP;
-%                         DATA.refdata(tMLR) = NaN;
-%                     else
-%                         DATA.refdata = handles.qc_data.data(:,iP) * NaN; %replace with nans
-%                     end
             end
         end
 
@@ -458,18 +439,7 @@ function gui = createInterface( ~ )
             DATA.DIFF_X = DATA.refdata .* NaN;
         end
 
-        
-                % SUBSET DATA SETS WITHIN DEPTH WINDOW (profile subset will
-                % happen in PlotGuiData.  Do this because for calculating 
-%         DATA.datasub = DATA.datatype.data(DATA.datatype.data(:,iP) >= depthmin & ...
-%             DATA.datatype.data(:,iP) <= depthmax & DATA.datatype.data(:,2) >= PROFmin &...
-%             DATA.datatype.data(:,2) <= PROFmax,:);
-%         DATA.refsub = DATA.refdata(DATA.datatype.data(:,iP) >= depthmin & ...
-%             DATA.datatype.data(:,iP) <= depthmax & DATA.datatype.data(:,2) >= PROFmin &...
-%             DATA.datatype.data(:,2) <= PROFmax,:);
-%         DATA.diffsub = DATA.DIFF_X(DATA.datatype.data(:,iP) >= depthmin & ...
-%             DATA.datatype.data(:,iP) <= depthmax & DATA.datatype.data(:,2) >= PROFmin &...
-%             DATA.datatype.data(:,2) <= PROFmax,:); 
+         
         DATA.rawsub = handles.raw_data.data(handles.raw_data.data(:,iP)>=depthmin & ...
             handles.raw_data.data(:,iP)<=depthmax,:);
         DATA.qcsub = handles.qc_data.data(handles.qc_data.data(:,iP)>=depthmin & ...
@@ -733,104 +703,6 @@ function gui = createInterface( ~ )
  
             
             [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA);
-% % % %         
-% % % %             % ********************************************************************
-% % % %             % GET CANYON NEURAL NETWORK, LINR & LIPHER APROXIMATIONs FOR NO3 AND PH
-% % % %             % NEED QC OXYGEN FOR THIS
-% % % %             % out = CANYON_jp(gtime,lat,lon,pres,temp,psal,doxy,param)
-% % % %             if handles.info.qc_flag == 1
-% % % %                 d = handles.qc_data;
-% % % %             else
-% % % %                 d.hdr = {};
-% % % %             end
-% % % % 
-% % % %             % CANYON
-% % % %             if handles.info.qc_flag == 1 && ~isempty(DATA.iO)
-% % % % %                 set(handles.recumpute_text,'Visible','on')
-% % % % %                 set(handles.recumpute_text, ...
-% % % % %                     'String','LOADING CANYON NEURAL NETWORK NO3  & PH ESTIMATES ....')
-% % % % %                 drawnow
-% % % %                 canyon_no3 = CANYON_jp(d.data(:,1),d.data(:,4),d.data(:,3), ...
-% % % %                     d.data(:,6),d.data(:,8),d.data(:,10),d.data(:,DATA.iO),'NO3');
-% % % %                 canyon_ph = CANYON_jp(d.data(:,1),d.data(:,4),d.data(:,3), ...
-% % % %                     d.data(:,6),d.data(:,8),d.data(:,10),d.data(:,DATA.iO),'PH');     
-% % % %                 handles.canyon.hdr  = [d.hdr([1,2,6]),'canyon_no3','canyon_ph'];
-% % % %                 handles.canyon.data = [d.data(:,[1,2,6]), canyon_no3, canyon_ph];
-% % % %             else
-% % % % %                 set(handles.recumpute_text,'Visible','on')
-% % % % %                 set(handles.recumpute_text, ...
-% % % % %                     'String','NO CANYON NEURAL NETWORK NO3  OR PH ESTIMATES!!')
-% % % % %                 drawnow
-% % % %                 handles.canyon =[];
-% % % %             end
-% % % %             
-% % % %             % GET CANYON NEURAL NETWORK ESTIMATES 
-% % % %             DATA.C = handles.canyon; 
-% % % %             if ~isempty(DATA.C)
-% % % %                 DATA.iCN   = find(strcmp('canyon_no3',DATA.C.hdr)     == 1);
-% % % %                 DATA.iCPH  = find(strcmp('canyon_ph',DATA.C.hdr)      == 1);
-% % % %             else
-% % % %                 DATA.iCN   = [];
-% % % %                 DATA.iCPH  = [];    
-% % % %             end
-% % % % 
-% % % %             % LINR & LIPHR ESTIMATES FOR NITRATE AND PH 
-% % % %             if handles.info.qc_flag == 1 && ~isempty(DATA.iO)
-% % % % %                 set(handles.recumpute_text,'Visible','on')
-% % % % %                 set(handles.recumpute_text, ...
-% % % % %                     'String','LOADING LINR & LIPHR  NO3  & PH ESTIMATES ....')
-% % % % %                 drawnow
-% % % % 
-% % % %                 LXXX_pos = [d.data(:,3), d.data(:,4), d.data(:,DATA.iZ)]; % lon,lat,Z
-% % % %                 ptemp    = theta(d.data(:,6), d.data(:,8) ,d.data(:,10),0);
-% % % % 
-% % % %         %         MeasIDVec    = [1 2 6]; % PSAL, Pot_TEMP, DOXY_ADJ,
-% % % %         %         Measurements = [d.data(:,10), ptemp, d.data(:,iO)];   
-% % % % 
-% % % %                 MeasIDVec    = [1 6 7]; % PSAL, DOXY_ADJ, TEMP, ,
-% % % %                 Measurements = [d.data(:,10), d.data(:,DATA.iO), d.data(:,8)];  
-% % % % 
-% % % %                 Equations    = 7; % S, Theta, AOU
-% % % % 
-% % % %         %         [NO3_Est, Uncert_Est, MinUncert_Equ] = LINR(LXXX_pos, ...
-% % % %         %             Measurements, MeasIDVec, Equations, [], 1); % update 04/25/17
-% % % %         %         
-% % % %         %         [PH_Est, Uncert_Est, MinUncert_Equ] = LIPHR(LXXX_pos, ...
-% % % %         %             Measurements, MeasIDVec, Equations, [], 1); % update 04/25/17 
-% % % % 
-% % % %                 [NO3_Est, Uncert_Est, MinUncert_Equ] = LINR(LXXX_pos, ...
-% % % %                     Measurements, MeasIDVec,'Equations', Equations); % update 08/11/17
-% % % % 
-% % % %                 [PH_Est, Uncert_Est, MinUncert_Equ] = LIPHR(LXXX_pos, ...
-% % % %                     Measurements, MeasIDVec, ...
-% % % %                     'Equations', Equations,'OAAdjustTF',false); % update 08/11/17        
-% % % % 
-% % % %                 %
-% % % % 
-% % % %                 handles.LIR.hdr  = [d.hdr([1,2,6]),'LIR_no3','LIR_ph'];
-% % % %                 handles.LIR.data = [d.data(:,[1,2,6]), NO3_Est, PH_Est];
-% % % %             else
-% % % % %                 set(handles.recumpute_text,'Visible','on')
-% % % % %                 set(handles.recumpute_text, ...
-% % % % %                     'String','NO LINR or LIPHER NO3  OR PH ESTIMATES!!')
-% % % %                 handles.LIR =[];
-% % % %             end
-% % % % 
-% % % %             clear canyon_no3 canyon_ph LXXX_pos  ptemp  MeasIDVec
-% % % %             clear Measurements Equations NO3_Est PH_Est Uncert_Est MinUncert_Equ
-% % % % 
-% % % %         % GET LINR & LIPHER NO3 & PH ESTIMATES 
-% % % %         DATA.L = handles.LIR ;
-% % % %         if ~isempty(DATA.L)
-% % % %             DATA.iLN   = find(strcmp('LIR_no3',DATA.L.hdr)     == 1);
-% % % %             DATA.iLPH  = find(strcmp('LIR_ph',DATA.L.hdr)      == 1);
-% % % %             DATA.reftemp = DATA.L.data;
-% % % %             DATA.reftag = 'LIR'; %will be the default on SELECT FLOAT
-% % % %         else
-% % % %             DATA.iLN   = [];
-% % % %             DATA.iLPH  = [];    
-% % % %             DATA.reftag = 'NOQC'; %No QC has been done.
-% % % %         end
 
             % GET CALIBRATION BOTTLE DATA IF IT EXISTS
             % LOOKUP TABLE  HEADER = [MBARI_ID UW_ID  WMO   CRUISE   STN   CAST   Data file]
@@ -1082,6 +954,10 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','on')
                 set(gui.rb3(4),'Value',0,'Enable','on')
                 set(gui.rb3(5),'Value',0,'Enable','on')
+                set(gui.calcadjs,'Enable','on')
+                set(gui.findchpts,'Enable','on')
+                set(gui.removerow,'Enable','on')
+                set(gui.addrow,'Enable','on')
             case 'PH'
                 DATA.IND  = DATA.iPH; 
                 DATA.bIND = DATA.ibPH1;
@@ -1094,6 +970,10 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','on')
                 set(gui.rb3(5),'Value',0,'Enable','on')
+                set(gui.calcadjs,'Enable','on')
+                set(gui.findchpts,'Enable','on')
+                set(gui.removerow,'Enable','on')
+                set(gui.addrow,'Enable','on')
             case 'O2'
                 DATA.IND  = DATA.iO;
                 DATA.bIND = DATA.ibO;
@@ -1103,6 +983,10 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
+                set(gui.calcadjs,'Enable','off')
+                set(gui.findchpts,'Enable','off')
+                set(gui.removerow,'Enable','off')
+                set(gui.addrow,'Enable','off')
              case 'S'
                 DATA.IND  = DATA.iS;
                 DATA.bIND = DATA.ibS;
@@ -1112,6 +996,10 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
+                set(gui.calcadjs,'Enable','off')
+                set(gui.findchpts,'Enable','off')
+                set(gui.removerow,'Enable','off')
+                set(gui.addrow,'Enable','off')
             case 'T'
                 DATA.IND  = DATA.iT;
                 DATA.bIND = DATA.ibT;
@@ -1121,6 +1009,10 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
+                set(gui.calcadjs,'Enable','off')
+                set(gui.findchpts,'Enable','off')
+                set(gui.removerow,'Enable','of')
+                set(gui.addrow,'Enable','off')
         end
         set(gui.rb3(DATA.paramrefnum),'Value',1);
         % Set appropriate Adjustments:
