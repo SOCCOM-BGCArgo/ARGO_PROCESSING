@@ -35,8 +35,8 @@ function floatviz_data = get_FloatViz_data(floatviz_file)
 % *************************************************************************
 % SET PATHS & COPY FILE TO LOCAL & OPEN
 % *************************************************************************
-%data_source = 'internet';
-data_source = 'network'; %MBARI USE ONLY 
+data_source = 'internet';
+%data_source = 'network'; %MBARI USE ONLY 
 
 floatviz_url  = 'http://www3.mbari.org/lobo/Data/FloatVizData/';
 
