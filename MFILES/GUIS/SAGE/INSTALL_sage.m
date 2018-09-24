@@ -38,6 +38,9 @@ else
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'FLOATS',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GLODAP',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE_O2Argo',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'CANYON',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'LIAR',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'MISC',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'WOA2013',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,]);
