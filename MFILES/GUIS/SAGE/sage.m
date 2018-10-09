@@ -2,7 +2,7 @@ function varargout = sage()
 % *************************************************************************
 % *************************************************************************
 % ** THIS MFILE AND ASSOCIATED SOFTWARE IS COPYRIGHT UNDER MIT LICENSE.  **
-% **       PLEASE SEE SAGE_MITLisence.txt FOR MORE INFORMATION         **
+% **       PLEASE SEE SAGE_MITLicense.txt FOR MORE INFORMATION         **
 %
 % THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
 % IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
@@ -955,7 +955,6 @@ function gui = createInterface( ~ )
                 set(gui.rb3(4),'Value',0,'Enable','on')
                 set(gui.rb3(5),'Value',0,'Enable','on')
                 set(gui.calcadjs,'Enable','on')
-                set(gui.findchpts,'Enable','on')
                 set(gui.removerow,'Enable','on')
                 set(gui.addrow,'Enable','on')
             case 'PH'
@@ -971,7 +970,6 @@ function gui = createInterface( ~ )
                 set(gui.rb3(4),'Value',0,'Enable','on')
                 set(gui.rb3(5),'Value',0,'Enable','on')
                 set(gui.calcadjs,'Enable','on')
-                set(gui.findchpts,'Enable','on')
                 set(gui.removerow,'Enable','on')
                 set(gui.addrow,'Enable','on')
             case 'O2'
@@ -984,7 +982,6 @@ function gui = createInterface( ~ )
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
-                set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','off')
                 set(gui.addrow,'Enable','off')
              case 'S'
@@ -997,7 +994,6 @@ function gui = createInterface( ~ )
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
-                set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','off')
                 set(gui.addrow,'Enable','off')
             case 'T'
@@ -1010,7 +1006,6 @@ function gui = createInterface( ~ )
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
-                set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','of')
                 set(gui.addrow,'Enable','off')
         end
