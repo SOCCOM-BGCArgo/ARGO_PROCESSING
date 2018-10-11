@@ -372,6 +372,18 @@ function gui = createInterface( ~ )
             gui.whichAX = gui.t2ax;
        end
         
+       
+       %Assign proper depth edits for profile view (depending which
+       %algorithm chosen)
+       if inputs.isprof == 1 
+           if DATA.paramrefnum ==5 || DATA.paramrefnum ==6 %williams
+                inputs.depthedit = [1000 1600];
+           else
+                inputs.depthedit = [0 1600];
+           end
+       end
+            
+       
         set(gui.profmin,'String',num2str(inputs.profedit(1)));
         if max(DATA.datatype.data(:,2)) < inputs.profedit(2);
             set(gui.profmax,'String',num2str(max(DATA.datatype.data(:,2))));
@@ -882,6 +894,17 @@ function gui = createInterface( ~ )
        DEtag = get(source,'tag');
        DE = get(source,'String');
        if (strcmp(DEtag,'Pmin')) == 1
+           if DATA.paramrefnum == 5  && str2double(DE)<1000 % Williams
+               mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_50to80S.');
+               inputs.depthedit(1,1) = inputs.depthedit(1,1);
+               updateInterface()
+               return
+           elseif DATA.paramrefnum == 6  && str2double(DE)<1000 % Williams
+               mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_30to80S.');
+               inputs.depthedit(1,1) = inputs.depthedit(1,1);
+               updateInterface()
+               return
+           end
            inputs.depthedit(1,1) = str2double(DE);
        else
            inputs.depthedit(1,2) = str2double(DE);
@@ -1055,9 +1078,29 @@ function gui = createInterface( ~ )
         % get track data
         reftag = get(source,'tag');
         if (strcmp(reftag,'MLR W50to80')) == 1
+            if inputs.depthedit(1) <1000
+                if inputs.isprof == 1
+                    inputs.depthedit = [1000 1600];
+                    updateInterface()
+                else
+                    mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_50to80S.');
+                    source.Value = 0;
+                    return
+                end
+            end
             DATA.refs = 'Williams_50Sto80S';
             DATA.paramrefnum = 5;
         elseif (strcmp(reftag,'MLR W30to50')) == 1
+            if inputs.depthedit(1) <1000
+                if inputs.isprof == 1
+                    inputs.depthedit = [1000 1600];
+                    updateInterface()
+                else
+                    mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_30to80S.');
+                    source.Value = 0;
+                    return
+                end
+            end
             DATA.refs = 'Williams_30Sto50S';
             DATA.paramrefnum = 6;
         elseif (strcmp(reftag,'WOA')) == 1
