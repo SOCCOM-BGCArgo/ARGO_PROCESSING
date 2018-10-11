@@ -76,6 +76,8 @@ function varargout = sage()
 %   
 %   01/10/18  Updated display, switched from MATLAB's guide, to GUI Layout
 %             Toolbox (old version is archived as sage_version1.m)
+%   10/1/18  Added CANYON_B to reference options.  May remove CANVON
+%   (version 1) at a later date, defaulting to CANYONB
 % NOTES: 
 %
 % ************************************************************************
@@ -211,12 +213,14 @@ function gui = createInterface( ~ )
                 rb3(1) = uicontrol('Parent',bbox,'Style','radiobutton',...
                     'String','LIR','tag','LIR','Value',1,'Callback',@ref_onClicked ); 
                 rb3(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','CANYON','tag','CANYON','Value',0,'Callback',@ref_onClicked ); 
+                    'String','CANYON-B','tag','CANYON_B','Value',0,'Callback',@ref_onClicked );     
                 rb3(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','WOA2013','tag','WOA','Value',0,'Callback',@ref_onClicked ); 
+                    'String','CANYON','tag','CANYON','Value',0,'Callback',@ref_onClicked ); 
                 rb3(4) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','Williams_50Sto80S','tag','MLR W50to80','Value',0,'Callback',@ref_onClicked ); 
+                    'String','WOA2013','tag','WOA','Value',0,'Callback',@ref_onClicked ); 
                 rb3(5) = uicontrol('Parent',bbox,'Style','radiobutton',...
+                    'String','Williams_50Sto80S','tag','MLR W50to80','Value',0,'Callback',@ref_onClicked ); 
+                rb3(6) = uicontrol('Parent',bbox,'Style','radiobutton',...
                     'String','Williams_30Sto50S','tag','MLR W30to50','Value',0,'Callback',@ref_onClicked ); 
                 gui.rb3 = rb3;
                 
@@ -424,6 +428,8 @@ function gui = createInterface( ~ )
                     DATA.refdata = DATA.reftemp;
                 case 'CANYON'
                     DATA.refdata = DATA.reftemp(:,DATA.CIND);
+                case 'CANYON_B'
+                    DATA.refdata = DATA.reftemp(:,DATA.CBIND);
                 case 'LIR'
                     DATA.refdata = DATA.reftemp(:,DATA.LIND);
                 case {'MLR W50to80','MLR W30to50'}
@@ -774,6 +780,7 @@ function gui = createInterface( ~ )
            DATA.bIND = DATA.ibN;
            DATA.GIND = DATA.iGN;
            DATA.CIND = DATA.iCN;
+           DATA.CBIND = DATA.iCBN;
            DATA.LIND = DATA.iLN;
 %                    if max(handles.raw_data.data(:,6)) < inputs.depthedit(1) 
 %             hmsg = msgbox({'No Data within assigned depth limits','Expanding lower end of range.'},'Depth Range Adjustment');
@@ -948,12 +955,15 @@ function gui = createInterface( ~ )
                 DATA.bIND = DATA.ibN;
                 DATA.GIND = DATA.iGN;
                 DATA.CIND = DATA.iCN;
+                DATA.CBIND = DATA.iCBN;
                 DATA.LIND = DATA.iLN;
                 set(gui.rb3(1),'Value',0,'Enable','on')
                 set(gui.rb3(2),'Value',0,'Enable','on')
                 set(gui.rb3(3),'Value',0,'Enable','on')
                 set(gui.rb3(4),'Value',0,'Enable','on')
                 set(gui.rb3(5),'Value',0,'Enable','on')
+                set(gui.rb3(6),'Value',0,'Enable','on')
+
                 set(gui.calcadjs,'Enable','on')
                 set(gui.removerow,'Enable','on')
                 set(gui.addrow,'Enable','on')
@@ -963,12 +973,14 @@ function gui = createInterface( ~ )
                 DATA.bIND2 = DATA.ibPH2;
                 DATA.GIND = DATA.iGPH;
                 DATA.CIND = DATA.iCPH;
+                DATA.CBIND = DATA.iCBPH;
                 DATA.LIND = DATA.iLPH;
                 set(gui.rb3(1),'Value',0,'Enable','on')
                 set(gui.rb3(2),'Value',0,'Enable','on')
-                set(gui.rb3(3),'Value',0,'Enable','off')
-                set(gui.rb3(4),'Value',0,'Enable','on')
+                set(gui.rb3(3),'Value',0,'Enable','on')
+                set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','on')
+                set(gui.rb3(6),'Value',0,'Enable','on')
                 set(gui.calcadjs,'Enable','on')
                 set(gui.removerow,'Enable','on')
                 set(gui.addrow,'Enable','on')
@@ -981,6 +993,7 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
+                set(gui.rb3(6),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.removerow,'Enable','off')
                 set(gui.addrow,'Enable','off')
@@ -993,6 +1006,7 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
+                set(gui.rb3(6),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.removerow,'Enable','off')
                 set(gui.addrow,'Enable','off')
@@ -1005,6 +1019,7 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
+                set(gui.rb3(6),'Value',0,'Enable','off')               
                 set(gui.calcadjs,'Enable','off')
                 set(gui.removerow,'Enable','of')
                 set(gui.addrow,'Enable','off')
@@ -1041,16 +1056,19 @@ function gui = createInterface( ~ )
         reftag = get(source,'tag');
         if (strcmp(reftag,'MLR W50to80')) == 1
             DATA.refs = 'Williams_50Sto80S';
-            DATA.paramrefnum = 4;
+            DATA.paramrefnum = 5;
         elseif (strcmp(reftag,'MLR W30to50')) == 1
             DATA.refs = 'Williams_30Sto50S';
-            DATA.paramrefnum = 5;
+            DATA.paramrefnum = 6;
         elseif (strcmp(reftag,'WOA')) == 1
             DATA.reftemp = DATA.WOA_NO3;
-            DATA.paramrefnum = 3;
-        elseif (strcmp(reftag,'CANYON')) == 1
+            DATA.paramrefnum = 4;
+        elseif (strcmp(reftag,'CANYON_B')) == 1
             DATA.reftemp = DATA.C.data;
             DATA.paramrefnum = 2;
+        elseif (strcmp(reftag,'CANYON')) == 1
+            DATA.reftemp = DATA.C.data;
+            DATA.paramrefnum = 3;
         elseif (strcmp(reftag,'LIR')) == 1
             DATA.reftemp = DATA.L.data;
             DATA.paramrefnum = 1;
@@ -1097,7 +1115,7 @@ function gui = createInterface( ~ )
     end
 
 %-------------------------------------------------------------------------%
-    function on_celledit( source, callbackdata ) 
+    function on_celledit( source, ~ ) 
 		%if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
 		if get(gui.rb2(3),'Value')==1
 			msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
@@ -1109,8 +1127,8 @@ function gui = createInterface( ~ )
         handles.new_qc_data = apply_GUIQC_corr_GLT(handles,DATA);
         if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified
             Omsg = figure('Name','UPDATING O2 AND RECALCULATING REFERENCE FIELDS...','NumberTitle','off','units','pixels','position',[500 500 200 50],'windowstyle','modal');
-            uicontrol('style','text','string','PLEASE WAIT.','units','pixels','position',[75 10 50 30]);    
-            [handles, DATA] = get_LIR_CAN_MLR(handles,DATA);
+            uicontrol('style','text','string','PLEASE WAIT.','units','pixels','position',[75 10 50 30]);  
+            [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA);
         end
         updateInterface()
         if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified

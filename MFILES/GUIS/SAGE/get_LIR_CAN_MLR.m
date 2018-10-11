@@ -19,18 +19,22 @@ function [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA)
         d.hdr = {};
     end
 
-    % CANYON
+    % CANYON & CANYON-B ESTIMATES FOR NITRATE AND PH
     if handles.info.qc_flag == 1 && ~isempty(DATA.iO)
 %                 set(handles.recumpute_text,'Visible','on')
 %                 set(handles.recumpute_text, ...
 %                     'String','LOADING CANYON NEURAL NETWORK NO3  & PH ESTIMATES ....')
 %                 drawnow
+        canyonB_no3 = CANYONB(d.data(:,1),d.data(:,4),d.data(:,3), ...
+            d.data(:,6),d.data(:,8),d.data(:,10),O2data,{'NO3'});
+        canyonB_ph = CANYONB(d.data(:,1),d.data(:,4),d.data(:,3), ...
+            d.data(:,6),d.data(:,8),d.data(:,10),O2data,{'pH'});
         canyon_no3 = CANYON_jp(dirs,d.data(:,1),d.data(:,4),d.data(:,3), ...
             d.data(:,6),d.data(:,8),d.data(:,10),O2data,'NO3');
         canyon_ph = CANYON_jp(dirs,d.data(:,1),d.data(:,4),d.data(:,3), ...
             d.data(:,6),d.data(:,8),d.data(:,10),O2data,'PH');     
-        handles.canyon.hdr  = [d.hdr([1,2,6]),'canyon_no3','canyon_ph'];
-        handles.canyon.data = [d.data(:,[1,2,6]), canyon_no3, canyon_ph];
+        handles.canyon.hdr  = [d.hdr([1,2,6]),'canyon_no3','canyon_ph','canyonB_no3','canyonB_ph'];
+        handles.canyon.data = [d.data(:,[1,2,6]), canyon_no3, canyon_ph canyonB_no3.NO3 canyonB_ph.pH];
     else
 %                 set(handles.recumpute_text,'Visible','on')
 %                 set(handles.recumpute_text, ...
@@ -44,11 +48,16 @@ function [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA)
     if ~isempty(DATA.C)
         DATA.iCN   = find(strcmp('canyon_no3',DATA.C.hdr)     == 1);
         DATA.iCPH  = find(strcmp('canyon_ph',DATA.C.hdr)      == 1);
+        DATA.iCBN   = find(strcmp('canyonB_no3',DATA.C.hdr)     == 1);
+        DATA.iCBPH  = find(strcmp('canyonB_ph',DATA.C.hdr)      == 1);
     else
         DATA.iCN   = [];
         DATA.iCPH  = [];    
+        DATA.iCBN   = [];
+        DATA.iCBPH  = []; 
     end
 
+        
     % LINR & LIPHR ESTIMATES FOR NITRATE AND PH 
     if handles.info.qc_flag == 1 && ~isempty(DATA.iO)
 %                 set(handles.recumpute_text,'Visible','on')
