@@ -52,7 +52,7 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 %   get_MBARI_WMO_list        Calc_SBE63_O2           theta
 %   parseNO3cal               betasw_ZHH2009          density
 %   get_QC_adjustments        apply_QC_corr
-%   get_QCstep_dates          phcalc_jp
+%   get_QCstep_dates          phcalc
 %   get_last_cast             parse_NO3msg
 %   get_msg_list    
 %
@@ -101,6 +101,7 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 % 09/10/18 Added code to process floats with seconday pH pressure coefficients.
 %     At this point this change onlly afects 0690. -jp
 % 09/11/2018, TM changed calls to isbadsensor.m in support of adding QF='questionable' to bad sensor list capabilities.
+% 01/16/19, TM, replaced calls to phcalc_jp after transition to phcalc mfile used in Argo documentation.
 % ************************************************************************
 
 % FOR TESTING
@@ -1541,12 +1542,12 @@ for msg_ct = 1:size(msg_list,1)
         end
 %         LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT);
         LR.TEMP_PH_QC(~lr_nan) = fv.QC;
-        [lr_phfree, lr_phtot] = phcalc_jp(LR.VRS_PH(~lr_nan), ...
+        [lr_phfree, lr_phtot] = phcalc(LR.VRS_PH(~lr_nan), ...
             LR.PRES(~lr_nan), LR.TEMP_PH(~lr_nan), LR.PSAL(~lr_nan), ...
             cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
         
         if isfield(cal.pH,'secondary_pcoefs')
-            [lr_phfree2, lr_phtot2] = phcalc_jp(LR.VRS_PH(~lr_nan), ...
+            [lr_phfree2, lr_phtot2] = phcalc(LR.VRS_PH(~lr_nan), ...
                 LR.PRES(~lr_nan), LR.TEMP_PH(~lr_nan), LR.PSAL(~lr_nan),...
                 cal.pH.k0, cal.pH.k2, cal.pH.secondary_pcoefs);
             
@@ -1591,12 +1592,12 @@ for msg_ct = 1:size(msg_list,1)
             end
             HR.TEMP_PH_QC(~hr_nan) = fv.QC;
             
-            [hr_phfree,hr_phtot] = phcalc_jp(HR.VRS_PH(~hr_nan), ...
+            [hr_phfree,hr_phtot] = phcalc(HR.VRS_PH(~hr_nan), ...
                 HR.PRES(~hr_nan), HR.TEMP_PH(~hr_nan), ...
                 HR.PSAL(~hr_nan), cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
             
             if isfield(cal.pH,'secondary_pcoefs')
-                [hr_phfree2,hr_phtot2] = phcalc_jp(HR.VRS_PH(~hr_nan), ...
+                [hr_phfree2,hr_phtot2] = phcalc(HR.VRS_PH(~hr_nan), ...
                     HR.PRES(~hr_nan), HR.TEMP_PH(~hr_nan), ...
                     HR.PSAL(~hr_nan), cal.pH.k0, cal.pH.k2, ...
                     cal.pH.secondary_pcoefs);

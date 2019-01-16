@@ -51,7 +51,7 @@ function tf_float = Process_APEX_float(MBARI_ID_str, dirs, update_str)
 %   get_MBARI_WMO_list        calc_O2_4ARGO           theta
 %   parseNO3cal               betasw_ZHH2009          density
 %   get_QC_adjustments        apply_QC_corr
-%   get_QCstep_dates          phcalc_jp
+%   get_QCstep_dates          phcalc
 %   get_last_cast             parse_pHmsg
 %   get_msg_list              parse_NO3msg
 %
@@ -94,6 +94,7 @@ function tf_float = Process_APEX_float(MBARI_ID_str, dirs, update_str)
 %       flagging of good data as bad if pH data was processed from msg file
 %       while dura was present but incomplete.
 % 09/11/2018, TM changed calls to isbadsensor.m in support of adding QF='questionable' to bad sensor list capabilities.
+% 01/16/19, TM, replaced calls to phcalc_jp after transition to phcalc mfile used in Argo documentation.
 % ************************************************************************
 
 % *** FOR TESTING ***
@@ -1210,7 +1211,7 @@ for msg_ct = 1:size(msg_list,1)
         LR.VRS_PH(~t_nan)      = lr_d(~t_nan,ipH); % I param
         LR.VRS_PH_QC(~t_nan)   = fv.QC;
         if isfield(cal,'pH')
-            [phfree,phtot] = phcalc_jp(LR.VRS_PH(~t_nan), ...
+            [phfree,phtot] = phcalc(LR.VRS_PH(~t_nan), ...
                 LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), ...
                 cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
             LR.PH_IN_SITU_FREE(~t_nan)    = phfree; % I param
