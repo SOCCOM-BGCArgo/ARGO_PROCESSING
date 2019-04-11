@@ -441,7 +441,7 @@ function gui = createInterface( ~ )
         [~,inputs.intersect_cycles_WOA,~] = intersect(DATA.track(:,2),DATA.O2data{1}(:,2));
         Wtrack = [DATA.track(inputs.intersect_cycles_WOA,1) DATA.track(inputs.intersect_cycles_WOA,4) DATA.track(inputs.intersect_cycles_WOA,3)];
         try
-            Wdata = get_WOA2013_local_sO2(Wtrack, [0 2000], 'O2sat',dirs.user_dir);
+            Wdata = get_WOA2013_local_sO2Argo(Wtrack, [0 2000], 'O2sat',dirs.user_dir);
             zsurf = Wdata.Z<=25;
             WOA_surf = Wdata.d(zsurf,:);
             DATA.WOAsurf = nanmean(WOA_surf,1);

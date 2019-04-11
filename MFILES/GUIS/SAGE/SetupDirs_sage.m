@@ -1,6 +1,6 @@
-function dirs = SetupDirs_sO2Argo
+function dirs = SetupDirs_sage
 % ************************************************************************
-% SetupDirs_sO2.m
+% SetupDirs_sage.m
 % ************************************************************************
 %
 % Sets up directories referenced throughout GUI.
@@ -35,9 +35,8 @@ try
 catch
     warning('Problem loading sage_workingDIR.mat.  Did you run INSTALL_sage from ../ARGO_PROCESSING/MFILES/GUIS/SAGE/ ?')
 end
-mydir = pwd;
-xdir = strfind(mydir,'ARGO_PROCESSING');
-dirs.user_dir = mydir(1:xdir-1);
+
+dirs.user_dir = topdir;
 dirs.mfiles    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'MFILES',filesep];
 dirs.woa       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2013',filesep];
 dirs.glodap    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'GLODAP',filesep];
