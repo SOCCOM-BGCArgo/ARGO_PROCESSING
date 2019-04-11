@@ -1,4 +1,4 @@
-function tf_odv = argo2odv_MLR(MBARI_ID_str, dirs, update_str)
+function tf_odv = argo2odv_MLR(MBARI_ID_str, dirs, update_str, HR_flag)
 
 % ************************************************************************
 % PURPOSE: 
@@ -15,6 +15,8 @@ function tf_odv = argo2odv_MLR(MBARI_ID_str, dirs, update_str)
 %   update_str = "all" or "update"
 %                 all    - to process all available msg files
 %                 update - only process new msg files
+%
+%   HR_flag = 1 or 0, 1 to create HR txt files
 %
 %   dirs       = Either an empty variable ora structure with directory
 %                strings where files are located. It must contain these
@@ -50,6 +52,12 @@ function tf_odv = argo2odv_MLR(MBARI_ID_str, dirs, update_str)
 % 01/04/2017 - Fixed BBP532 bug: for backscatter there is no QC data so
 %   fill adjusted data with raw data. This was done for BBP700 but not for
 %   BBP532 (Presently this only affects float 0565). - JP
+% 11/14/18 - Added "HR_flag" input to function to controll wether or not
+%   HR txt files are created, -jp
+% 01/10/19 - TM, Added code to deal with floats with all missing position
+%   fixes (ie 12768, deployed too close to ice).  If no position info, try to
+%   grab the position from the 000.msg file as estimate for first cycle.
+%   This only goes in the ODV files.  QF will be = 4 (questionable).
 
 
 % TESTING
@@ -232,8 +240,29 @@ clear i t1 missing_profiles
 missing_pos_str = '';
 interp_pos_str  = '';
 t_nan = isnan(pos_fix(:,4)); % any nan's in LAT? 
+cy1 = pos_fix(pos_fix(:,1)==1,:);
 
-if sum(t_nan,1) > 0
+if sum(t_nan,1)==length(pos_fix(:,4)) && ~isempty(cy1) %all nans; never a pos fix, and includes first cycle
+    %Try to retrieve the position info from cycle 000 if available.  Use
+    %this as an estimate of the first cycle.
+    B = regexp(MBARI_ID_str,'\d*','Match');
+    fnum = B{1};
+    if str2num(fnum)>1000 %APEX float
+        forn = 'f';
+    else
+        forn = 'n';
+    end
+    [LON,LAT] = get000msg_position([dirs.msg,filesep,forn,fnum,filesep,fnum,'.000.msg']);
+    if ~isempty(LON) && ~isempty(LAT) %successful position grab
+        pos_fix(1,3) = LON;
+        pos_fix(1,4) = LAT;
+        rdata(rdata(:,1)==1,3) = LON;
+        rdata(rdata(:,1)==1,4) = LAT;
+        rdata(rdata(:,1)==1,5) = 3; %if using 000.msg position info, mark lat/lon QF as "questionable"
+    end
+end
+t_nan = isnan(pos_fix(:,4)); % any nan's in LAT? Try again now that checked for 000 position info.
+if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never a pos fix) then no interpolation, move on
     diff_nan   = [0;diff(t_nan)]; % 1 = start of NaN, -1 = start of good
     nan_start  = find(diff_nan == 1);
     nan_end    = find(diff_nan == -1) - 1;
@@ -641,6 +670,7 @@ if ~isempty(iPH) % pH data exists
         ind      = [];
         disp('Calculating biased pH for CO2 calculation using CO2SYS')
         for i = 1:size(cycles,1)
+            ind      = [];
             tcycle  = adj_data(:,1) == cycles(i); % flag profile
             
             % get P, pH, pH25C for profile
@@ -1512,7 +1542,7 @@ end
 % CREATE COMBINED HR+LR ADJUSTED ACII FILE
 % ************************************************************************
 % ************************************************************************
-if QC_check == 1   
+if QC_check == 1 && HR_flag == 1  
     % PRINT HEADER FIRST
     if strcmp(info.float_type, 'APEX')
         [alladj_r,alladj_c] = size(allraw_data);

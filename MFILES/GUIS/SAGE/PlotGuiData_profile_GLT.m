@@ -42,10 +42,11 @@ iSTA        = strcmp(DATA.datatype.hdr,'Station');
 tSTA        = DATA.datatype.data(:,iSTA) >= profile_lim(1) & ...
               DATA.datatype.data(:,iSTA) <= profile_lim(2);
 profdata    = DATA.datatype.data(tSTA,:);
+vMLRtmp = DATA.refdata(tSTA);
 
 tvert   = profdata(:,DATA.iP) >= y_lim(1) & profdata(:,DATA.iP) <= y_lim(2);
 vdata   = profdata(tvert,:); % subset
-vMLR_X  = DATA.refdata(tvert);
+vMLR_X  = vMLRtmp(tvert);
 vDIFF_X = DATA.DIFF_X(tvert);
 sdn_lim   = [nanmin(profdata(:,1)) nanmax(profdata(:,1))];
 sdn_ticks = linspace(sdn_lim(1), sdn_lim(2),4);
@@ -213,7 +214,7 @@ if ~isempty(vdata)
                 'MarkerEdgeColor', 'k', 'parent',gui.whichAX(2),'MarkerSize', 4);
             hlegend_cell = [hlegend_cell, ...
                 ['GLODAP ',num2str(YRS(i))]];
-            if ct == 4,
+            if ct == 4
                 ct = 0;
                 ct2 = ct2+1;
             end
@@ -249,8 +250,7 @@ if ~isempty(vdata)
         ylabel(gui.whichAX(3),'Pressure, dbar')
     else
         % GET 1st CAST
-		%casts       = unique(DATA.datatype.data(:,2));
-        casts       = unique(DATA.datatype(:,2));
+        casts       = unique(DATA.datatype.data(:,2));
         start_ind  = find(casts >0, 1, 'first');
         if size(start_ind,2) == 1
             start_cast = casts(start_ind(1));
@@ -323,7 +323,13 @@ if ~isempty(vdata)
             plot(DATA.b.data(:,DATA.bIND), DATA.b.data(:,DATA.ibP), 'ko', ...
                 'MarkerSize',6, 'MarkerFaceColor',[255 255 0]/255,...
                 'parent',gui.whichAX(4),'MarkerEdgeColor', 'k')
-            if strcmp(DATA.paramtag, 'PH') && ~isempty(DATA.bIND2)
+            
+            if strcmp(DATA.paramtag, 'O2') && ~isempty(DATA.bIND2)
+                plot(DATA.b.data(:,DATA.bIND2), DATA.b.data(:,DATA.ibP), 'ko', ...
+                    'MarkerSize',6, 'MarkerFaceColor',[255 255 0]/255,...
+                    'parent',gui.whichAX(4),'MarkerEdgeColor', 'r')
+                legend_str = [legend_str, 'bottle O2','CTD O2'];
+            elseif strcmp(DATA.paramtag, 'PH') && ~isempty(DATA.bIND2)
                 plot(DATA.b.data(:,DATA.bIND2), DATA.b.data(:,DATA.ibP), 'ko', ...
                     'MarkerSize',6, 'MarkerFaceColor',[255 255 0]/255,...
                     'parent',gui.whichAX(4),'MarkerEdgeColor', 'r')

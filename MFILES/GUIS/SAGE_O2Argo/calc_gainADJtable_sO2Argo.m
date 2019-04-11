@@ -40,21 +40,26 @@ function [tableDATA,brkRESIDS] = calc_gainADJtable_sO2Argo(DATA,cyST,cyEND,is_fl
 
 RES=[];
 tableD=nan(size(cyST,1),3);
-for i = 1:size(cyST,1); %do calculation for each adjustment row
+for i = 1:size(cyST,1) %do calculation for each adjustment row
     regrX = DATA.refdata(DATA.refdata(:,2)>=cyST(i) & DATA.refdata(:,2)<=cyEND(i),1);
-    if ~isempty(DATA.rawGAINS{3})
-        regrY = DATA.rawGAINS{3}(DATA.refdata(:,2)>=cyST(i) & DATA.refdata(:,2)<=cyEND(i)); %if new aircal method exists, use it
-    else
-        regrY = DATA.rawGAINS{1}(DATA.refdata(:,2)>=cyST(i) & DATA.refdata(:,2)<=cyEND(i));  %otherwise use older 
+    if DATA.iswoaref == 0
+        if ~isempty(DATA.rawGAINS{3})
+            regrY = DATA.rawGAINS{3}(DATA.refdata(:,2)>=cyST(i) & DATA.refdata(:,2)<=cyEND(i)); %if new aircal method exists, use it
+        else
+            regrY = DATA.rawGAINS{1}(DATA.refdata(:,2)>=cyST(i) & DATA.refdata(:,2)<=cyEND(i));  %otherwise use older
+        end
+    elseif DATA.iswoaref == 1
+        regrY = DATA.rawGAINS_WOA{1}(DATA.refdata(:,2)>=cyST(i) & DATA.refdata(:,2)<=cyEND(i));
     end
+        
     regrX = regrX-nanmin(regrX); %subtract minimum x-value, so x variable is 'time since cycle at specified breakpoint'
-    N = isnan(regrY);
+    N = isnan(regrY)| isnan(regrX);
     rX = regrX(~N);
     rY = regrY(~N);
-    if is_floatQC == 1
+    if is_floatQC == 1 && DATA.tableDATA(1,3) == 0 %for calculating preloaded mean gains
         tbld = DATA.tableDATA; %will already exist
-        mCy = tbld(:,3);
-        bCy = tbld(:,2);
+        mCy = tbld(i,3)./365;
+        bCy = tbld(i,2);
         newY = rX.*mCy+bCy;
         res = newY-rY;
     else
@@ -63,6 +68,14 @@ for i = 1:size(cyST,1); %do calculation for each adjustment row
              newY = rX.*mCy+bCy;
              newoff = newY(end);
              res = newY-rY;
+             ISSIG = test0slope(rX,rY,0.05);
+             if  is_floatQC ~= 1
+                 if ISSIG.test == 0
+                     msgbox('SLOPE IS INSIGNIFICANT.')
+                 else
+                     msgbox('SLOPE IS SIGNIFICANT.')
+                 end
+             end
         else
             RY = rY-newoff;
             mCy = (sum(rX.*RY))/(sum(rX.*rX));
@@ -77,5 +90,6 @@ for i = 1:size(cyST,1); %do calculation for each adjustment row
     RES=[RES;res];
 end
 tableDATA = tableD;
+tableDATA(isnan(tableDATA))=0;%replace nan with zero for consistency...
 brkRESIDS=RES;
 %end function

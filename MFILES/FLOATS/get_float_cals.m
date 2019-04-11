@@ -55,13 +55,19 @@ function cal = get_float_cals(MBARI_ID_str, dirs)
 %   printed to the ODV txt files in argo2ODV*. m files
 % 09/10/18 Added code to look for seconday pH pressure coefficients. At
 %   this point this change onlly afects 0690. -jp
+% 10/26/18 Added code to extract non zero Aanderaa 4330 SVUFoilCoef's. -jp
+
 
 % ************************************************************************
 % FOR TESTING
 % dirs =[];
+% MBARI_ID_str = '9125SoOcn';
+%MBARI_ID_str = '8501SoOcn';
+% MBARI_ID_str = '12747SoOcn';
 % MBARI_ID_str = '0690SOOCN';
 % %MBARI_ID_str = '0569SoOcn';
 % MBARI_ID_str = '7614SoOcn';
+
 % ************************************************************************
 
 % ************************************************************************
@@ -238,6 +244,15 @@ if length(optope_info) == 2 && ...
             ind = regexp(tline,'FoilPolyDegO','once')+ 22;
             O.PolyDegO = cell2mat((textscan(tline(ind:end),'%f',28)));
         end
+        
+        if ~isempty(regexp(tline,'SVUFoilCoef','once'))
+            ind = regexp(tline,'SVUFoilCoef \d+ \d+ ','once','end')+1;
+            SVU = sscanf(tline(ind:end),'%f');
+            if sum(SVU(:)) ~= 0
+                O.SVUFoilCoef = SVU;
+            end
+        end
+        
         if ~isempty(regexp(tline,'ConcCoef','once'))
             ind = regexp(tline,'ConcCoef','once')+ 19;
             O.ConcCoef = cell2mat((textscan(tline(ind:end),'%f',2)));

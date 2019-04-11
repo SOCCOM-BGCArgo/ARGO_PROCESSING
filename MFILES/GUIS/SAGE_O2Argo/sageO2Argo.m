@@ -141,12 +141,12 @@ function gui = createInterface( ~ )
                 bbox = uix.VButtonBox('Parent',VP2,'Padding',5,...
                     'ButtonSize',[100,20],'HorizontalAlignment','left');
                     rb2(1) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','Surface','tag','1','Value',0,'Callback',@plottype_onClicked ); 
+                        'String','Surface','tag','1','Value',1,'Callback',@plottype_onClicked ); 
                     rb2(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','Deep','tag','2','Value',1,'Callback',@plottype_onClicked ); 
+                        'String','Deep','tag','2','Value',0,'Callback',@plottype_onClicked ); 
                     rb2(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
                         'String','Profile','tag','3','Value',0,'Callback',@plottype_onClicked ); 
-                gui.rb2 = rb2;  
+                gui.rb2 = rb2;
                             
            % Control Box 3 (Reference Data)
            VB3 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);         
@@ -165,12 +165,14 @@ function gui = createInterface( ~ )
             VP4 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);        
                 P4 = uix.Panel('Parent',VP4,'title','Oxygen Gain Adjustments:');
                     P4v = uix.VBox('Parent',P4,'Padding',3,'Spacing',3);
+                        P4mean = uicontrol('Parent',P4v,'Style','pushbutton','string',...
+                                'CALC MEAN GAIN','Enable','on','Callback',@on_calcmeanG);
                         P4h = uix.HBox('Parent',P4v,'Padding',5,'Spacing',5);
                             gui.addrow = uicontrol('Parent',P4h,'Style','pushbutton','string',...
-                                'ADD ROW','Enable','off','Callback',@on_addrow);
+                                'ADD ROW','Enable','on','Callback',@on_addrow);
                             gui.removerow = uicontrol('Parent',P4h,'Style','pushbutton','string',...
-                                'REMOVE ROW','Enable','off','Callback',@on_removerow);
-                        gui.tbl=uitable('Parent',P4v,'Data',{'NA' 'NA' 'NA'},'Enable','off',...
+                                'REMOVE ROW','Enable','on','Callback',@on_removerow);
+                        gui.tbl=uitable('Parent',P4v,'Data',[1 1 0],'Enable','on',...
                             'CellEditCallback',@on_celledit);
                         gui.tbl.ColumnName = {'Cycle','Gain','Drift'};
                         gui.tbl.ColumnEditable = [true true true];
@@ -181,15 +183,15 @@ function gui = createInterface( ~ )
             % Control Box 5 (APPLY Oxygen Gain Adjustment)
             VP5 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);  
                 P5 = uix.Panel('Parent',VP5,'title','Apply Oxygen Gain Adjustment:');
-                    P5A = uicontrol('parent',P5,'style','pushbutton','string',...
-                            'Write ODV*QC.TXT','Callback',@on_applyO2gain,'Enable','on');
+                    gui.doQCbutton = uicontrol('parent',P5,'style','pushbutton','string',...
+                            'Write ODV*QC.TXT','fontsize',14,'Callback',@on_applyO2gain,'Enable','on');
 
 
 
                 
         set( controlLayout, 'Heights', [-5.5 -2.5 -2.5 -5 -2] ); %Main control vbox heights
         set( vb, 'Heights', [-1 -1 -1.75 -1.75 -1.75] ); %Float spec box heights
-        set( P4v, 'Heights', [-1 -3] ); %QC adj box heights
+        set( P4v, 'Heights', [-1 -1 -3] ); %QC adj box heights
         
         % + Create the view
         p = gui.ViewContainer;
@@ -308,7 +310,6 @@ function gui = createInterface( ~ )
         % SET X LIMITS AND TICK LOCATIONS FOR PLOTTING (AS DATE AND CYCLE#)
         DATA.xlims{1} = [DATA.track(DATA.track(:,2)==PROFmin,1) DATA.track(DATA.track(:,2)==PROFmax,1)];
         DATA.xlims{2} = [DATA.track(DATA.track(:,2)==PROFmin,2) DATA.track(DATA.track(:,2)==PROFmax,2)];
-        DATA.xlims
         if nanmax(DATA.xlims{2}(2)) >= 6 % at least 6 cycles
             xtckfac{2} = floor((DATA.xlims{2}(2)-DATA.xlims{2}(1))/5);
         else
@@ -328,8 +329,8 @@ function gui = createInterface( ~ )
             DATA.refdata(:,2) <= PROFmax,:);
         DATA.SATsubset = DATA.RAWorQCwoa(DATA.RAWorQCwoa(:,1) >= PROFmin & ... 
             DATA.RAWorQCwoa(:,1) <= PROFmax,:);
-        inputs.iswoaref = get(gui.rb3(2),'Value');
-        if inputs.iswoaref == 1
+        DATA.iswoaref = get(gui.rb3(2),'Value');
+        if DATA.iswoaref == 1
             DATA.GAINS = DATA.refsub(:,4)./DATA.SATsubset(:,2);
         else
             tmp = find(~cellfun(@isempty,DATA.O2air{1}));
@@ -339,7 +340,10 @@ function gui = createInterface( ~ )
                     DATA.RAWorQCair{1}{s}(:,2) <= PROFmax,:);
                 DATA.airsub{2}{s} = DATA.RAWorQCair{2}{s}(DATA.RAWorQCair{2}{s}(:,2) >=PROFmin & ...
                     DATA.RAWorQCair{2}{s}(:,2) <= PROFmax,:);
-                DATA.GAINS{s} = DATA.refsub(:,4)./DATA.airsub{1}{s}(:,9);
+%                 DATA.GAINS{s} = DATA.refsub(:,4)./DATA.airsub{1}{s}(:,9);
+                [cc,iia,iib] = intersect(DATA.refsub(:,2),DATA.airsub{1}{s}(:,2));
+                DATA.GAINS{s} = DATA.refsub(iia,4)./DATA.airsub{1}{s}(iib,9);
+                DATA.GAINStime{s} = DATA.refsub(iia,1); %for use in plotting climos
             end
         end
         % Now further subset the data if plotting only night-time cals;
@@ -366,19 +370,18 @@ function gui = createInterface( ~ )
                 end
             end
         end
-        
     end % updateInterface
 
 %-------------------------------------------------------------------------%
     function onhelp( ~, ~ )
         % User has asked for the documentation
-        open([dirs.mfiles,'GUIS\SAGE_O2\README_sO2.txt'])
+        open([dirs.mfiles,'GUIS',filesep,'SAGE_O2Argo',filesep,'README_SageO2Argo.txt'])
     end % onHelp
 
 %-------------------------------------------------------------------------%
     function onack( ~, ~ )
         % User has asked for the documentation
-        open([dirs.mfiles,'GUIS\SAGE_O2\acknowledgements_sO2_Argo.txt'])
+        open([dirs.mfiles,'GUIS',filesep,'SAGE_O2Argo',filesep,'acknowledgements_sO2Argo.txt'])
     end % onHelp
 
 %-------------------------------------------------------------------------%
@@ -396,10 +399,20 @@ function gui = createInterface( ~ )
         fp = filesep; % File separator for current platform
         thedatadir = [pn,fp];
         handlesODVQC.info.file_path = thedatadir;
+        set( gui.Fbutton,'String','Loading Data ...');
+        gui.wrk_color = gui.Fbutton.BackgroundColor;
+        set(gui.Fbutton,'BackgroundColor','y');
+        set( gui.doQCbutton,'String','Write ODV*QC.TXT','fontsize',16)
+        set(gui.doQCbutton,'BackgroundColor',gui.wrk_color);
+        gui.rb2(1).Value = 1; % reset to surface plot when float opens
+        gui.rb2(2).Value = 0;
+        gui.rb2(3).Value = 0;
+        drawnow
         set( gui.Fbutton,'String',inputs.floatID);
         DATA = getall_floatdata_sO2Argo(thedatadir,inputs.floatID);
         set(gui.Mbutton,'Enable','on');
-        inputs.depthedit = [1480 1520]; %default pressure range (deep)
+        %inputs.depthedit = [1480 1520]; %default pressure range (deep)
+        inputs.depthedit = [0 30]; %default pressure range (deep)
         inputs.GLDPkm = 30;
         inputs.profedit = [1 DATA.track(end,2)]; 
         inputs.AMPM = 'all';
@@ -407,7 +420,7 @@ function gui = createInterface( ~ )
         gui.t.SelectedChild = 1; %default to Raw upon float selection
         gui.t.SelectionChangedFcn = @on_RAWorQC;
 %         gui.TP.Selection = 2;   %default to Deep tab 
-        set(gui.rb2(2),'Value',1);
+        %set(gui.rb2(2),'Value',1);
 %         set(gui.rb5,'Value',0);
         DATA.RAWorQCprof = DATA.O2data{1}; %profile data  
         DATA.RAWorQCair = DATA.O2air;
@@ -422,17 +435,27 @@ function gui = createInterface( ~ )
         inputs.qc_path = [dirs.QCadj,DATA.floatNAME,'_FloatQCList.txt'];
         DATA.QCA = get_QCA(inputs.qc_path,DATA.floatNAME);
         %Calculate WOA data and surface o2 sat for all floats
+        set( gui.Fbutton,'String','Loading WOA ...');
+        set(gui.Fbutton,'BackgroundColor','y');
+        drawnow
         [~,inputs.intersect_cycles_WOA,~] = intersect(DATA.track(:,2),DATA.O2data{1}(:,2));
         Wtrack = [DATA.track(inputs.intersect_cycles_WOA,1) DATA.track(inputs.intersect_cycles_WOA,4) DATA.track(inputs.intersect_cycles_WOA,3)];
-        Wdata = get_WOA2013_local_sO2Argo(Wtrack, [0 2000], 'O2sat',dirs.user_dir);
-        zsurf = Wdata.Z<=25;
-        WOA_surf = Wdata.d(zsurf,:);
-        DATA.WOAsurf = nanmean(WOA_surf,1);
+        try
+            Wdata = get_WOA2013_local_sO2(Wtrack, [0 2000], 'O2sat',dirs.user_dir);
+            zsurf = Wdata.Z<=25;
+            WOA_surf = Wdata.d(zsurf,:);
+            DATA.WOAsurf = nanmean(WOA_surf,1);
+        catch
+            msgbox({'ERROR: getWOA failed.',...
+                'Must use NCEP or bottle data for reference.'})
+            set(gui.rb3(1),'Value',0,'Enable','off');
+            DATA.WOAsurf = [];
+        end
         FLT = DATA.O2data{1} ;% sdn, cast, S, P, T, Phase,  O2, O2sol, pO2, pH20, O2Sat
         FLT_surf = FLT(FLT(:,4)<=25,:);
         cst = unique(FLT(:,2));
         DATA.SURF_SAT=[];
-        for i = 1:length(cst);
+        for i = 1:length(cst)
             cstnum = cst(i);
             FLT_tmp = FLT_surf(FLT_surf(:,2)==cstnum,11);
             DATA.SURF_SAT(i,1) = cstnum;
@@ -440,7 +463,11 @@ function gui = createInterface( ~ )
             DATA.SURF_SAT(i,3) = nanstd(FLT_tmp);
         end
         DATA.RAWorQCwoa = DATA.SURF_SAT;
-        DATA.rawGAINS_WOA{1} = DATA.WOAsurf'./DATA.RAWorQCwoa(:,2);
+        if isempty(DATA.WOAsurf)
+            DATA.rawGAINS_WOA{1} = [];
+        else
+            DATA.rawGAINS_WOA{1} = DATA.WOAsurf'./DATA.RAWorQCwoa(:,2);
+        end
         DATA.rawGAINS_WOA{3} = [];
 %         DATA.O2air{1}
         if ~isempty(DATA.O2air{1}) && sum(~isnan(DATA.O2air{1}{1}(:,10)))>0 %AIRCAL EXISTS SO USE NCEP OR ERA
@@ -449,7 +476,10 @@ function gui = createInterface( ~ )
             %TRY NCEP FIRST (REALTIME).  DATA IS GRABBED FROM THE WEB.  IF WEBSITE IS
             %DOWN FOR MAINTENANCE ETC WILL TRY ERA NEXT.
             try
-                DATA.NCEP = getNCEP(DATA.track(inputs.intersect_cycles,1),DATA.track(inputs.intersect_cycles,3),DATA.track(inputs.intersect_cycles,4));
+                set( gui.Fbutton,'String','Loading NCEP ...');
+                set(gui.Fbutton,'BackgroundColor','y');
+                drawnow
+                DATA.NCEP = getNCEP(DATA.track(inputs.intersect_cycles,1),DATA.track(inputs.intersect_cycles,3),DATA.track(inputs.intersect_cycles,4),dirs);
             catch
                 msgbox({'ERROR: getNCEP failed.',...
                     'Must use ERA or WOA for reference.'})
@@ -470,7 +500,9 @@ function gui = createInterface( ~ )
                 else
                     DATA.refdata(:,4) = (DATA.refdata(:,3)./100 - DATA.RAWorQCair{1}{1}(:,10)).*0.20946;
                 end
-                inputs.cyEND = max(DATA.refdata(:,2));
+%                 DATA.refdata(1:5,3)
+%                 DATA.RAWorQCair{1}{1}(1:5,10)
+                inputs.cyEND = nanmax(DATA.refdata(:,2));
                 %Maintain raw gains for adjustment calcs in
                 %calc_gain_ADJtable_sO2Argo.m and for toggling between reference
                 %datasets
@@ -488,17 +520,24 @@ function gui = createInterface( ~ )
                 inputs.isprof = 0;
                 %populate gain adjustment table
                 cyST = 1;
+                DATA.iswoaref = get(gui.rb3(2),'Value');
                 if isempty(DATA.QCA.O2)
                     DATA.tableDATA = [cyST nanmean(useGAIN) 0];
-                    [DATA.tableDATA,DATA.brkRESIDS] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
-%                     set(gui.tbl,'Data',DATA.tableDATA)
-                    msgbox({'FYI: FLOAT HAS NOT YET BEEN QUALITY CONTROLLED','POPULATING ADJUSTMENT TABLE WITH DEFAULT.'});
-                else
-                     DATA.tableDATA = [cyST DATA.QCA.O2(2) 0];
                     [DATA.tableDATA,DATA.brkRES] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
-%                     set(gui.tbl,'Data',DATA.tableDATA)
+                    set(gui.tbl,'Data',DATA.tableDATA)
+                    msgbox({'FYI: AVG GAIN POPULATES ADJUSTMENT TABLE BY DEFAULT.'});
+                else
+%                      DATA.tableDATA = [cyST DATA.QCA.O2(2) 0];
+                    DATA.tableDATA = [DATA.QCA.O2(:,1) DATA.QCA.O2(:,2) DATA.QCA.O2(:,4)];
+                    cyST = DATA.QCA.O2(:,1);
+                    inputs.cyEND= nanmax(DATA.refdata(:,2));
+                    if length(cyST)>1
+                        inputs.cyEND = [cyST(2:end);inputs.cyEND];
+                    end
+                    [DATA.tableDATA,DATA.brkRES] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
+                    set(gui.tbl,'Data',DATA.tableDATA)
                 end
-                DATA.AIC = calcAIC_sO2Argo(gui,DATA);
+                DATA.BIC = calcBIC_sO2Argo(gui,DATA);
                 updateInterface()
                 DATA = redraw_CLIMO_sageO2Argo(dirs,gui,DATA,inputs);
             end
@@ -580,6 +619,7 @@ function gui = createInterface( ~ )
             set(gui.rb3(1),'Value',0,'Enable','off');
 %             set(gui.rb3(2),'Value',0,'Enable','off');
             set(gui.rb3(2),'Value',1);
+            DATA.iswoaref = get(gui.rb3(2),'Value');
             if isfield(DATA,'refdata')
                 DATA=rmfield(DATA,'refdata');
             end
@@ -592,18 +632,27 @@ function gui = createInterface( ~ )
             DATA.GAINS=DATA.rawGAINS_WOA; %maintain raw gains for adjustment calcs in calc_gain_ADJtable_sO2Argo.m
             inputs.isprof = 0;
             %populate gain adjustment table
-            cyST = 1;
-            if isempty(DATA.QCA.O2)
+            
+            %cyST = DATA.QCA.O2(:,1); %This will only work if adjustment table already exists -jp 12/18/18
+            inputs.cyEND= nanmax(DATA.refdata(:,2));
+            
+            if isempty(DATA.QCA.O2) % NO QC yet
+                cyST = 1;
                 DATA.tableDATA = [cyST nanmean(DATA.GAINS{1}) 0];
-                [DATA.tableDATA,DATA.brkRESIDS] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
-%                 set(gui.tbl,'Data',DATA.tableDATA)
+                [DATA.tableDATA,DATA.brkRES] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
+                set(gui.tbl,'Data',DATA.tableDATA)
                 msgbox({'FYI: FLOAT HAS NOT YET BEEN QUALITY CONTROLLED','POPULATING ADJUSTMENT TABLE WITH DEFAULT.'});
             else
-                 DATA.tableDATA = [cyST DATA.QCA.O2(2) 0];
-                 [DATA.tableDATA,DATA.brkRES] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
-%                 set(gui.tbl,'Data',DATA.tableDATA)
+                cyST = DATA.QCA.O2(:,1);
+                if length(cyST)>1 % this block seems like it could put in end value twice?
+                    inputs.cyEND = [cyST(2:end);inputs.cyEND];
+                end
+                DATA.tableDATA = [cyST DATA.QCA.O2(:,2) DATA.QCA.O2(:,4)];
+                disp(DATA.tableDATA)
+                [DATA.tableDATA,DATA.brkRES] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
+                set(gui.tbl,'Data',DATA.tableDATA)
             end
-            DATA.AIC = calcAIC_sO2Argo(gui,DATA);
+            DATA.BIC = calcBIC_sO2Argo(gui,DATA);
             updateInterface()
             DATA = redraw_WOA_sageO2Argo(dirs,gui,DATA,inputs);
         end % end if isempty aircal
@@ -653,6 +702,11 @@ function gui = createInterface( ~ )
             DATA.bdata.data   = [];
         end
     end
+    
+    %set( gui.Fbutton,'String',inputs.floatID)
+    set( gui.Fbutton,'String',DATA.floatNAME)
+    set(gui.Fbutton,'BackgroundColor',gui.wrk_color);
+    drawnow
     end %end selectfloat
 
 %-------------------------------------------------------------------------%
@@ -884,6 +938,35 @@ function gui = createInterface( ~ )
         end
     end
     
+ %-------------------------------------------------------------------------%
+    function on_calcmeanG( source, ~ ) 
+        if DATA.iswoaref == 0
+            if ~isempty(DATA.rawGAINS{3})
+                useG = nanmean(DATA.rawGAINS{3});
+            else
+                useG = nanmean(DATA.rawGAINS{1});
+            end
+        elseif DATA.iswoaref == 1 % WOA button is toggled
+            useG = nanmean(DATA.rawGAINS_WOA{1});
+        end
+        DATA.tableDATA = [1 useG 0];
+        cyST = DATA.tableDATA(1);
+        inputs.cyEND= nanmax(DATA.refdata(:,2));
+        [DATA.tableDATA,DATA.brkRES] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
+%             DATA.tableDATA = get(gui.tbl,'Data');
+        set(gui.tbl,'Data',DATA.tableDATA);
+        [gui,DATA] = apply_QCadj_sO2Argo(gui,inputs,DATA);
+        DATA.BIC = calcBIC_sO2Argo(gui,DATA);
+        updateInterface()
+        if   inputs.isprof == 1 %profile selected?
+             redraw_PROF_sageO2Argo(dirs,gui,DATA,inputs)
+        elseif ~isempty(DATA.O2air{1}) && get(gui.rb3(2),'Value')~=1
+            redraw_CLIMO_sageO2Argo(dirs,gui,DATA,inputs)
+        else
+            redraw_WOA_sageO2Argo(dirs,gui,DATA,inputs)   
+        end
+    end 
+
 %-------------------------------------------------------------------------%
     function on_addrow( source, ~ ) 
         celldata = gui.tbl.Data;
@@ -898,7 +981,12 @@ function gui = createInterface( ~ )
 %-------------------------------------------------------------------------%
     function on_removerow( source, ~ ) 
         celldata = gui.tbl.Data;
-        new_celldata = celldata(1:end-1,:);
+        if size(celldata,1) == 1
+            new_celldata = celldata;
+            new_celldata(1,2:end) = 0;
+        else
+            new_celldata = celldata(1:end-1,:);
+        end
         set(gui.tbl,'Data',new_celldata);
     end
 
@@ -906,31 +994,60 @@ function gui = createInterface( ~ )
     function on_celledit( source, callbackdata ) 
         i1 = callbackdata.Indices(1); %row
         i2 = callbackdata.Indices(2); %column
+        cyST = source.Data(:,1);
         if i2 == 1 %column 1 has been edited (cycle)
             cyST = source.Data(:,1);
-            if i1 >= 2 %second row or beyond is edited
+            %This if block forces a final node (ends the drift at last
+            %available cycle).
+            A = DATA.refdata(:,4);
+            lastN = ~isnan(A); %find last index to non-nan gain
+            Ind = arrayfun(@(x) find(lastN(:, x), 1, 'last'), 1:size(A, 2));
+            Val = DATA.refdata(Ind,2);
+            if cyST(end) < nanmax(DATA.refdata(:,2))  && cyST(end) ~= Val
+                    celldata = gui.tbl.Data;
+                    newrow = [Val 0 0];
+                    new_celldata = [celldata;newrow];
+                    cyST = [cyST;Val];
+                    DATA.tableDATA=new_celldata;
+                    set(gui.tbl,'Data',DATA.tableDATA);
+            elseif cyST(end) > Val
+                cyST(end) = Val;     
+            end
+            if i1 >= 2 && i1> length(cyST)-1 %second row or beyond is edited
                 cyST(i1+1:end) = cyST(i1+1:end)+1;
             end
-            inputs.cyEND = [cyST(2:end,1);max(DATA.refdata(:,2))];
-            refN = get(gui.rb3(1),'Value');
-%             refE = get(gui.rb3(2),'Value');
-            refW = get(gui.rb3(2),'Value');
-            if refN == 1
-                DATA.rawGAINS = DATA.rawGAINS_NCEP;
-            elseif refE ==1
-                DATA.rawGAINS = DATA.rawGAINS_ERA;
-            else
-                DATA.rawGAINS = DATA.rawGAINS_WOA;
-            end
+            inputs.cyEND = [cyST(2:end,1);nanmax(DATA.refdata(:,2))];
+% %             refN = get(gui.rb3(1),'Value');
+% % %             refE = get(gui.rb3(2),'Value');
+% %             refW = get(gui.rb3(2),'Value');
+% %             if refN == 1
+% %                 DATA.rawGAINS = DATA.rawGAINS_NCEP;
+% % %             elseif refE ==1
+% % %                 DATA.rawGAINS = DATA.rawGAINS_ERA;
+% %             else
+% %                 DATA.rawGAINS = DATA.rawGAINS_WOA;
+% %             end
             [DATA.tableDATA,DATA.brkRES] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,0);
             set(gui.tbl,'Data',DATA.tableDATA)
         else % else slope and intercept has been manually edited.  DO NOT AUTO-CALCULATE.
+            cyEND= nanmax(DATA.refdata(:,2));
+            if length(cyST)>1
+                cyEND = [cyST(2:end);cyEND];
+            end
             DATA.tableDATA = get(gui.tbl,'Data');
+%             [DATA.tableDATA,DATA.brkRES] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
         end
         [gui,DATA] = apply_QCadj_sO2Argo(gui,inputs,DATA);
-        DATA.AIC = calcAIC_sO2Argo(gui,DATA);
+        DATA.BIC = calcBIC_sO2Argo(gui,DATA);
+        % Prep for the "reprocess" step, if user goes that route.  Need
+        % "QCA"
+        DATA.QCA.O2 = []; %clear it out, then replace with new
+        DATA.QCA.O2(:,1) = DATA.tableDATA(:,1); %cycle
+        DATA.QCA.O2(:,2) = DATA.tableDATA(:,2); %O2 gain
+        DATA.QCA.O2(:,3) = zeros(size(DATA.tableDATA,1),1); %insert column of zeros for "offset" (only for compatability)
+        DATA.QCA.O2(:,4) = DATA.tableDATA(:,3); %drift
         updateInterface()
-        if   inputs.isprof == 1; %profile selected?
+        if   inputs.isprof == 1 %profile selected?
              redraw_PROF_sageO2Argo(dirs,gui,DATA,inputs);
         elseif ~isempty(DATA.O2air{1}) && get(gui.rb3(2),'Value')~=1
             DATA = redraw_CLIMO_sageO2Argo(dirs,gui,DATA,inputs);
@@ -949,14 +1066,46 @@ function gui = createInterface( ~ )
          handlesODVQC.QCA.PH_OFFSET = [];
          handlesODVQC.QCA.PH = [];
          
-         if ~isempty(DATA.bigG) && ~isnan(DATA.bigG)
-            handlesODVQC.QCA.O2 = [1 DATA.bigG 0 0];
-            tf = Make_Mprof_ODVQC(handlesODVQC);
+         handlesODVQC.QCA.O2 = [DATA.tableDATA(:,1:2) zeros(size(DATA.tableDATA,1),1) DATA.tableDATA(:,3)]; %add placeholder for offset (not used in O2 QC, only gain and drift for now)
+         gui.wrk_color = gui.doQCbutton.BackgroundColor;
+         if sum(isnan(handlesODVQC.QCA.O2)) == 0
+             set( gui.doQCbutton,'String','Writing QC to file...','fontsize',14);
+             set(gui.doQCbutton,'BackgroundColor','y');
+             drawnow
+             tf = Make_Mprof_ODVQC(handlesODVQC);
+             set( gui.doQCbutton,'String','Write ODV*QC.TXT','fontsize',16)
+             set(gui.doQCbutton,'BackgroundColor',gui.wrk_color);
          else
-            msgbox('ERROR: AVERAGE GAIN ON SCREEN IS NAN.  ODV*QC.TXT WAS NOT WRITTEN.');
+             msgbox('ERROR: AVERAGE GAIN ON SCREEN IS NAN.  ODV*QC.TXT WAS NOT WRITTEN.');
          end
     end
 
+%-------------------------------------------------------------------------%
+    function on_reloadQC( source, ~ ) 
+        DATA.QCA = get_QCA(inputs.qc_path,DATA.floatNAME);
+        cyST = DATA.QCA.O2(:,1);
+        inputs.cyEND= nanmax(DATA.refdata(:,2));
+        if length(cyST)>1
+            inputs.cyEND = [cyST(2:end);inputs.cyEND];
+        end
+        if ~isempty(DATA.QCA.O2)
+            DATA.tableDATA = [DATA.QCA.O2(:,1) DATA.QCA.O2(:,2) DATA.QCA.O2(:,4)];
+            [DATA.tableDATA,DATA.brkRES] = calc_gainADJtable_sO2Argo(DATA,cyST,inputs.cyEND,1);
+            set(gui.tbl,'Data',DATA.tableDATA);
+            [gui,DATA] = apply_QCadj_sO2Argo(gui,inputs,DATA);
+            DATA.BIC = calcBIC_sO2Argo(gui,DATA);
+           updateInterface()
+           if   inputs.isprof == 1 %profile selected?
+                redraw_PROF_sageO2(dirs,gui,DATA,inputs)
+           elseif ~isempty(DATA.O2air{1}) && get(gui.rb3(2),'Value')~=1
+               redraw_CLIMO_sageO2(dirs,gui,DATA,inputs)
+           else
+               redraw_WOA_sageO2(dirs,gui,DATA,inputs)   
+           end     
+        else
+            msgbox('ERROR: FLOAT HAS NOT YET BEEN QUALITY CONTROLLED');
+        end
+    end
 %-------------------------------------------------------------------------%
 % THIS PUSHBUTTON/FUNCTION WAS REMOVED FROM GUI INTERFACE.  LEFT IN
 % COMMENTS IN CASE USER WANTS TO DEVELOP GAIN DRIFT FUNCTIONALITY

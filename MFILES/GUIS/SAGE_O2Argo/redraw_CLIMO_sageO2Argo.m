@@ -97,7 +97,8 @@
     % AXIS 2: plot gain
     %**************************************************************************
     cla(gui.whichAX(2))
-    x = DATA.refsub(:,1);
+%     x = DATA.refsub(:,1);
+    x = DATA.GAINStime{1};
     y1 = DATA.GAINS{1};
     meanGAIN1 = nanmean(y1);
     DATA.bigG = meanGAIN1; %Save to shared variable for application in Make_Mprof_ODVQC.m
@@ -112,12 +113,16 @@
     newY = Xls.*my1+by1;
 %     plot(Xls,newY,'--','parent',gui.whichAX(2),'color',mycolors(7,:)) single regression line.  replaced with line showing mean
     plot(Xls,repmat(meanGAIN1,length(Xls)),'--','parent',gui.whichAX(2),'color',mycolors(7,:))
+    hold(gui.whichAX(2),'on')
+    plot(Xls,newY,'--','parent',gui.whichAX(2),'color',mycolors(7,:),'linewidth',2)
     ysies = get(gui.whichAX(2),'ylim');
-    if DATA.howmanyairs >1;
+    if DATA.howmanyairs >1
+        x2 = DATA.GAINStime{3};
         y2 = DATA.GAINS{3};
         meanGAIN2 = nanmean(y2);
         hold(gui.whichAX(2),'on')
-        plot(x,y2,'o','parent',gui.whichAX(2),'markersize',5,'markerfacecolor',mycolors(8,:),'markeredgecolor',mycolors(8,:));%AIRnew(air)
+        plot(x2,y2,'o','parent',gui.whichAX(2),'markersize',5,'markerfacecolor',mycolors(8,:),'markeredgecolor',mycolors(8,:));%AIRnew(air)
+        X = x2(~isnan(y2));
         Y = y2(~isnan(y2));
         [my2,by2,~,~,~]=lsqfity(X,Y);
         hold(gui.whichAX(2),'on')
@@ -125,13 +130,14 @@
 %         plot(Xls,newY,'--','parent',gui.whichAX(2),'color',mycolors(8,:)) single regression line.  replaced with line showing mean
         plot(Xls,repmat(meanGAIN2,length(Xls)),'--','parent',gui.whichAX(2),'color',mycolors(8,:))
         % Plot Breakpoint analysis:
-        if inputs.rorq==1;
+        if inputs.rorq==1
             for jt = 1:size(DATA.tableDATA,1)
-                Ex = DATA.refsub(DATA.refsub(:,2)>=DATA.tableDATA(jt,1)&DATA.refsub(:,2)<=inputs.cyEND(jt),1);
+%                 Ex = DATA.refsub(DATA.refsub(:,2)>=DATA.tableDATA(jt,1)&DATA.refsub(:,2)<=inputs.cyEND(jt),1);
+                Ex = DATA.refdata(DATA.refdata(:,2)>=DATA.tableDATA(jt,1)&DATA.refdata(:,2)<=inputs.cyEND(jt),1);                
                 Exes = Ex-nanmin(Ex);
                 Whys = Exes.*(DATA.tableDATA(jt,3))./365+DATA.tableDATA(jt,2);
-%                 hold(gui.whichAX(2),'on')
-%                 plot(Ex,Whys,'--','parent',gui.whichAX(2),'color',mycolors(9,:),'linewidth',2)
+                hold(gui.whichAX(2),'on')
+                plot(Ex,Whys,'--','parent',gui.whichAX(2),'color',mycolors(9,:),'linewidth',2)
                 myEx = DATA.refsub(DATA.refsub(:,2)==DATA.tableDATA(jt,1),1);
                 if ~isempty(myEx)
                     hold(gui.whichAX(2),'on')
@@ -146,19 +152,20 @@
         Yloc = (Yls(2)-Yls(1))/8;
         text(Xloc,Yls(1)+7*Yloc,['mean  = ',num2str(meanGAIN1)],'parent',gui.whichAX(2),'color',mycolors(7,:),'fontunits','normalized','fontsize',0.125)
         text(Xloc,Yls(1)+5.5*Yloc,['mean = ',num2str(meanGAIN2)],'parent',gui.whichAX(2),'color',mycolors(8,:),'fontunits','normalized','fontsize',0.125)
-%          text(Xloc,Yls(1)+4*Yloc,['AIC = ',num2str(DATA.AIC)],'parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
-%         if inputs.rorq==1
-%             text(Xloc-(Xls(2)-Xls(1))/20,Yls(1)+2.5*Yloc,'--- Gain used in QC','parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
-%         end
+         text(Xloc,Yls(1)+4*Yloc,['BIC = ',num2str(DATA.BIC)],'parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
+        if inputs.rorq==1
+            text(Xloc-(Xls(2)-Xls(1))/20,Yls(1)+2.5*Yloc,'--- Gain used in QC','parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
+        end
     else
         % Plot Breakpoint analysis:
         if inputs.rorq==1;
             for jt = 1:size(DATA.tableDATA,1)
-                Ex = DATA.refsub(DATA.refsub(:,2)>=DATA.tableDATA(jt,1)&DATA.refsub(:,2)<=inputs.cyEND(jt),1);
+%                 Ex = DATA.refsub(DATA.refsub(:,2)>=DATA.tableDATA(jt,1)&DATA.refsub(:,2)<=inputs.cyEND(jt),1);
+                Ex = DATA.refdata(DATA.refdata(:,2)>=DATA.tableDATA(jt,1)&DATA.refdata(:,2)<=inputs.cyEND(jt),1);    
                 Exes = Ex-nanmin(Ex);
                 Whys = Exes.*(DATA.tableDATA(jt,3))./365+DATA.tableDATA(jt,2);
-%                 hold(gui.whichAX(2),'on')
-%                 plot(Ex,Whys,'-','parent',gui.whichAX(2),'color',mycolors(9,:),'linewidth',2)
+                hold(gui.whichAX(2),'on')
+                plot(Ex,Whys,'-','parent',gui.whichAX(2),'color',mycolors(9,:),'linewidth',2)
                 hold(gui.whichAX(2),'on')
                 myEx = DATA.refsub(DATA.refsub(:,2)==DATA.tableDATA(jt,1),1);
                 if ~isempty(myEx)
@@ -172,10 +179,10 @@
         Xloc = Xls(2)+(Xls(2)-Xls(1))/10;
         Yloc = (Yls(2)-Yls(1))/8;
         text(Xloc,Yls(1)+5.5*Yloc,['mean = ',num2str(meanGAIN1)],'parent',gui.whichAX(2),'color',mycolors(7,:),'fontunits','normalized','fontsize',0.125)
-%         text(Xloc,Yls(1)+4*Yloc,['AIC = ',num2str(DATA.AIC)],'parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
-%         if inputs.rorq==1
-%             text(Xloc-(Xls(2)-Xls(1))/20,Yls(1)+2.5*Yloc,'- Gain used in QC','parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
-%         end
+        text(Xloc,Yls(1)+4*Yloc,['BIC = ',num2str(DATA.BIC)],'parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
+        if inputs.rorq==1
+            text(Xloc-(Xls(2)-Xls(1))/20,Yls(1)+2.5*Yloc,'- Gain used in QC','parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
+        end
     end
     ylabel(gui.whichAX(2),'(Ref pO2)/(Flt pO2)','fontunits','normalized','fontsize',0.125);
     set(gui.whichAX(2),'xtick',DATA.xticks{1})

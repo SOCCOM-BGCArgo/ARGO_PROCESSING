@@ -37,11 +37,11 @@ fprintf(fid_new,['%s\t',datestr(now,'mm/dd/yy HH:MM'),'\r\n'],...
 if isfield(QCA,'O2') && handles.info.O2_sensor == 1
     rr = size(QCA.O2,1);
     if rr == 0 % no adjustments yet
-        fprintf(fid_new,'Oxygen, %1.4f\r\n',1);
+        fprintf(fid_new,'Oxygen,  %0.0f,%1.4f,%1.4f,%1.4f\r\n',[1, 1, 0, 0]);
     else
         for i = 1 : rr
-            % GAIN ONLY
-            fprintf(fid_new,'Oxygen, %1.4f\r\n',QCA.O2(i,2));
+            % cycle gain offset drift (offset will be zero)
+            fprintf(fid_new,'Oxygen, %0.0f,%1.4f,%1.4f,%1.4f\r\n',QCA.O2(i,:));
         end
     end
 end

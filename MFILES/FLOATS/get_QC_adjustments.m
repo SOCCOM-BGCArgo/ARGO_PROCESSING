@@ -127,8 +127,8 @@ if exist([dirs.QCadj,QC_adj_file],'file')
         while ischar(tline) && isempty(regexpi(tline,'^PREVIOUS','once'))
       
 			if regexp(tline,'^Oxygen','once') % only gain value & ONLY 1 LINE
-                tmp = textscan(tline,'%s%f%s','Delimiter', ',');
-                QC.O.steps  =[QC.O.steps;[1 tmp{1,2} 0 0]];
+                tmp = textscan(tline,'%s%f%f%f%f%s','Delimiter', ',');
+                QC.O.steps  =[QC.O.steps;[tmp{1,2},tmp{1,3},tmp{1,4} tmp{1,5}]];
                 QC.O.type   = 'Oxygen';
             elseif regexp(tline,'^Nitrate','once')% cycle gain offset, drift
                 tmp = textscan(tline,'%s%f%f%f%f%s','Delimiter', ',');

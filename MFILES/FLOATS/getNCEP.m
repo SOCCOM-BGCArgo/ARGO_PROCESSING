@@ -1,4 +1,4 @@
-function NCEP = getNCEP(SDN,LON,LAT)
+function NCEP = getNCEP(SDN,LON,LAT,dirs)
 %
 % NCEP = getNCP(SDN,lon,lat)
 %   getNCEP extracts NCEP data along a time track given time, lon & lat
@@ -94,7 +94,6 @@ end
 % ****************************  PATHS and VARIABLES **********************
 %        NCEPPath can be a URL, network dir (ie CHEM) or a local dir
 % ************************************************************************
-% NCEPpath1   = 'C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\DATA\NCEP_TEMPORARY\';
 % NCEPpath1 = dirs.NCEP_TEMP;
 NCEPpath1   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface_gauss/';
 NCEPpath2   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface/';
@@ -105,6 +104,7 @@ NCEPname(1,:) ={'PRES' ,'pres.sfc.gauss.',NCEPpath1 };   % Surface  pressure, Pa
 %NCEPname(2,:) ={'RH'  ,'rhum.sig995.',    NCEPpath2};    % Relative humidity (pH2O/pH2O sat)
 
 %NCEPname(2,:) ={'PRES2','pres.sfc.',     NCEPpath2};    % Surface  pressure, Pascals
+landmask = [dirs.NCEP,filesep,'land.sfc.gauss.nc'];
 
 
 [num_vars,~] = size(NCEPname); % get number of variables to extract
@@ -215,11 +215,32 @@ end
         
         if LON_flag ==1                     % No 0 meridian crossing data
             d = ncread(NCEPtarget,'pres', [lon_ind(1) lat_ind(1) 1],[lon_ind(2)-lon_ind(1)+1 lat_ind(2)-lat_ind(1)+1 tlength]);
+            LM = ncread(landmask,'land', [lon_ind(1) lat_ind(1) 1],[lon_ind(2)-lon_ind(1)+1 lat_ind(2)-lat_ind(1)+1 1]);  
+            LMask = logical(LM);
+            for ilm = 1:tlength
+                Dtmp = d(:,:,ilm);
+                Dtmp(LMask) = nan;
+                d(:,:,ilm) = Dtmp;
+            end
         else
             disp('PLOT TO VERIFY MERIDIAN CROSSING CODE!!!!');
             d1 = ncread(NCEPtarget,'pres', [1 lat_ind(1) 1],[lon_ind(2)-1 lat_ind(2)-lat_ind(1)+1 tlength]);
+            LM1 = ncread(landmask,'land', [1 lat_ind(1) 1],[lon_ind(2)-1 lat_ind(2)-lat_ind(1)+1 1]);
+            LMask1 = logical(LM1);
+            for ilm = 1:tlength
+                Dtmp = d1(:,:,ilm);
+                Dtmp(LMask1) = nan;
+                d1(:,:,ilm) = Dtmp;
+            end
 %             d2 = ncread(NCEPtarget,'pres', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2) lat_ind(2)-lat_ind(1)+1 tlength]);
             d2 = ncread(NCEPtarget,'pres', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2)+1 lat_ind(2)-lat_ind(1)+1 tlength]);
+            LM2 = ncread(landmask,'land', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2)+1 lat_ind(2)-lat_ind(1)+1 1]);
+            LMask2 = logical(LM2);
+            for ilm = 1:tlength
+                Dtmp = d2(:,:,ilm);
+                Dtmp(LMask2) = nan;
+                d2(:,:,ilm) = Dtmp;
+            end
             d = cat(1,d1,d2);          
             clear d1 d2
         end

@@ -91,7 +91,8 @@ end
 %     [MBARI_ID_str, '(',float_type,') ...']})
 % drawnow
 
-ODV_tf = argo2odv_LIAR(MBARI_ID_str, dirs, update_str);
+ODV_tf = argo2odv_LIAR(MBARI_ID_str, dirs, update_str,0);
+
 if ODV_tf == 0
     disp(['A LIAR ODV FILE WAS NOT CREATED OR UPDATED FOR ',MBARI_ID_str])
 else

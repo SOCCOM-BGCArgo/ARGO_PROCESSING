@@ -1,44 +1,36 @@
-function tf_odv = sprofmat2ODV(f_info, outputDIR)
+function tf_odv = sprofmat2ODV(sprof_out, dirs)
 
 % ************************************************************************
 % PURPOSE: 
-%    This function creates ODV compatitble text files used in SAGE
-%    using the *Sprof NetCDF files. If pH data exists the
-%    LIAR approach will be used to estimate alkalinity.  Sprof2mat.m is
-%    called as as subroutine.
+%    This function creates ODV compatitble text files used in FloatViz
+%    and SOCCOMViz using the *Sprof NetCDF files. If pH data exists the
+%    LIAR approach will be used to estimate alkalinity
 %
 %
-% USAGE EXAMPLE:
-%           f_info.WMO        = '6901580';
-%           f_info.fn         = '6901580_Sprof.nc';
-%           f_info.dac_path   = '/ifremer/argo/etc/argo-synthetic-profile/';
-%           f_info.local_path = 'C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\DATA\ARGO_REPO\6901580\';
-%           f_info.dac = 'coriolis';
-%           tf_odv = sprofmat2ODV(f_info, f_info.local_path)
+% USAGE:
+%	
 %
 % INPUTS:
-%   f_info: a structure containing the following:
-%       f_info.WMO = WMO number (string) of float of interest 
-%       f_info.fn = Sprof file name of interest (to convert)
-%       f_info.dac_path = path to GDAC where Sprof file lives
-%       f_info.local_path = Local path where Sprof file lives
-%       f_info.dac = dac that 'owns' the float.
+%   sprof_out = a a structure from a processed Sprof NetCDF file using
+%               Spro2mat.m THIS IS RAW DATA - NO CORRECTIONS YET
 %
-%   outputDIR =  A string defining where the
-%               ODV ascii file will be written. 
-
+%   dirs       = Either an empty variable or a structure with directory
+%                strings where files are located. It must contain these
+%                fields at a minimum or be empty. If dirs is empty default
+%                paths will be used.
+%
+%   dirs.temp      = path to temporary working dir
 %
 % CHANGE HISTORY
 % 09/27/2017 - created by JP
 % 10/16/2018 - modified for Sprof files
-% 04/13/19  - TM, modified fx routines to make running easier for
-% users. Also removed calls to MBARI network locations etc...
 
 % TESTING
 %dirs =[]
 
 %
-d = Sprof2mat(f_info);
+
+d = sprof_out;
 info = d.INFO;
 rdata = d.data; % row data from mprof netcdf
 rhdr  = d.hdr;
@@ -46,31 +38,21 @@ clear d
 
 [raw_r,raw_c] = size(rdata);
 
-
-% ************************************************************************
-% DO SOME PREP WORK
-% ************************************************************************
-% SET UP LOCAL DATA PATH
-%site_flag = 0;
-fp = filesep;
-mytempfolder = [getenv('HOMEDRIVE'),fp,'temp',fp]; % for my computer homedrive = C:
-if ~exist(mytempfolder, 'dir')
-  mkdir(mytempfolder);
-  disp([mytempfolder,' does not exist. Creating directory...'])
-end
-param_list_file = 'argo-parameters-list-core-and-b.txt';
-
-% **********************************************************
-
 % ************************************************************************
 % SET UP DIRECTORIES AND PATHS
 % ************************************************************************
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
+fp = filesep;
+if isempty(dirs)
 user_dir = getenv('USERPROFILE');
-dirs.temp = mytempfolder;
+dirs.txt = [user_dir,fp,'Documents',fp,'MATLAB',fp,'ARGO',...
+            fp,'DATA',fp,'RAW',fp];
 
-% **********************************************************
-
+dirs.temp = [getenv('HOMEDRIVE'),fp,'temp',fp]; % for my computer homedrive = C:
+elseif ~isstruct(dirs)
+    disp('Check "dirs" input. Must be an empty variable or a structure')
+    return
+end
 
 tf_odv = 0;
 fill_0 = ones(raw_r,1); % for adding QF arrays
@@ -317,8 +299,8 @@ raw_var_ct = size(ODV_raw,1);
 % ************************************************************************
 
 % PRINT META DATA HEADER LINES FIRST
-disp(['Printing raw data to: ',outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.TXT']);
-fid_raw  = fopen([outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.TXT'],'W');  
+disp(['Printing raw data to: ',dirs.txt, 'ODV',strtrim(info.WMO(1,:)),'.TXT']);
+fid_raw  = fopen([dirs.txt, 'ODV',strtrim(info.WMO(1,:)),'.TXT'],'W');  
 
 fprintf(fid_raw,'//0\r\n');
 fprintf(fid_raw,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
@@ -454,16 +436,13 @@ fclose(fid_raw);
 clear fid_raw cast_num sample_ct
 
 % MAKE CONFIG FILE FOR FLOATVIZ
-fid_raw  = fopen([outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.CFG'],'w');
+fid_raw  = fopen([dirs.txt, 'ODV',strtrim(info.WMO(1,:)),'.CFG'],'w');
 fprintf(fid_raw,'//%0.0f\r\n',line_ct);
 fclose(fid_raw);
 clear fid_raw line_ct dummy_out
 
-disp(['DONE printing raw data to: ',outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.TXT']);
-
-% % % copy_dest = '\\atlas\tempbox\Plant\Mprof2ODV\';
-% % strtrim(info.WMO(1,:))
-% % disp(['Copying ODV',strtrim(info.WMO(1,:)), ' to ',outputDIR]);
-% % copyfile([dirs.txt, 'ODV',strtrim(info.WMO(1,:)),'.*'], outputDIR);
+copy_dest = '\\atlas\tempbox\Plant\Mprof2ODV\';
+disp(['Copying ODV',strtrim(info.WMO(1,:)), ' to ',copy_dest]);
+copyfile([dirs.txt, 'ODV',strtrim(info.WMO(1,:)),'.*'], copy_dest);
 
 

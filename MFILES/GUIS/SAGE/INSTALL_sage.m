@@ -35,10 +35,27 @@ if isempty(XX)
 else
     topdir = workingDIR(1:XX-1);
     disp('INSTALLING "ARGO_PROCESSING\MFILE" PATHS...')
-    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,]));
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'FLOATS',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GLODAP',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'LIAR',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE_O2Argo',fp]);
+	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'MISC',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'WOA2013',fp]);
+	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'CANYON',fp]);
+	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'CANYON_B',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,]);
 
     disp('INSTALLING "ARGO_PROCESSING\DATA" PATHS...')
-    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp]));
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'SHIPBOARD',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'ARGO_REPO',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'CANYON',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'GLODAP',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'FLOATS',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'FLOATVIZ',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'LIAR',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'SHIPBOARD',fp]);
+    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2013',fp]));
 
     if ~isempty(strfind(computer,'PC'))
         tmploc     = ['C:',filesep,'temp',filesep];

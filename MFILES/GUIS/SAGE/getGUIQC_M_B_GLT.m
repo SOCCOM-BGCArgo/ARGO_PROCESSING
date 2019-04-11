@@ -156,18 +156,19 @@ if QC(end,4) ~= 0
 end
 
 % MAX TABLE CYCLE CAN NOT BE > MAX GOOD DATA CYCLE - RESET IF NEEDED
-if QC(end,1) > max(raw_data(:,2))
-    QC(end,1) = max(raw_data(:,2));
+t_nan = isnan(raw_data(:,IX));
+if QC(end,1) > max(raw_data(~t_nan,2))
+    QC(end,1) = max(raw_data(~t_nan,2));
 end
 
 rows  = size(QC,1);
-sdn   = ones(rows,1) * NaN;
-dt    = diff(sdn);
+% sdn   = ones(rows,1) * NaN;
+% dt    = diff(sdn);
 
-for i = 1:size(QC,1) % Get time stamp for each step in qc table
-    t1 = track(:,2) == QC(i,1);
-    sdn(i) = track(t1,1);
-end
+% for i = 1:size(QC,1) % Get time stamp for each step in qc table
+%     t1 = track(:,2) == QC(i,1);
+%     sdn(i) = track(t1,1);
+% end
     
 dPQC = diff(QC(:,1)); % profile # differences
 
@@ -180,7 +181,6 @@ QCnew = QC; % predimension new QC table data
 QCnew(:,3:4) = NaN;
 reg = ones(size(QC,1),5)*NaN;
 t_good    = ~isnan(diff_data); % Non NaN data
-
 for i = 1:rows
     if i == rows || dPQC(i) == 1 % step = 1 or last line of QC
         K  = K+1; % intercept (offset) only
@@ -193,7 +193,7 @@ for i = 1:rows
         end
     else
         K  = K+2; % intercept and slope
-        t1 = raw_data(:,2) >= QCnew(i,1) & raw_data(:,2) <= QCnew(i+1,1);
+        t1 = raw_data(:,2) >= QCnew(i,1) & raw_data(:,2) < QCnew(i+1,1);
         reg_x = raw_data(t1&t_good,1); % Float regression subset
         if isempty(reg_x)
             continue % could have wrong depth range so no data returned
@@ -219,20 +219,23 @@ for i = 1:rows
    
 end
 
-dt    = diff(sdn); % fractions of year
-node_end = ones(size(reg(:,1)))*0;
-node_end(2:end) = dt.*reg(1:end-1,1) + reg(1:end-1,2);
-cum_offset = reg(:,2) - node_end; % To be compatible with Ken's scheme
-QCnew(:,3) = cum_offset; % Offset
+% dt    = diff(sdn); % fractions of year
+% node_end = ones(size(reg(:,1)))*0;
+% node_end(2:end) = dt.*reg(1:end-1,1) + reg(1:end-1,2);
+% cum_offset = reg(:,2) - node_end; % To be compatible with Ken's scheme
+QCnew(:,3) = reg(:,2); % Offset
 QCnew(:,4) = reg(:,1) .* 365; % Drift /yr
-
-if ~any(isnan(QCnew))
-    CGOD = QCnew;
-else
+% if ~any(isnan(QCnew))
+%     CGOD = QCnew;
+% else
+%     disp(['NaN''s found in QCnew - check function or depth range: ', ...
+%           mfilename])
+% end
+CGOD = QCnew;
+if any(isnan(QCnew))
     disp(['NaN''s found in QCnew - check function or depth range: ', ...
           mfilename])
 end
-
 
     
 

@@ -32,6 +32,8 @@ qc_data  = d.data; % start with raw as QC template
 qc_hdr = raw_hdr;
 clear d
 
+iSDN  = find(strcmp('SDN',qc_hdr)                == 1);
+iSTN  = find(strcmp('Station',qc_hdr)            == 1);
 iP    = find(strcmp('Pressure[dbar]',qc_hdr)     == 1);
 iT    = find(strcmp('Temperature[°C]',qc_hdr)    == 1);
 iS    = find(strcmp('Salinity[pss]',qc_hdr)      == 1);
@@ -54,13 +56,19 @@ qc_params = {'Oxygen[µmol/kg]', 'Nitrate[µmol/kg]','pHinsitu[Total]', ...
 % GET CORRECTIONS FROM GUI STRUCTURE
 QCA       = handles.QCA;
 % qca_params = fieldnames(QCA);
-
 for qc_ct = 1: size(qc_params,2)
     switch(qc_params{qc_ct})
         
         case 'Oxygen[µmol/kg]'
-            if isempty(iO) || ~isfield(QCA,'O2')
-                disp('No O2 index or gain correction found')
+            if ~isfield(QCA,'O2') 
+                disp('No O2 gain correction found.')
+                if isfield(QCA,'O2')
+                    QCA = rmfield(QCA,'O2');
+                end
+                continue
+            end
+            if isempty(iO) || isempty(QCA.O2)
+                disp('No O2 index found...skipping O2 QC application.')
                 if isfield(QCA,'O2')
                     QCA = rmfield(QCA,'O2');
                 end
@@ -69,7 +77,20 @@ for qc_ct = 1: size(qc_params,2)
             tdata = ~isnan(qc_data(:,iO)) & qc_data(:,iO) ~= -1e10;
             if sum(tdata) > 0 % data to correct
                 qca = QCA.O2;
-                qc_data(tdata,iO) = qc_data(tdata,iO) * qca(1,2);
+                Guse = [];
+                for gi = 1:size(qca,1) %perform operation for each row of O2 gains (usually only one single drift, so up to 2 rows, but allow for more complex)          
+                    data_tmp = qc_data(tdata,:);
+                    if gi == size(qca,1) %either single gain, or last row in qca gain matrix
+                        data_tmp = data_tmp(data_tmp(:,iSTN)>= qca(gi,1) & data_tmp(:,iSTN)<=nanmax(data_tmp(:,iSTN)),:);
+                    else
+                        data_tmp = data_tmp(data_tmp(:,iSTN)>= qca(gi,1) & data_tmp(:,iSTN)<qca(gi+1,1),:);
+                    end
+                    Tdiff = data_tmp(:,iSDN) - nanmin(data_tmp(:,iSDN));
+                    Gtmp = qca(gi,2) + qca(gi,end)./365.*Tdiff;
+                    Guse = [Guse;Gtmp]; %will result in a gain value to apply per sample.
+                end
+%                 qc_data(tdata,iO) = qc_data(tdata,iO) * qca(1,2); %if only static mean gain ever applied.
+                qc_data(tdata,iO) = qc_data(tdata,iO) .* Guse;
                 qc_data(tdata,iO+2) = qc_data(tdata,iO) ./ ...
                    oxy_sol(qc_data(tdata,iT), qc_data(tdata,iS),0) * 100;
                 tRC = qc_data(:,iO) >= RC.O(1) & qc_data(:,iO) <= RC.O(2);
@@ -81,8 +102,15 @@ for qc_ct = 1: size(qc_params,2)
             clear tdata qca tRC
             
         case 'Nitrate[µmol/kg]'
-            if isempty(iN) || ~isfield(QCA,'NO3')
-                disp('No Nitrate index or QC corrections found')
+            if ~isfield(QCA,'NO3')
+                disp('No Nitrate QC corrections found.')
+                if isfield(QCA,'NO3')
+                    QCA = rmfield(QCA,'NO3');
+                end                
+                continue
+            end
+            if isempty(iN) || isempty(QCA.NO3)
+                disp('No Nitrate index exists...skipping Nitrate QC application.')
                 if isfield(QCA,'NO3')
                     QCA = rmfield(QCA,'NO3');
                 end                
@@ -122,14 +150,20 @@ for qc_ct = 1: size(qc_params,2)
             
             
         case 'pHinsitu[Total]'
-            if isempty(iPH) || ~isfield(QCA,'PH')
-                disp('No pH index or QC correctionc found')
+            if ~isfield(QCA,'PH')
+                disp('No pH QC correctionc found.')
                 if isfield(QCA,'PH')
                     QCA = rmfield(QCA,'PH');
                 end
                 continue
             end
-            
+            if isempty(iPH)  || isempty(QCA.PH)
+                disp('No pH QC index exists...skipping pH QC application.')
+                if isfield(QCA,'PH')
+                    QCA = rmfield(QCA,'PH');
+                end
+                continue
+            end
             tdata = ~isnan(qc_data(:,iPH)) & qc_data(:,iPH) ~= -1e10;
             if sum(tdata) > 0 % data to correct
                 qc_tmp = qc_data(tdata,:);
@@ -211,8 +245,8 @@ ODV_adj(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP' '' '' ''};
 ODV_adj(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL' '' '' ''};   
 ODV_adj(4,:)  = {'Sigma_theta[kg/m^3]'   '%0.3f' 'SIGMA_THETA' '' '' ''};
 ODV_adj(5,:)  = {'Depth[m]'              '%0.3f' 'DEPTH' '' '' ''};
-ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.1f' 'DOXY' '' '' ''};   
-ODV_adj(7,:)  = {'OxygenSat[%]'          '%0.1f' 'DOXY_%SAT' '' '' ''};
+ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.3f' 'DOXY' '' '' ''};   
+ODV_adj(7,:)  = {'OxygenSat[%]'          '%0.3f' 'DOXY_%SAT' '' '' ''};
 ODV_adj(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE' '' '' ''}; 
 ODV_adj(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA' '' '' ''};   
 ODV_adj(10,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700' '' '' ''};

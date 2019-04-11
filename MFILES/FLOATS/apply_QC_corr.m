@@ -28,6 +28,13 @@ function adj_data = apply_QC_corr(data, cast_sdn, QC)
 %               zero when not used
 %           
 % Created 1/11/2016 by jp
+%
+% Updated locally on 9/10/2018 by TM to change correction scheme to better
+% match MATLAB ischange.  Now corrections are derived and applied on a
+% per-cycle basis (segments between change points are treated as discontinuous with independent drifts and offsets), instead of cumulative across cycles (previously,
+% complex code, offsets were removed then added back in, so offset showing in the correction matrix was cumulative.  This resulted in
+% essentially same result as current scheme, but math/code was much more confusing....).
+%
 
 % **** TEST ****
 % cast_sdn  = INFO.sdn;
@@ -78,32 +85,56 @@ end
 % REMOVE STEPS NOT NEEDED FOR DATA CORRECTION CALCULATION BECAUSE FLOAT
 % HAS NOT GOT THERE YET    
 t1 = QC.steps(:,1) > cast_sdn;
-QC.steps(t1,:) = []; % present cast before step so remove step (not needed)
+QC.steps(t1,:) = []; % present cast is before step so remove step (not needed)
 % [sdn cycle gain offset drift]
 
-rr = size(QC.steps,1); % # of QC steps
-cor = 0; % start with zero corection
+%%% ADJUSTMENTS ARE DISCONTINUOUS ACROSS SEGMENTS AS OF 9/2018 %%%
+%since we removed all steps with date later than current cycle, the
+%drift and gain of interest for current cycle are in the last step
+G_at_last_step = QC.steps(end,3); %this is the gain at the last step
+D_at_last_step = QC.steps(end,5); %this is the drift, over time since the last step
+O_at_last_step = QC.steps(end,4); %this is the offset at last step
+
+%now find time difference between last step and the current cycle. 
+time_since_last_step = cast_sdn - QC.steps(end,1);
 
 % *************************************************************************
-% APPLY OFFSET AND DRIFT TO DATA AND THEN APPLY GAIN
+% OXYGEN: FIRST CALCULATE WHAT GAIN SHOULD BE FOR THE INPUT CYCLE USING THE
+% QC MATRIX PROVIDED.  THEN APPLY GAIN AS SIMPLE MULTIPLIER.
+% [SDN CAST# GAIN OFFSET DRIFT] 
+% *************************************************************************
+if strcmpi(QC.type,'Oxygen');
+    %now use time difference between last step and the current cycle.  If
+    %they are the same, then the gain is simply "G_at_last_step", otherwise
+    %it is "G_at_last_step" + "D_at_last_step"*time_since_last_step
+    time_since_last_step = cast_sdn - QC.steps(end,1);
+    if time_since_last_step == 0 
+        usethisG = G_at_last_step;
+    else
+        usethisG = D_at_last_step.*time_since_last_step./365+G_at_last_step;
+    end
+    adj_data = data.*usethisG;
+end
+
+% *************************************************************************
+% FOR NO3, PH, APPLY OFFSET AND DRIFT TO DATA AND THEN APPLY GAIN
 % GAIN DOES NOT VARY WITH TIME
 % [SDN CAST# GAIN OFFSET DRIFT]
+% 
+% AS OF 9/2018 WE ARE NOW TREATING EACH SEGMENT INDEPENDENTLY (ADJUSTMENTS
+% ARE NOT CUMULATIVE ACROSS TIME SERIES).  THIS IS MUCH MORE
+% STRAIGHTFORWARD FOR THE USER, AND REMOVES THE COMPLEXITY OF THE
+% CALCULATIONS.  RESULTS ARE THE SAME. CODE IS JUST MORE STRAIGHTFORWARD.
 % *************************************************************************
 
 % *************************************************************************
 % NITRATE QC
 % *************************************************************************
 if strcmpi(QC.type,'Nitrate');
-% CALCULATE OFFSET AND DRIFT  ***  JP STYLE  ***  
-    for i = 1:rr
-        if i == rr % final QC row, dt varies with time
-            dt  = (cast_sdn - QC.steps(i,1)) ./ 365; % elapsed years in QC leg
-        else       % dt for previous QC rows is constant
-            dt  = (QC.steps(i+1,1) - QC.steps(i,1)) ./ 365;
-        end
-        cor = cor + QC.steps(i,4) + QC.steps(i,5) .* dt; % JP & KJ
-    end
-    adj_data       = (data - cor) ./ QC.steps(i,3); 
+% CALCULATE OFFSET AND DRIFT 
+    dt  = (cast_sdn - QC.steps(end,1)) ./ 365; % elapsed years in QC leg
+    cor = O_at_last_step + D_at_last_step .* dt; % TM (as of 9/2018)
+    adj_data       = (data - cor) ./ G_at_last_step; 
     adj_data(t_fv) = fv.bio; % Put fill values back in
 end
 
@@ -112,14 +143,8 @@ end
 % pH ASLO HAS A PUMP OFFSET TERM
 % *************************************************************************
 if strcmpi(QC.type,'pH'); %DO pH QC
-    for i = 1:rr
-        if i == rr % final QC row, dt varies with time
-            dt  = (cast_sdn - QC.steps(i,1)) ./ 365; % elapsed years in QC leg 
-        else       % dt for previous QC rows is constant
-            dt  = (QC.steps(i+1,1) - QC.steps(i,1)) ./ 365;  
-        end
-        cor = cor + QC.steps(i,4) + QC.steps(i,5) .* dt; % JP & KJ
-    end
+    dt  = (cast_sdn - QC.steps(end,1)) ./ 365; % elapsed years in QC leg
+    cor = O_at_last_step + D_at_last_step .* dt; % TM (as of 9/2018)
     adj_data       = data + (pump_offset - cor) .* TCOR;
     adj_data(t_fv) = fv.bio; % Put fill values back in
 end

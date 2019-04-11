@@ -203,7 +203,7 @@ end
 % *************************************************************************
 for i = 1: size(WMO_ID,1)
     if isempty(WMO_ID{i})
-        WMO_ID{i} =['NO_WMO_',UW_ID{i}];
+        WMO_ID{i} =['NO_WMO_',float_names{i}];
     end
 end
    

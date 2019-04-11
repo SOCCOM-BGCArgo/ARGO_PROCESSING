@@ -101,7 +101,10 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 % 09/10/18 Added code to process floats with seconday pH pressure coefficients.
 %     At this point this change onlly afects 0690. -jp
 % 09/11/2018, TM changed calls to isbadsensor.m in support of adding QF='questionable' to bad sensor list capabilities.
-% 01/16/19, TM, replaced calls to phcalc_jp after transition to phcalc mfile used in Argo documentation.
+% 01/07/2019, JP Added code to choose CDT T for pH if pH T doesn't exist.
+%   Updated QC flagging process to add flags for PH_TEMP_QC & use working
+%   temp to flag pH QC
+% 01/16/19, TM, replaced phcalc_jp.m with phcalc.m
 % ************************************************************************
 
 % FOR TESTING
@@ -172,6 +175,11 @@ if strcmpi(MBARI_ID_str,'0412HAWAII')
     disp(['SPECIAL CASE FLOAT: ',MBARI_ID_str]);
     disp(['Setting msg dir to: ', dirs.msg]);
 end
+if strcmpi(MBARI_ID_str,'0948STNP')
+    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\';
+    disp(['SPECIAL CASE FLOAT: ',MBARI_ID_str]);
+    disp(['Setting msg dir to: ', dirs.msg]);
+end
 % ************************************************************************
 
 % SET DATA FILL VALUES
@@ -189,7 +197,8 @@ RCR.BB700 = [-0.000025 0.1]; % argoBGC QC manual 09July2016
 RCR.BB532 = [-0.000005 0.1]; % argoBGC QC manual 09July2016
 RCR.CDOM = [-1000 1000]; % Place Holder
 RCR.NO3  = [-15 65];
-RCR.PH     = [7.0 8.8];
+RCR.PH   = [7.0 8.8];
+RCR.PHT  = [-2.5 40];
 RCR.PHV  = [-1.2 -0.7]; % Range check on pH volts
 RCR.IB   = [-100 100]; % Range check on pH Ib, nano amps
 RCR.IK   = [-100 100]; % Range check on pH Ik, nano amps
@@ -287,7 +296,7 @@ end
 % CREATE ANONYMOUS FONCTION TO TEST FOR FILE AGE LESS THEN 4 HOURS OLD
 % REMOVE THESE FILES FROM LIST
 age_test = @(x) x > (now-4/24);
-% age_test = @(x) x > (now);
+%age_test = @(x) x > (now);
 
 if ~isempty(mlist) && ~isempty(mlist.reg_list)
     t1 = cellfun(age_test, mlist.reg_sdn, 'UniformOutput', 1);
@@ -488,7 +497,10 @@ for msg_ct = 1:size(msg_list,1)
     
     %disp(['Processing float ' cal.info.name, ' profile ',cast_num])
     d = parse_NAVISmsg4ARGO([dirs.temp,msg_file]);
-    if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) %Quick hack to get around different column headers in msg file for flbb!!
+	d
+%     if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP2')==1) %Quick hack to get around different column headers in msg file for flbb!!
+if ~isempty(d.lr_hdr)
+    if strcmp(d.lr_hdr{7},'Mch1') %Quick hack to get around different column headers in msg file for flbb!!
         d.lr_hdr{7} = 'Fl'; %'Mch1'
         d.lr_hdr{8} = 'Bb'; %'Mch2'
         d.lr_hdr{9} = 'Cdm'; %'Mch3'
@@ -496,6 +508,7 @@ for msg_ct = 1:size(msg_list,1)
         d.hr_hdr{7} = 'Bb'; %'Mch2'
         d.hr_hdr{8} = 'Cdm'; %'Mch3'
     end
+end
     % IF MSG FILE EXIST BUT NO LR DATA REMOVE FROM NEW LIST AND
     % PUT IN BAD LIST
     if isempty(d.lr_d)
@@ -577,7 +590,6 @@ for msg_ct = 1:size(msg_list,1)
     if r_hr > 0 && sum(strcmp('no3', d.lr_hdr)) == 1
         hr_d = [hr_d(:,1:3), hr_d(:,1)*NaN, hr_d(:,4:c_hr)];
     end
-    
     % ****************************************************************
     % DO SOME ONE TIME TASKS
     % ****************************************************************
@@ -814,14 +826,18 @@ for msg_ct = 1:size(msg_list,1)
         
         if isfield(QC,'O')
             % !! ONE TIME GAIN CORRECTION ONLY !!
-            LR.DOXY_ADJUSTED(~lr_nan)  = LR.DOXY(~lr_nan) .* QC.O.steps(3);
+%             LR.DOXY_ADJUSTED(~lr_nan)  = LR.DOXY(~lr_nan) .* QC.O.steps(3);
+            QCD = [LR.PRES(~lr_nan), LR.TEMP(~lr_nan), LR.PSAL(~lr_nan), LR.DOXY(~lr_nan)];
+            LR.DOXY_ADJUSTED(~lr_nan) = apply_QC_corr(QCD, d.sdn, QC.O);
             tlrDOXY_ADJ = abs(LR.DOXY_ADJUSTED) > crazy_val & ~lr_nan;
             LR.DOXY_ADJUSTED(tlrDOXY_ADJ) = crazy_val; % SET TO crazy bad value
             LR.DOXY_ADJUSTED_QC(~lr_nan) = 1; % 2 = probably good
             %LR.DOXY_ADJUSTED_QC(tlrDOXY_ADJ) = 4; % crazy val bad
             LR.DOXY_ADJUSTED_ERROR(~lr_nan) = LR.DOXY_ADJUSTED(~lr_nan) * 0.01;
             if r_hr> 0
-                HR.DOXY_ADJUSTED(~hr_nan)  = HR.DOXY(~hr_nan) .* QC.O.steps(3);
+                %HR.DOXY_ADJUSTED(~hr_nan)  = HR.DOXY(~hr_nan) .* QC.O.steps(3);
+                QCD = [HR.PRES(~hr_nan), HR.TEMP(~hr_nan), HR.PSAL(~hr_nan), HR.DOXY(~hr_nan)];
+                HR.DOXY_ADJUSTED(~hr_nan) = apply_QC_corr(QCD, d.sdn, QC.O);
                 thrDOXY_ADJ = abs(HR.DOXY_ADJUSTED) > crazy_val & ~hr_nan;
                 HR.DOXY_ADJUSTED(thrDOXY_ADJ) = crazy_val; % SET TO crazy bad value
                 HR.DOXY_ADJUSTED_QC(~hr_nan) = 1; % 2 = probably good
@@ -1535,20 +1551,44 @@ for msg_ct = 1:size(msg_list,1)
         
         LR.VRS_PH(~lr_nan)     = lr_d(~lr_nan,iphV);
         LR.VRS_PH_QC(~lr_nan)  = fv.QC;
-        if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) %pH temp removed from these floats; use ctd temp
-            LR.TEMP_PH(~lr_nan) = lr_d(~lr_nan,iT);
+        
+        % Newer NAVIS are not using pH temp, using CTD temp instead
+        % but the header is there and data = -9.9999 (SBE fill value?)
+        % do some book keeping to get CTD temp if no real pH temp
+        ph_or_ctd_T = 1;
+        if isempty(iphT) % looking to the future: SBE might eliminate pHT
+            lr_wrk_temp  = LR.TEMP;
+            ph_or_ctd_T = 0;
         else
-            LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT); % I param
+            LR.TEMP_PH(~lr_nan) = lr_d(~lr_nan,iphT);
+            LR.TEMP_PH(LR.TEMP_PH == -9.9999) = fv.bio; % Set SBE fill value to argo fill Value
+            LR.TEMP_PH_QC(~lr_nan) = fv.QC; % I don't think this is needed - already defined -jp
+            if all(LR.TEMP_PH(~lr_nan) == fv.bio)
+                lr_wrk_temp = LR.TEMP; % no pH temp use CTD temp
+                ph_or_ctd_T = 0;
+            else
+                chk_phT = LR.TEMP_PH ~= fv.bio & (LR.TEMP_PH < RCR.PHT(1) ...
+                    | LR.TEMP_PH > RCR.PHT(2));
+                LR.TEMP_PH_QC(chk_phT) = 4; 
+                LR.TEMP_PH_QC(LR.TEMP_PH ~= fv.bio & LR.TEMP_PH_QC ~=4) = 1;
+                lr_wrk_temp = LR.TEMP_PH;
+            end
         end
-%         LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT);
-        LR.TEMP_PH_QC(~lr_nan) = fv.QC;
+
+%         if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP2')==1)%pH temp removed from these floats; use ctd temp
+%             LR.TEMP_PH(~lr_nan) = lr_d(~lr_nan,iT);
+%         else
+%             LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT); % I param
+%         end
+% %         LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT);
+    
         [lr_phfree, lr_phtot] = phcalc(LR.VRS_PH(~lr_nan), ...
-            LR.PRES(~lr_nan), LR.TEMP_PH(~lr_nan), LR.PSAL(~lr_nan), ...
+            LR.PRES(~lr_nan), lr_wrk_temp(~lr_nan), LR.PSAL(~lr_nan), ...
             cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
         
         if isfield(cal.pH,'secondary_pcoefs')
             [lr_phfree2, lr_phtot2] = phcalc(LR.VRS_PH(~lr_nan), ...
-                LR.PRES(~lr_nan), LR.TEMP_PH(~lr_nan), LR.PSAL(~lr_nan),...
+                LR.PRES(~lr_nan), lr_wrk_temp(~lr_nan), LR.PSAL(~lr_nan),...
                 cal.pH.k0, cal.pH.k2, cal.pH.secondary_pcoefs);
             
             tz_ph = LR.PRES(~lr_nan) >= cal.pH.secondary_Zlimits(1) & ...
@@ -1561,7 +1601,7 @@ for msg_ct = 1:size(msg_list,1)
                 ind = find(LR.PRES(~lr_nan) >= ...
                       cal.pH.secondary_Zlimits(1),1,'first');
             end
-            free_offset =  lr_phfree(ind) - lr_phfree2(ind);
+            free_offset =  lr_phfree(ind) - lr_phfree2(ind); %? jp
             tot_offset  =  lr_phtot(ind)  - lr_phtot2(ind);
             
             lr_phfree(tz_ph) = lr_phfree2(tz_ph) + free_offset;
@@ -1585,20 +1625,35 @@ for msg_ct = 1:size(msg_list,1)
             hr_nan = isnan(hr_d(:,iphV));
             HR.VRS_PH(~hr_nan)    = hr_d(~hr_nan,iphV); % I param
             HR.VRS_PH_QC(~hr_nan) = fv.QC;
-            if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) %pH temp removed from these floats; use ctd temp
-                HR.TEMP_PH(~hr_nan) = hr_d(~hr_nan,iT);
+            
+            if ph_or_ctd_T == 0
+                hr_wrk_temp  = HR.TEMP;
             else
-                HR.TEMP_PH(~hr_nan)    = hr_d(~hr_nan,iphT); % I param
+                HR.TEMP_PH(~hr_nan) = hr_d(~hr_nan,iphT); % I param
+                HR.TEMP_PH_QC(HR.TEMP_PH ~= fv.bio) = 4; % 1st set all bad              
+                %HR.TEMP_PH_QC(~hr_nan) = fv.QC; % I don't think this is needed - already defined -jp
+                chk_phT = HR.TEMP_PH ~= fv.bio & HR.TEMP_PH >= RCR.PHT(1) ...
+                          & HR.TEMP_PH <= RCR.PHT(2);
+                HR.TEMP_PH_QC(chk_phT) = 1; % good temp
+                hr_wrk_temp         = HR.TEMP_PH; 
             end
-            HR.TEMP_PH_QC(~hr_nan) = fv.QC;
+                
+  
+%             if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP2')==1)%pH temp removed from these floats; use ctd temp
+%                 HR.TEMP_PH(~hr_nan) = hr_d(~hr_nan,iT);
+%             else
+%                 HR.TEMP_PH(~hr_nan)    = hr_d(~hr_nan,iphT); % I param
+%             end
+
+            
             
             [hr_phfree,hr_phtot] = phcalc(HR.VRS_PH(~hr_nan), ...
-                HR.PRES(~hr_nan), HR.TEMP_PH(~hr_nan), ...
+                HR.PRES(~hr_nan), hr_wrk_temp(~hr_nan), ...
                 HR.PSAL(~hr_nan), cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
             
             if isfield(cal.pH,'secondary_pcoefs')
                 [hr_phfree2,hr_phtot2] = phcalc(HR.VRS_PH(~hr_nan), ...
-                    HR.PRES(~hr_nan), HR.TEMP_PH(~hr_nan), ...
+                    HR.PRES(~hr_nan), hr_wrk_temp(~hr_nan), ...
                     HR.PSAL(~hr_nan), cal.pH.k0, cal.pH.k2, ...
                     cal.pH.secondary_pcoefs);
                 
@@ -1633,9 +1688,9 @@ for msg_ct = 1:size(msg_list,1)
             HR.PH_IN_SITU_TOTAL(HR_inf)    = 20.1; %UNREAL #
             HR.PH_IN_SITU_TOTAL_QC(HR_inf) = 4;
         end
-        
+    
         if isfield(QC,'pH')
-            QCD = [LR.PRES(~lr_nan), LR.TEMP(~lr_nan), ...
+            QCD = [LR.PRES(~lr_nan), lr_wrk_temp(~lr_nan), ...
                 LR.PSAL(~lr_nan), LR.PH_IN_SITU_TOTAL(~lr_nan)];
             LR.PH_IN_SITU_TOTAL_ADJUSTED(~lr_nan) = ...
                 apply_QC_corr(QCD, d.sdn, QC.pH);
@@ -1668,7 +1723,7 @@ for msg_ct = 1:size(msg_list,1)
             
             
             if r_hr > 0
-                QCD = [HR.PRES(~hr_nan), HR.TEMP(~hr_nan), ...
+                QCD = [HR.PRES(~hr_nan), hr_wrk_temp(~hr_nan), ...
                     HR.PSAL(~hr_nan), HR.PH_IN_SITU_TOTAL(~hr_nan)];
                 HR.PH_IN_SITU_TOTAL_ADJUSTED(~hr_nan) = ...
                     apply_QC_corr(QCD, d.sdn, QC.pH);
@@ -1692,10 +1747,13 @@ for msg_ct = 1:size(msg_list,1)
         
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
         [BSLflag,theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
-        t_bio   = LR.PH_IN_SITU_TOTAL ~= fv.bio;
-        tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect pH
+        t_bio    = LR.PH_IN_SITU_TOTAL ~= fv.bio;
+        chk_wrkT = lr_wrk_temp ~= fv.bio & (lr_wrk_temp < RCR.T(1) ...
+                   | lr_wrk_temp > RCR.T(2));
+        tST     = LR.PSAL_QC == 4 | chk_wrkT; % Bad S or T will affect pH
+        %tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect pH
         t_chk   = t_bio & (LR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
-            LR.PH_IN_SITU_TOTAL > RCR.PH(2) | tST);
+            LR.PH_IN_SITU_TOTAL > RCR.PH(2) | tST); 
         LR.VRS_PH_QC(t_bio) = LR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.PH_IN_SITU_FREE_QC(t_bio) = LR.PH_IN_SITU_FREE_QC(t_bio) ...
             * ~BSLflag + BSLflag*theflag;
@@ -1706,7 +1764,8 @@ for msg_ct = 1:size(msg_list,1)
         LR.VRS_PH_QC(t_chk) = 4;
         
         t_bio   = LR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
-        tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
+        tST     = LR.PSAL_ADJUSTED_QC == 4 | chk_wrkT; % Bad S or T will affect pH
+        %tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
         t_chk = t_bio & (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
             LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST);
         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) = ...
@@ -1715,7 +1774,10 @@ for msg_ct = 1:size(msg_list,1)
         
         if r_hr > 0
             t_bio   = HR.PH_IN_SITU_TOTAL ~= fv.bio;
-            tST     = HR.PSAL_QC == 4 | HR.TEMP_QC == 4; % Bad S or T will affect pH
+            chk_wrkT = hr_wrk_temp ~= fv.bio & (hr_wrk_temp < RCR.T(1) ...
+                | hr_wrk_temp > RCR.T(2));
+            tST     = HR.PSAL_QC == 4 | chk_wrkT; % Bad S or T will affect pH
+            %tST     = HR.PSAL_QC == 4 | HR.TEMP_QC == 4; % Bad S or T will affect pH
             t_chk = t_bio & (HR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
                 HR.PH_IN_SITU_TOTAL > RCR.PH(2)| tST);
             HR.VRS_PH_QC(t_bio) = HR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
@@ -1725,7 +1787,8 @@ for msg_ct = 1:size(msg_list,1)
             HR.VRS_PH_QC(t_chk) = 4;
             
             t_bio   = HR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
-            tST     = HR.PSAL_ADJUSTED_QC == 4 | HR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
+            tST     = HR.PSAL_ADJUSTED_QC == 4 | chk_wrkT; % Bad S or T will affect pH
+            %tST     = HR.PSAL_ADJUSTED_QC == 4 | HR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
             t_chk = t_bio & (HR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
                 HR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST);
             HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) = ...
@@ -1818,8 +1881,10 @@ for msg_ct = 1:size(msg_list,1)
         % IF ISUS FILE & CAL INFO EXIST TRY AND PROCESS IT
         if exist([dirs.temp, NO3_file],'file') && isfield(cal,'N')%
             spec = parse_NO3msg([dirs.temp,NO3_file]); % return struct
-            if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) %If Andrea's EXPORTS NAVIS floats, use 1 deeper CTD T for SUNA processing (eliminates spike at high gradient)
-                [spec, CTD_for_no3, CTDmn_for_no3] = getTRUE_SUNAtemp(spec,HR.TEMP,HR.PRES,HR.PSAL,0);
+            if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP2')==1) %If Andrea's EXPORTS NAVIS floats, use 1 deeper CTD T for SUNA processing (eliminates spike at high gradient)
+                if ~isempty(HR.PRES) && ~isempty(HR.TEMP) && ~isempty(HR.PSAL)
+                    [spec, CTD_for_no3, CTDmn_for_no3] = getTRUE_SUNAtemp(spec,HR.TEMP,HR.PRES,HR.PSAL,0);
+                end
             end
             UV_INTEN = spec.UV_INTEN;
             if ~isempty(UV_INTEN)
@@ -2258,6 +2323,7 @@ for msg_ct = 1:size(msg_list,1)
     % CHL
     if isfield(cal,'CHL')
 %         if isfield(cal.CHL,'SWDC') && isfield(cal.CHL.SWDC,'DC') % median dark count has been quantified --> adjustment has been made
+
         if sum(LR.CHLA_ADJUSTED<99999)>0 || sum(HR.CHLA_ADJUSTED<99999)>0 % there is adjusted data for that profile --> adjustment has been made
             INFO.CHLA_DATA_MODE = 'A';
         else

@@ -37,6 +37,7 @@ function d = get_shipboard_data(file_path)
 %       data set for output. This is added around line 319. SR1B cruise
 %       (floats 9652 9655 9657 9662) has no Silicate data.  - jp
 %   08/28/2018 Fixed QF screening.  Now only allows "2 = No problems noted".
+%   03/05/2019 Added CTDOXY to wanted vars list
 
 % TESTING             
 % file_path = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\', ...
@@ -51,6 +52,8 @@ function d = get_shipboard_data(file_path)
 %file_path = ' C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\096U20160314.exc.csv';
 
 %file_path = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\74JC20151217_hy1.csv';
+
+%file_path = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\06AQ20141202_hy1.csv';
 
 % ************************************************************************
 % LIST OF DESIRED VARIBLES AND FORMAT STRING
@@ -67,6 +70,8 @@ wanted_vars ={'SECT_ID'          '%s'; ...
               'CTDTMP'           '%f'; ...
               'CTDSAL'           '%f'; ...    %'SALNITY' could use bottle or ctd
               'CTDSAL_FLAG_W'    '%f'; ...
+              'CTDOXY'           '%f'; ...    %'SALNITY' could use bottle or ctd
+              'CTDOXY_FLAG_W'    '%f'; ... 
               'OXYGEN'           '%f'; ...
               'OXYGEN_FLAG_W'    '%f'; ...
               'SILCAT'           '%f'; ...
@@ -320,28 +325,31 @@ SAL     = data(:,iS);
 TEMPOUT = data(:,iT);
 
 PRESOUT = data(:,iP);
-SI      = data(:,iSI);
-PO4     = data(:,iPO4);
 
-%testing
-% t_nan = isnan(data(:,iSI));
-% data(:,iSI) = 20;
-% SI = data(:,iSI);
+if ~isempty(iSI) && ~isempty(iPO4) %prelim datafiles often dont contain these
+    SI      = data(:,iSI);
+    PO4     = data(:,iPO4);
 
-% ***********************
-% SOME TIMES NEED TO ESTIMATE SILICATE OR PHOSPHATE BOTTLE DATA
-% USE REDFILED RATIO TO APROXIMATE IF GOOD NITRATE EXISTS, OTHERWISE SET = 0
-% JP FIX 08/08/2018 (ie SR1B cruise & floats 9652 9655 9657 9662) 
-nan_SI  = isnan(SI)  & ~isnan(data(:,iNO3));
-nan_PO4 = isnan(PO4) & ~isnan(data(:,iNO3));
-if sum(nan_SI) > 0 || sum(nan_PO4) > 0
-    disp('NO3 data exists but some complimentary Si or PO4 data is missing')
-    disp('Estimating missing data with Redfield ratio aproximation')
+    %testing
+    % t_nan = isnan(data(:,iSI));
+    % data(:,iSI) = 20;
+    % SI = data(:,iSI);
 
-    SI(nan_SI)   = data(nan_SI, iNO3) * 2.5;  % APROX WITH REDFIELD
-    PO4(nan_PO4) = data(nan_PO4, iPO4) / 16;
+    % ***********************
+    % SOME TIMES NEED TO ESTIMATE SILICATE OR PHOSPHATE BOTTLE DATA
+    % USE REDFILED RATIO TO APROXIMATE IF GOOD NITRATE EXISTS, OTHERWISE SET = 0
+    % JP FIX 08/08/2018 (ie SR1B cruise & floats 9652 9655 9657 9662) 
+    nan_SI  = isnan(SI)  & ~isnan(data(:,iNO3));
+    nan_PO4 = isnan(PO4) & ~isnan(data(:,iNO3));
+    if sum(nan_SI) > 0 || sum(nan_PO4) > 0
+        disp('NO3 data exists but some complimentary Si or PO4 data is missing')
+        disp('Estimating missing data with Redfield ratio aproximation')
+
+        SI(nan_SI)   = data(nan_SI, iNO3) * 2.5;  % APROX WITH REDFIELD
+        PO4(nan_PO4) = data(nan_PO4, iPO4) / 16;
+    end
+    clear nan_SI nan_PO4
 end
-clear nan_SI nan_PO4
 % ***********************
 
 if ~isempty(iALK) && ~isempty(iPH) % check first: Alkalinity & pH exist

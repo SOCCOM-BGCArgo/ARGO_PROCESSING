@@ -101,10 +101,14 @@ if isdir([dirs.msg,'f',flt_str{1,1},'\'])      % 'f' dir is APEX UW/MBARI
     reg_dir = [dirs.msg,'f',flt_str{1,1},'\'];
 elseif isdir([dirs.msg,'n',flt_str{1,1},'\'])
     reg_dir = [dirs.msg,'n',flt_str{1,1},'\']; % 'n' for NAVIS floats
-elseif isdir([duplicate_dir,'f',flt_str{1,1},'\'])
+elseif isdir([duplicate_dir,'f',flt_str{1,1},'\']) 
     disp('NON STANDARD DATA DIR!!')
     disp(['DATA FOUND AT:  ',duplicate_dir,'f',flt_str{1,1},'\'])
     reg_dir = [duplicate_dir,'f',flt_str{1,1},'\']; % SOME OLD DATA HERE
+elseif isdir([duplicate_dir,'n',flt_str{1,1},'\']) 
+    disp('NON STANDARD DATA DIR!!')
+    disp(['DATA FOUND AT:  ',duplicate_dir,'n',flt_str{1,1},'\'])
+    reg_dir = [duplicate_dir,'n',flt_str{1,1},'\']; % SOME OLD DATA HERE
 else
     disp(['Could not find msg file directory for: ',flt_name])
     list = [];

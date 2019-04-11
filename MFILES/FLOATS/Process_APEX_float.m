@@ -173,6 +173,9 @@ end
 if strcmpi(MBARI_ID_str,'8514HAWAII')
     dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\f8514_2\';
 end
+if strcmpi(MBARI_ID_str,'9254SOOCN')
+    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\';
+end
 % ************************************************************************
 
 % SET DATA FILL VALUES
@@ -290,7 +293,7 @@ end
 % CREATE ANONYMOUS FONCTION TO TEST FOR FILE AGE LESS THEN 4 HOURS OLD
 % REMOVE THESE FILES FROM LIST
 age_test = @(x) x > (now-4/24);
-% age_test2 = @(x) x > (now);
+%age_test = @(x) x > (now);
 
 % if strcmp(MBARI_ID_str,'12701SOOCN')==1
 %     if ~isempty(mlist) && ~isempty(mlist.reg_list)
@@ -794,7 +797,8 @@ for msg_ct = 1:size(msg_list,1)
         O2 = calc_O2_4ARGO(LR.PSAL(~t_nan), LR.TEMP(~t_nan), ...
             LR.PRES(~t_nan),lr_d((~t_nan),iPhase), cal.O); % O2 in µmol/L + more
         
-        LR.DOXY(~t_nan)         = O2(:,6) ./ lr_den(~t_nan) .* 1000; % µmol/kg
+        LR.DOXY(~t_nan) = O2(:,6) ./ lr_den(~t_nan) .* 1000; % µmol/kg
+        
         tDOXY = abs(LR.DOXY) > crazy_val & ~t_nan; % Unrealistic bad value
         LR.DOXY(tDOXY) = crazy_val; % SET TO crazy bad value
         LR.DOXY_QC(~t_nan)      = 3;
@@ -807,7 +811,10 @@ for msg_ct = 1:size(msg_list,1)
         
         if isfield(QC,'O')
             % !! ONE TIME GAIN CORRECTION ONLY !!
-            LR.DOXY_ADJUSTED(~t_nan)  = LR.DOXY(~t_nan) .* QC.O.steps(3);
+%             LR.DOXY_ADJUSTED(~t_nan)  = LR.DOXY(~t_nan) .* QC.O.steps(1,3);
+            QCD = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), LR.DOXY(~t_nan)];
+            LR.DOXY_ADJUSTED(~t_nan) = ...
+                apply_QC_corr(QCD, d.sdn, QC.O);
             tDOXY_ADJ = abs(LR.DOXY_ADJUSTED) > crazy_val & ~t_nan; % Unrealistic bad value
             LR.DOXY_ADJUSTED(tDOXY_ADJ) = crazy_val; % SET TO crazy bad value
             LR.DOXY_ADJUSTED_QC(~t_nan) = 1; % set=1 9/27/16 vs 2 = probably good
@@ -817,12 +824,18 @@ for msg_ct = 1:size(msg_list,1)
             INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G';
             INFO.DOXY_SCI_CAL_COEF = ['G=', ...
                 num2str(QC.O.steps(3),'%0.4f')];
+            
+            if isfield(cal.O,'SVUFoilCoef')
+                O2_cal_str = 'SVU Foil calibration coeficients were used. ';
+            else
+                O2_cal_str = 'Polynomial calibration coeficients were used. ';
+            end
             if ~isempty(d.air);
-                INFO.DOXY_SCI_CAL_COM  = ['G determined from float' ...
-                    ' measurements in air. See Johnson et al.,2015,', ...
+                INFO.DOXY_SCI_CAL_COM  = [O2_cal_str,'G determined from ',...
+                    'float  measurements in air. See Johnson et al.,2015,', ...
                     'doi:10.1175/JTECH-D-15-0101.1'];
             else
-                INFO.DOXY_SCI_CAL_COM  = ['G determined by surface' ...
+                INFO.DOXY_SCI_CAL_COM  = [O2_cal_str,'G determined by surface' ...
                     ' measurement comparison to World Ocean Atlas 2009.', ...
                     'See Takeshita et al.2013,doi:10.1002/jgrc.20399'];
             end
@@ -1338,16 +1351,16 @@ for msg_ct = 1:size(msg_list,1)
         
         t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
                  LR.PH_IN_SITU_TOTAL > RCR.PH(2) | tST); % RANGE
-        t_chk2 = t_bio & LR.IB_PH ~= fv.bio ...
+        t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
             & (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2) | ...
             IK < RCR.IK(1) | IK > RCR.IK(2)); % DIAGNOSTIC
         %t_chk3 = t_bio & (LRQF_S | LRQF_T);
         t_chk4 = LR.VRS_PH ~= fv.bio &  (LR.VRS_PH < RCR.PHV(1) | ...
             LR.VRS_PH > RCR.PHV(2));
-        t_chk5 = t_bio & LR.IB_PH ~= fv.bio ...
+        t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio  ...
             & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
             IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
-         
+
         %LR.PH_IN_SITU_TOTAL_QC(t_chk1 | t_chk2 | t_chk3) = 4;
         LR.PH_IN_SITU_TOTAL_QC(t_chk2) = 3; % set pH with out of range Ik/Ib to questionable, unless pH is also out of range (then set to bad)
         LR.PH_IN_SITU_TOTAL_QC(t_chk5) = 4;
@@ -1370,11 +1383,11 @@ for msg_ct = 1:size(msg_list,1)
         
         t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
             LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST); 
-        t_chk2 = t_bio & LR.IB_PH ~= fv.bio & ...
+        t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio & ...
             (LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2) | ...
             IK < RC.IK(1) | IK > RC.IK(2));
         %t_chk3 = t_bio & (LRQF_S | LRQF_T);
-        t_chk5 = t_bio & LR.IB_PH ~= fv.bio ...
+        t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
             & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
             IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
         

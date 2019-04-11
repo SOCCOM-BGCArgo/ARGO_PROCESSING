@@ -31,7 +31,7 @@ function new_qc_data = apply_GUIQC_corr_GLT(handles,DATA)
 raw_data  = handles.raw_data;
 qc_data   = handles.qc_data;
 QCA       = handles.QCA;
-qca       = QCA.(DATA.paramtag); % Sensor specific
+qca       = QCA.(DATA.paramtag);% Sensor specific
 rr        = size(qca,1);
 %[~,ia,~]  = unique(raw_data(:,2)); % unique casts
 %casts     = raw_data(ia,1:2);% SDN, CAST
@@ -47,6 +47,7 @@ iN    = find(strcmp('Nitrate[µmol/kg]',raw_data.hdr) == 1);
 iPh   = find(strcmp('pHinsitu[Total]',raw_data.hdr)  == 1);
 
 % IF QC LEG DOES NOT START ON PROFILE #1 SET DATA = NAN
+
 if qca(1,1) > min(raw_data.data(:,2)) % 1st QC step does not start at profile 1
     t1 = raw_data.data(:,2) < qca(1,1);
     raw_data.data(t1,:) = NaN;
@@ -72,13 +73,13 @@ if strcmp(DATA.paramtag, 'PH')
     for i = 1:rr
         if i < rr 
             t1 = raw_data.data(:,2) >= qca(i,1) &  ...
-                raw_data.data(:,2) <= qca(i+1,1); %get block
+                raw_data.data(:,2) < qca(i+1,1); %get block
         else
             t1 = raw_data.data(:,2) >= qca(i,1); %get block
         end
         dt = (raw_data.data(t1,1) - min(raw_data.data(t1,1))) ./ 365; % elapsed years in block
         tmp_cor  = last_cor + qca(i,3) + qca(i,4) .* dt; %offset + drift
-        last_cor = tmp_cor(end);
+%         last_cor = tmp_cor(end);
         cor(t1)  = tmp_cor;
     end
 %     qc_data.data(:,IND) = raw_data.data(:,IND) + cor + ...
@@ -89,7 +90,7 @@ if strcmp(DATA.paramtag, 'PH')
     % SET BAD QC DATA TO NaN
     t1 = qc_data.data(:,IND+1) == 8;
     qc_data.data(t1,IND) = NaN;
-end;
+end
 
 % *************************************************************************
 % NITRATE QC
@@ -101,53 +102,55 @@ if strcmp(DATA.paramtag, 'NO3')
     for i = 1:rr
         if i < rr 
             t1 = raw_data.data(:,2) >= qca(i,1) & ...
-                raw_data.data(:,2) <= qca(i+1,1); %get data block
+                raw_data.data(:,2) < qca(i+1,1); %get data block
         else
             t1 = raw_data.data(:,2) >= qca(i,1); %get data block
         end
         dt = (raw_data.data(t1,1) - min(raw_data.data(t1,1))) ./ 365; % elapsed years in block
         tmp_cor  = last_cor + qca(i,3) + qca(i,4) .* dt; %offset + drift
-        last_cor = tmp_cor(end);
+%         last_cor = tmp_cor(end);
         cor(t1)  = tmp_cor;
     end
+% %     figure
+% %     plot(cor,'r.-')
     qc_data.data(:,IND)   = (raw_data.data(:,IND) - cor) ./ qca(i,2);
     
     % SET BAD QC DATA TO NaN
     t1 = qc_data.data(:,IND+1) == 8;
     qc_data.data(t1,IND) = NaN;
-end;
+end
 
-% *************************************************************************
-% OXYGEN QC
-% GAIN ONLY AND ONLY ONE GAIN
-% THIS WILL PROBALY CHANGE IN THE NEAR FUTURE
-% *************************************************************************
-% if strcmp(handles.info.data_type, 'O2') 
-%     IND = iO;
-%     qc_data.data(:,IND)  = raw_data.data(:,IND) .* qca(i,2);
-% end;
-
-if strcmp(DATA.paramtag, 'O2')
-    IND = iO;
-    last_cor = 0;
-    for i = 1:rr
-        if i < rr 
-            t1 = raw_data.data(:,2) >= qca(i,1) & ...
-                raw_data.data(:,2) <= qca(i+1,1); %get block
-        else
-            t1 = raw_data.data(:,2) >= qca(i,1); %get block
-        end
-        dt = (raw_data.data(t1,1) - min(raw_data.data(t1,1))) ./ 365; % elapsed years in block
-        tmp_cor  = last_cor + qca(i,3) + qca(i,4) .* dt; %offset + drift
-        last_cor = tmp_cor(end);
-        cor(t1)  = tmp_cor;
-    end
-    qc_data.data(:,IND)   = (raw_data.data(:,IND) - cor) .* qca(i,2);
-    
-    % SET BAD QC DATA TO NaN
-    t1 = qc_data.data(:,IND+1) == 8;
-    qc_data.data(t1,IND) = NaN;
-end;
+% % % % *************************************************************************
+% % % % OXYGEN QC
+% % % % GAIN ONLY AND ONLY ONE GAIN
+% % % % THIS WILL PROBALY CHANGE IN THE NEAR FUTURE
+% % % % *************************************************************************
+% % % % if strcmp(handles.info.data_type, 'O2') 
+% % % %     IND = iO;
+% % % %     qc_data.data(:,IND)  = raw_data.data(:,IND) .* qca(i,2);
+% % % % end;
+% % % 
+% % % if strcmp(DATA.paramtag, 'O2')
+% % %     IND = iO;
+% % %     last_cor = 0;
+% % %     for i = 1:rr
+% % %         if i < rr 
+% % %             t1 = raw_data.data(:,2) >= qca(i,1) & ...
+% % %                 raw_data.data(:,2) <= qca(i+1,1); %get block
+% % %         else
+% % %             t1 = raw_data.data(:,2) >= qca(i,1); %get block
+% % %         end
+% % %         dt = (raw_data.data(t1,1) - min(raw_data.data(t1,1))) ./ 365; % elapsed years in block
+% % %         tmp_cor  = last_cor + qca(i,3) + qca(i,4) .* dt; %offset + drift
+% % %         last_cor = tmp_cor(end);
+% % %         cor(t1)  = tmp_cor;
+% % %     end
+% % %     qc_data.data(:,IND)   = (raw_data.data(:,IND) - cor) .* qca(i,2);
+% % %     
+% % %     % SET BAD QC DATA TO NaN
+% % %     t1 = qc_data.data(:,IND+1) == 8;
+% % %     qc_data.data(t1,IND) = NaN;
+% % % end
 
 
 if isfield(handles,'new_qc_data') == 1 %if other variables have been updated, preserve them!

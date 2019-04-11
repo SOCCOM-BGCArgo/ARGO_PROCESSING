@@ -53,8 +53,8 @@ while ischar(tline)
     end
     % only gain value & ONLY 1 LINE
     if regexp(tline,'^Oxygen','once') 
-        tmp = textscan(tline,'%s%f%s','Delimiter', ',');
-        QCA.O2  =[QCA.O2;[1 tmp{1,2} 0 0]];
+        tmp = textscan(tline,'%s%f%f%f%f%s','Delimiter', ',');
+        QCA.O2  =[QCA.O2;[ tmp{1,2},tmp{1,3},tmp{1,4}, tmp{1,5}]];
     % cycle gain offset, drift    
     elseif regexp(tline,'^Nitrate','once')
         tmp = textscan(tline,'%s%f%f%f%f%s','Delimiter', ',');

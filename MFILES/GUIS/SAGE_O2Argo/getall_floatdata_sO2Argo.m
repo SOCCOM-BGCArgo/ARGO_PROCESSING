@@ -33,11 +33,12 @@ DATA.floatNAME = floatID;
 BRtraj = [thedatadir,floatID,'_BRtraj.nc'];
 metaF = [thedatadir,floatID,'_meta.nc'];
 Mprof = [thedatadir,floatID,'_Mprof.nc'];
+Sprof = [thedatadir,floatID,'_Sprof.nc'];
 % if exist(BRtraj,'file')==0 || exist(metaF,'file')==0 || exist(Mprof,'file')==0 % if missing any of the 3
 % if exist(metaF,'file')==0 || exist(Mprof,'file')==0 % if missing any of the 2;  if missing BRtraj is ok, just cal O2 to WOA
 %     errorstring = [floatID,'_meta.nc, or ',floatID,'_Mprof.nc is missing from ',thedatadir,'.  Download these files from the GDAC before proceeding.'];
-if exist(Mprof,'file')==0 % if missing Mprof only;  if missing BRtraj is ok, just cal O2 to WOA; meta may not be needed anymore
-    errorstring = [floatID,'_Mprof.nc is missing from ',thedatadir,'.  Download these files from the GDAC before proceeding.'];
+if exist(Mprof,'file')==0 && exist(Sprof,'file')==0 % if missing Mprof and Sprof;  if missing BRtraj is ok, just cal O2 to WOA; meta may not be needed anymore
+    errorstring = [floatID,'_Mprof.nc and/or ',floatID,'_Sprof.nc is missing from ',thedatadir,'.  One must be present before proceeding.'];
     h = errordlg(errorstring,'Missing File');
 end
  

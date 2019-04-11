@@ -70,7 +70,7 @@ RCR.CDOM = [-1000 1000]; % Place Holder
 RCR.NO3  = [-15 65];
 
 % GET CORE AND BGC VARIABLE NAMES
-tmp = get_BGC_param_list(param_list_file);
+tmp = get_BGC_param_list([dirs.data,param_list_file]);
 bgc_param_list = tmp.list(:,2);
 
 % ADD BISULFIDE

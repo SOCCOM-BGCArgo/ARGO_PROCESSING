@@ -34,6 +34,7 @@ function data = parse_NAVISmsg4ARGO(msg_file)
 %   01/18/2017 - cp header line search more generic & extracted CTD
 %               type and serial number ultimately for ODV meta info
 %   06/09/2017 - add code to look for <EOT> and record # of instances
+%   12/13/2018 - Added code to eliminate return of data records that lack pressure (unusable!)
 
 % ************************************************************************
 % FORMATS & VARIABLES
@@ -402,6 +403,11 @@ if isempty(low_res) && isempty(high_res)
     disp(['No data found in ',msg_file])
 else
     if ~isempty(low_res)
+        xx = find(isnan(low_res(:,1)));
+        if ~isempty(xx)
+            disp(['Discrete data with missing pressure values in ',msg_file,' were detected and discarded.'])
+            low_res(xx,:) = [];
+        end
         data.lr_d = low_res;
     else
         disp(['No low resolution data found for ',msg_file])

@@ -31,6 +31,8 @@ function O2data = calc_O2_4ARGO(S, T, P, Phase, cal)
 %   05/30/2017 - Implemented Henry Bittig's (2015) pressure correction
 %       scheme. This makes  a correction in raw phase and in [O2].
 %       http://dx.doi.org/10.1175/JTECH-D-15-0108.1
+% 10/25/2018 Added code to calculate O2 using the SVUCoef's for 4330's that
+%       have these coefficients
 
 % ************************************************************************
 % SET VARIABLES & PATHS & FORMATS
@@ -113,20 +115,32 @@ elseif strcmp(cal.type,'4330')
     ind = length(cal.PCoef):-1:1; % need to reverse order of coef for Matlab
     CalPhase = polyval(cal.PCoef(ind),Phase);
     
-    % CALCULATE PARTIAL PRESSURE O2
-    pO2   = ones(size(CalPhase))*NaN; % predim
-    for i = 1:length(CalPhase)
-        tmp = cal.FCoef .* (T(i).^cal.PolyDegT) .* ...
-              (CalPhase(i) .^ cal.PolyDegO);
-        pO2(i) = sum(tmp);
+    if ~isfield(cal,'SVUFoilCoef') % 4330 polynomial returns pO2
+        % CALCULATE PARTIAL PRESSURE O2
+        pO2   = ones(size(CalPhase))*NaN; % predim
+        for i = 1:length(CalPhase)
+            tmp = cal.FCoef .* (T(i).^cal.PolyDegT) .* ...
+                (CalPhase(i) .^ cal.PolyDegO);
+            pO2(i) = sum(tmp);
+        end
+        
+        % CALCULATE O2 SATURATION (Assume a constant atm pressure)
+        O2Sat = pO2 ./ ((1013.25- pH2O) * 0.20946) * 100;
+        
+        % CALCULATE O2 CONC FOR S = XX
+        %O2 = (O2sol .* O2Sat * 44.614) / 100;
+        O2 = (O2sol .* O2Sat) / 100;
+        
+        
+    elseif isfield(cal,'SVUFoilCoef') % 4330 Stern Volmer (Uchida) returns [O2]
+        SVU = cal.SVUFoilCoef;
+        Ksv = SVU(1) + SVU(2).*T + SVU(3).*T.^2;
+        P0  = SVU(4) + SVU(5).*T;
+        PC  = SVU(6) + SVU(7).*CalPhase;
+        O2  = (P0./PC -1) ./ Ksv;
+        O2  = O2 .* exp(S_corr); % Aanderaa S correction to O2 concentration
+        pO2 = O2 ./ O2sol  .* (1013.25 - pH2O) .* 0.20964 ; % partial pressure O2
     end
-
-    % CALCULATE O2 SATURATION (Assume a constant atm pressure)
-    O2Sat = pO2 ./ ((1013.25- pH2O) * 0.20946) * 100;
-    
-    % CALCULATE O2 CONC FOR S = XX
-    %O2 = (O2sol .* O2Sat * 44.614) / 100;
-    O2 = (O2sol .* O2Sat) / 100;
     
     % IF ConcCoef variable exist need to update pO2 too
     if isfield(cal,'ConcCoef')
@@ -156,6 +170,7 @@ end
 
 % SWITCH TO PRESSURE CORRECTION FROM BITTIG ET AL., (2015) - 05/30/2017
 O2 = O2 .* ((0.00022*T + 0.0419) .* P/1000 +1);
+
 
 O2data = [S, T, P, Phase, CalPhase, O2, O2sol, pO2]; % umol /L & % sat
 

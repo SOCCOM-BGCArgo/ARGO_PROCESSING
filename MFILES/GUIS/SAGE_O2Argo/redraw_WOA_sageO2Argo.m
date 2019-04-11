@@ -99,8 +99,8 @@
             Ex = DATA.refsub(DATA.refsub(:,2)>=DATA.tableDATA(jt,1)&DATA.refsub(:,2)<=inputs.cyEND(jt),1);
             Exes = Ex-nanmin(Ex);
             Whys = Exes.*(DATA.tableDATA(jt,3))./365+DATA.tableDATA(jt,2);
-%             hold(gui.whichAX(2),'on')
-%             plot(Ex,Whys,'-','parent',gui.whichAX(2),'color',mycolors(9,:),'linewidth',2)
+            hold(gui.whichAX(2),'on')
+            plot(Ex,Whys,'-','parent',gui.whichAX(2),'color',mycolors(9,:),'linewidth',2)
             hold(gui.whichAX(2),'on')
             myEx = DATA.refsub(DATA.refsub(:,2)==DATA.tableDATA(jt,1),1);
             if ~isempty(myEx)
@@ -121,11 +121,11 @@
     text(Xloc,Yls(1)+5.5*Yloc,['mean = ',num2str(meanGAIN1)],'parent',gui.whichAX(2),'color',mycolors(7,:),'fontunits','normalized','fontsize',0.125)
 %     text(Xloc,Yls(1)+6*Yloc,['m = ',num2str(my1)],'parent',gui.whichAX(2),'color',mycolors(7,:),'fontunits','normalized','fontsize',0.125)
 %     text(Xloc,Yls(1)+5*Yloc,['b = ',num2str(by1)],'parent',gui.whichAX(2),'color',mycolors(7,:),'fontunits','normalized','fontsize',0.125)
-%         text(Xloc,Yls(1)+4*Yloc,['AIC = ',num2str(DATA.AIC)],'parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
-%     if inputs.rorq==1
+        text(Xloc,Yls(1)+4*Yloc,['BIC = ',num2str(DATA.BIC)],'parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
+        if inputs.rorq==1
 %         text(Xloc-(Xls(2)-Xls(1))/20,Yls(1)+3*Yloc,'--- Gain used in QC','parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
-%         text(Xloc-(Xls(2)-Xls(1))/20,Yls(1)+2.5*Yloc,'- Gain used in QC','parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
-%     end
+        text(Xloc-(Xls(2)-Xls(1))/20,Yls(1)+2.5*Yloc,'- Gain used in QC','parent',gui.whichAX(2),'color',mycolors(9,:),'fontunits','normalized','fontsize',0.125)
+    end
     ylabel(gui.whichAX(2),'(Ref %Sat)/(Flt %Sat)','fontunits','normalized','fontsize',0.125);
     set(gui.whichAX(2),'xtick',DATA.xticks{1})
     datetick(gui.whichAX(2),'x',2,'keepticks','keeplimits')
