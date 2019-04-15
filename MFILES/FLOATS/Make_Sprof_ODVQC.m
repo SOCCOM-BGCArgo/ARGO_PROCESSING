@@ -1,8 +1,9 @@
-function tf = Make_Mprof_ODVQC(handles)
+function tf = Make_Sprof_ODVQC(handles)
 % FOR USE IN SAGE AND SAGE-O2Argo
 % CREATE AN ADJUSTED ODV STYLE TEXT FILE FROM RAW ODV FILE GIVEN A
 % CORRECTIONS FILE. THIS IS DESIGNED ONLY FOR MPROF FILES WHERE NO MESSAGE
 % FILES EXIST & NO ARGO FILES.
+% 4/15/2019: changed name from Make_Mprof_ODVQC to Make_Sprof_ODVQC (moving toward use of Sprof files).
 
 fp = filesep; % File separator for current platform
 tf = 0;
@@ -251,14 +252,15 @@ ODV_adj(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE' '' '' ''};
 ODV_adj(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA' '' '' ''};   
 ODV_adj(10,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700' '' '' ''};
 ODV_adj(11,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''}; 
-ODV_adj(12,:) = {'CP660[1/m]'            '%0.4f' 'CP660' '' '' ''}; 
+ODV_adj(12,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};   
+ODV_adj(13,:) = {'CP660[1/m]'            '%0.4f' 'CP660' '' '' ''}; 
 
 % ADD THESE FOR ODV FLAVOR #2 -PROVOR
-ODV_adj(13,:) = {'D_IRRAD380[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE380' '' '' ''}; 
-ODV_adj(14,:) = {'D_IRRAD412[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE412' '' '' ''}; 
-ODV_adj(15,:) = {'D_IRRAD490[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE490' '' '' ''}; 
-ODV_adj(16,:) = {'D_PAR[W/m^2/nm]'       '%4.4f' 'DOWNWELLING_PAR' '' '' ''}; 
-ODV_adj(17,:) = {'Bisulfide[µmol/kg]'    '%4.4f' 'BISULFIDE' '' '' ''}; 
+ODV_adj(14,:) = {'D_IRRAD380[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE380' '' '' ''}; 
+ODV_adj(15,:) = {'D_IRRAD412[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE412' '' '' ''}; 
+ODV_adj(16,:) = {'D_IRRAD490[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE490' '' '' ''}; 
+ODV_adj(17,:) = {'D_PAR[W/m^2/nm]'       '%4.4f' 'DOWNWELLING_PAR' '' '' ''}; 
+ODV_adj(18,:) = {'Bisulfide[µmol/kg]'    '%4.4f' 'BISULFIDE' '' '' ''}; 
 
 % ************************************************************************
 
@@ -418,12 +420,6 @@ end
 fclose(fid_qc);
 clear fid_raw cast_num sample_ct
 
-% MAKE CONFIG FILE FOR FLOATVIZ
-fvqc_path  = [handles.info.file_path, 'QC',fp,handles.info.float_name, ...
-              'QC.CFG'];
-fid_qc  = fopen(fvqc_path,'w');
-fprintf(fid_qc,'//%0.0f\r\n',line_ct);
-fclose(fid_qc);
 disp(['DONE printing adjusted data to: ',fvqc_path]);
 clear fid_raw line_ct dummy_out
 

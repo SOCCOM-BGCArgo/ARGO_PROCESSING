@@ -35,6 +35,8 @@ function varargout = sageO2Argo()
 %          04/16/18 Added pushbutton to write ODV*QC.TXT file, which
 %          includes adjusted oxygen data (average gain viewed in software
 %          gets applied to the data and written to file).
+%		   04/11/19 Added modifications to drift in gain.
+%          04/15/19 changed Make_Mprof_ODVQC to Make_Sprof_ODVQC.
 % NOTES: Adapted from sageO2 (original version made for MBARI)
 % ************************************************************************
 %
@@ -1060,7 +1062,7 @@ function gui = createInterface( ~ )
     function on_applyO2gain( source, ~ ) 
          handlesODVQC.info.Mprof = 1;
          handlesODVQC.info.float_name = ['ODV',inputs.floatID];
-         % Calling Make_Mprof_ODVQC which also gets used in Sage. 
+         % Calling Make_Sprof_ODVQC which also gets used in Sage. 
          %Maintain QCA structure, as called in this function
          handlesODVQC.QCA.NO3 = [];
          handlesODVQC.QCA.PH_OFFSET = [];
@@ -1072,7 +1074,7 @@ function gui = createInterface( ~ )
              set( gui.doQCbutton,'String','Writing QC to file...','fontsize',14);
              set(gui.doQCbutton,'BackgroundColor','y');
              drawnow
-             tf = Make_Mprof_ODVQC(handlesODVQC);
+             tf = Make_Sprof_ODVQC(handlesODVQC);
              set( gui.doQCbutton,'String','Write ODV*QC.TXT','fontsize',16)
              set(gui.doQCbutton,'BackgroundColor',gui.wrk_color);
          else

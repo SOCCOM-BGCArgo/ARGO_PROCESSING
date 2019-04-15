@@ -78,6 +78,8 @@ function varargout = sage()
 %             Toolbox (old version is archived as sage_version1.m)
 %   10/1/18  Added CANYON_B to reference options.  May remove CANVON
 %   (version 1) at a later date, defaulting to CANYONB
+%		   Dec2018 Added modifications to drift in gain.
+%          04/15/19 changed Make_Mprof_ODVQC to Make_Sprof_ODVQC.
 % NOTES: 
 %
 % ************************************************************************
@@ -1515,7 +1517,7 @@ function gui = createInterface( ~ )
 					msgbox('NO ACCESS TO MSG FILES.  CANNOT REPROCESS.')
 				end
             elseif handles.info.Mprof == 1
-               tf = Make_Mprof_ODVQC(handles);     
+               tf = Make_Sprof_ODVQC(handles);     
             end
         
         end
