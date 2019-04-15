@@ -1,4 +1,4 @@
-function tf_odv = sprofmat2ODV(f_info, outputDIR)
+function tf_odv = ARGOsprofmat2ODV(f_info, outputDIR)
 
 % ************************************************************************
 % PURPOSE: 
@@ -33,14 +33,16 @@ function tf_odv = sprofmat2ODV(f_info, outputDIR)
 % 10/16/2018 - modified for Sprof files
 % 04/13/19  - TM, modified fx routines to make running easier for
 % users. Also removed calls to MBARI network locations etc...
+% 04/15/2019 - fixed a QF flagging bug, added comment line describing Argo
+%              QF to ODV QF conversion.  Also renamed to "ARGOsprofmat2ODV.m" to distinguish from MBARI internal version.
 
 % TESTING
 %dirs =[]
 
 %
-d = Sprof2mat(f_info);
+d = ARGOSprof2mat(f_info);
 info = d.INFO;
-rdata = d.data; % row data from mprof netcdf
+rdata = d.data; % row data from Sprof netcdf
 rhdr  = d.hdr;
 clear d
 
@@ -73,7 +75,7 @@ dirs.temp = mytempfolder;
 
 
 tf_odv = 0;
-fill_0 = ones(raw_r,1); % for adding QF arrays
+fill_0 = ones(raw_r,1) * 0; % for adding QF arrays
 
 
 % ************************************************************************
@@ -220,9 +222,10 @@ clear qc_chk data_chk tmp
             tmp1 = raw_data(:,i);
             tmp1(tmp1 == 4) = 8;
             tmp1(tmp1 == 3) = 4; % This will catch interp lat 2/9/17 jp
+            tmp1(tmp1 == 5) = 4; % THIS sets NPQ'ed CHL quality flags to questionable
+            tmp1(tmp1 == 2) = 0; % Probably good to good
             tmp1(tmp1 == 0) = 10; % temporary
-            tmp1(tmp1 == 1) = 0; % P T S Z
-            tmp1(tmp1 == 2) = 1; % All others uninspected
+            tmp1(tmp1 == 1) = 0; % Argo good to ODV GOOD
             tmp1(tmp1 == 10 | tmp1 == 99) = 1; % NO QC or Missing value
             raw_data(:,i) = tmp1;
         end
@@ -277,15 +280,16 @@ ODV_raw(7,:)  = {'OxygenSat[%]'          '%0.1f' 'DOXY_%SAT' '' '' ''};
 ODV_raw(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE' '' '' ''}; 
 ODV_raw(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA' '' '' ''};   
 ODV_raw(10,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700' '' '' ''};
-ODV_raw(11,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''}; 
-ODV_raw(12,:) = {'CP660[1/m]'            '%0.4f' 'CP660' '' '' ''}; 
+ODV_raw(11,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''};
+ODV_raw(12,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};   
+ODV_raw(13,:) = {'CP660[1/m]'            '%0.4f' 'CP660' '' '' ''}; 
 
 % ADD THESE FOR ODV FLAVOR #2 -PROVOR
-ODV_raw(13,:) = {'D_IRRAD380[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE380' '' '' ''}; 
-ODV_raw(14,:) = {'D_IRRAD412[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE412' '' '' ''}; 
-ODV_raw(15,:) = {'D_IRRAD490[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE490' '' '' ''}; 
-ODV_raw(16,:) = {'D_PAR[W/m^2/nm]'       '%4.4f' 'DOWNWELLING_PAR' '' '' ''}; 
-ODV_raw(17,:) = {'Bisulfide[µmol/kg]'    '%4.4f' 'BISULFIDE' '' '' ''}; 
+ODV_raw(14,:) = {'D_IRRAD380[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE380' '' '' ''}; 
+ODV_raw(15,:) = {'D_IRRAD412[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE412' '' '' ''}; 
+ODV_raw(16,:) = {'D_IRRAD490[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE490' '' '' ''}; 
+ODV_raw(17,:) = {'D_PAR[W/m^2/nm]'       '%4.4f' 'DOWNWELLING_PAR' '' '' ''}; 
+ODV_raw(18,:) = {'Bisulfide[µmol/kg]'    '%4.4f' 'BISULFIDE' '' '' ''}; 
 
 % ************************************************************************
 % FIGURE OUT ODV FILE FORMAT TYPE: [NO pH] ]pH] [NAVIS]
@@ -333,6 +337,7 @@ fprintf(fid_raw,'//\r\n');
 fprintf(fid_raw,'//PLEASE READ:\r\n');
 fprintf(fid_raw,['//Data for this file has been extracted from the ',...
     'Synthetic profiles (*.SProf.nc)\r\n']);
+fprintf(fid_raw,'//Only RAW data parameters were used\r\n');
 
 fprintf(fid_raw,'//\r\n');
 
@@ -351,6 +356,8 @@ fprintf(fid_raw,'//\r\n');
 % end
 
 fprintf(fid_raw,['//Missing data value = ',MVI_str,'\r\n']);
+fprintf(fid_raw,['//Argo to ODV QF conversion: Argo 0 => ODV 1, ',...
+    'Argo 1|2 => ODV 0, Argo 3|5 => ODV 4, Argo 4 => ODV 8\r\n']);
 fprintf(fid_raw,['//Data quality flags: 0=Good, 4=Questionable, 8=Bad, '...
     '1=Missing or not inspected \r\n']);
 
@@ -453,17 +460,16 @@ end
 fclose(fid_raw);
 clear fid_raw cast_num sample_ct
 
-% MAKE CONFIG FILE FOR FLOATVIZ
-fid_raw  = fopen([outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.CFG'],'w');
-fprintf(fid_raw,'//%0.0f\r\n',line_ct);
-fclose(fid_raw);
-clear fid_raw line_ct dummy_out
-
 disp(['DONE printing raw data to: ',outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.TXT']);
 
-% % % copy_dest = '\\atlas\tempbox\Plant\Mprof2ODV\';
-% % strtrim(info.WMO(1,:))
-% % disp(['Copying ODV',strtrim(info.WMO(1,:)), ' to ',outputDIR]);
-% % copyfile([dirs.txt, 'ODV',strtrim(info.WMO(1,:)),'.*'], outputDIR);
+% MAKE CONFIG FILE FOR FLOATVIZ
+% fid_raw  = fopen([dirs.txt, 'ODV',strtrim(info.WMO(1,:)),'.CFG'],'w');
+% fprintf(fid_raw,'//%0.0f\r\n',line_ct);
+% fclose(fid_raw);
+% clear fid_raw line_ct dummy_out
+% 
+% copy_dest = '\\atlas\tempbox\Plant\Mprof2ODV\';
+% disp(['Copying ODV',strtrim(info.WMO(1,:)), ' to ',copy_dest]);
+% copyfile([dirs.txt, 'ODV',strtrim(info.WMO(1,:)),'.*'], copy_dest);
 
 

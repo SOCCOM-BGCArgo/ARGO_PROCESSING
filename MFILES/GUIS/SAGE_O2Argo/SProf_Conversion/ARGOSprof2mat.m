@@ -1,22 +1,24 @@
-function Sprof_out = Sprof2mat(f_info)
+function Sprof_out = ARGOSprof2mat(f_info)
 
 
 % Corioles synthetic profile netCDF's to Matlab matrix
 
-
+% CHANGE HISTORY
+% 04/15/19 - commented out a bunch of flagging to remove bad data lines so
+%            the data more closely match Argo data. Extra QC is still done
+%            based on info in ODVbad_sensor_list.txt, mostly on bio optics.
+%            This can be commente out. If no file  found it won't happen either
 
 % ************************************************************************
 % DO SOME PREP WORK
 % ************************************************************************
-% SET UP LOCAL DATA PATH
-fp = filesep;
-user_dir = getenv('USERPROFILE');
-dirs.data = [user_dir,fp,'Documents',fp,'MATLAB',fp,'ARGO',fp];
-dirs.temp = [getenv('HOMEDRIVE'),fp,'temp',fp]; % for my computer homedrive = C:
-dirs.bad_sensor = dirs.data;
-
+% SET UP 
 bad_sensor_file = 'ODVbad_sensor_list.txt'; % Not required
 param_list_file = 'argo-parameters-list-core-and-b.txt';
+
+Sprof_out.hdr  = [];
+Sprof_out.data = [];
+Sprof_out.INFO = [];
 
 % **********************************************************
 % **********************************************************
@@ -51,7 +53,7 @@ Sprof_file = f_info.fn;
 Sprof_path = f_info.local_path;
 
 INFO.data_file = Sprof_file;
-INFO.DAC = f_info.dac;     
+INFO.DAC = f_info.dac;
 
 % FILL VALUES
 fv.bio = 99999;
@@ -79,6 +81,20 @@ bgc_param_list = [bgc_param_list; 'BISULFIDE'];
 clear tmp
 
 % CREATE NetCDF OBJECT
+%[Sprof_path, Sprof_file]
+
+% CHECK FILE NAME & SIZE BEFORE OPENING
+if exist([Sprof_path, Sprof_file],'file')
+    fn_dir = dir([Sprof_path, Sprof_file]);
+    if fn_dir.bytes == 0
+        disp(['File exists (',Sprof_file,') but size = 0, moving to next file, if working from list.']);
+        return
+    end
+else
+    disp(['File not found (',Sprof_file,'), moving to next file, if working from list.']);
+    return
+end
+
 ds = ncdataset([Sprof_path, Sprof_file]);
 flt_param_list = ds.variables; % GET FLOAT PARAMETERS
 
@@ -99,10 +115,10 @@ INFO.params = bgc_vars;
 % **********               OK NOW GET FLOAT DATA            **************
 % Data col are depth levels & rows are different "data profiles"
 % Rows can be an actual profile or it can be a different sampling on the
-% same profile (same SDN0
+% same profile (same SDN)
 % ************************************************************************
 C_NUM = double(ds.data('CYCLE_NUMBER'));
-LAT   = double(ds.data('LATITUDE')); 
+LAT   = double(ds.data('LATITUDE'));
 LON   = double(ds.data('LONGITUDE'));
 
 szWMO = ds.size('PLATFORM_NUMBER');
@@ -110,8 +126,9 @@ INFO.WMO   = ds.data('PLATFORM_NUMBER',[1,1],[1,szWMO(2)]); % this is an m x 8 c
 INFO.WMO   = strtrim(INFO.WMO); % sometimes a trailing space
 WMO = ones(szWMO(1),1) * str2double(INFO.WMO(1,:));
 sztype = ds.size('PLATFORM_TYPE');
-INFO.type   = strtrim(ds.data('PLATFORM_TYPE',[1,1],[1,sztype(2)])); 
+INFO.type   = strtrim(ds.data('PLATFORM_TYPE',[1,1],[1,sztype(2)]));
 clear szWMO sztype
+INFO.QC = 0; % 0 for raw, 1 for ADJUSTED DATA
 
 % CONVERT JULD TO MATLAB SDN - NEED TO GET PIVOT TIME FIRST FROM ATTRIBUTES
 % NCDATASET DOES NOT GET JULD ATTRIBUTES ANY MORE (THROWS AN ERROR)
@@ -149,7 +166,7 @@ for i = 1:size(uCycle,1)
 end
 uSDN(isnan(uSDN)) = [];
 
-% PUT ALL RAW DATA MATRICES IN STRUCTURE 
+% PUT ALL RAW DATA MATRICES IN STRUCTURE
 for i = 1:size(bgc_vars,1)
     d.(bgc_vars{i})= double(ds.data(bgc_vars{i}));
     t_fill = d.(bgc_vars{i}) == fv.bio; % fill values to NaN
@@ -157,13 +174,13 @@ for i = 1:size(bgc_vars,1)
 end
 clear vdir tAD str t_fill i C_NUM LAT LON WMO
 
-% PUT ALL ADJUSTED DATA MATRICES IN STRUCTURE 
-for i = 1:size(bgc_vars,1)
-    dA.(bgc_vars{i})= double(ds.data([bgc_vars{i},'_ADJUSTED']));
-    t_fill = dA.(bgc_vars{i}) == fv.bio; % fill values to NaN
-    dA.(bgc_vars{i})(t_fill) = NaN;
-end
-clear vdir tAD str t_fill i C_NUM LAT LON WMO
+% PUT ALL ADJUSTED DATA MATRICES IN STRUCTURE
+% for i = 1:size(bgc_vars,1)
+%     dA.(bgc_vars{i})= double(ds.data([bgc_vars{i},'_ADJUSTED']));
+%     t_fill = dA.(bgc_vars{i}) == fv.bio; % fill values to NaN
+%     dA.(bgc_vars{i})(t_fill) = NaN;
+% end
+% clear vdir tAD str t_fill i C_NUM LAT LON WMO
 
 % PUT ALL QC MATRICES IN STRUCTURE. SPROF QC VALUES ARE STORED AS A CHAR
 % ARRAY ONLY THE LENGTH OF PROFILE DATA NOT THE MAX MATRIX COLUMN SIZE
@@ -181,15 +198,15 @@ for i = 1:size(bgc_vars,1)
 end
 
 % DO THE SAME FOR ADJUSTED DAT QC FLAGS
-for i = 1:size(bgc_vars,1)
-    stmp  = ds.data([bgc_vars{i},'_ADJUSTED_QC']); %get char matrix
-    rc    = size(stmp);
-    stmp2 = regexprep(stmp(:)',' ','7'); % temp replace ' ' with a '7'
-    stmp3 = reshape(sscanf(stmp2','%1f'),rc);
-    stmp3(stmp3 == 7) = NaN; % replace temp '7' with NaN
-    QCA.(bgc_vars{i}) = stmp3;
-    clear stmp rc stmp2 stmp3
-end
+% for i = 1:size(bgc_vars,1)
+%     stmp  = ds.data([bgc_vars{i},'_ADJUSTED_QC']); %get char matrix
+%     rc    = size(stmp);
+%     stmp2 = regexprep(stmp(:)',' ','7'); % temp replace ' ' with a '7'
+%     stmp3 = reshape(sscanf(stmp2','%1f'),rc);
+%     stmp3(stmp3 == 7) = NaN; % replace temp '7' with NaN
+%     QCA.(bgc_vars{i}) = stmp3;
+%     clear stmp rc stmp2 stmp3
+% end
 
 % GET CYCLE DIRECTION - ONLY WANT ASCENDING PROFILES
 cycle_dir = ds.data('DIRECTION');
@@ -248,27 +265,24 @@ for ct = 1:size(uSDN,1) % STEP THROUGH PROFILES
     
     % ESTIMATE SIZE FOR PREDIM
     P = d.PRES(t1,:);
-    % Make one col 
+    % Make one col
     % acum col by col, order not important if all data treated the same
     P       = P(:);
     Pnan    = isnan(P); % use flags in parameter loop below
     P(Pnan) = [];
     [~,ind] = sort(P,1); % shallow to deep
     %[~,ind] = sort(P,1,'descend'); % deep to shallow
-    nP      = size(P,1); 
+    nP      = size(P,1);
     sprof   = ones(nP, size(bgc_vars,1)*2)*NaN; % *2 for QC cols
     clear P
     
     % STEP THROUGH BGC PARAMETERS WITHIN A PROFILE & FILL mprof matrix
-    for vct = 1:size(bgc_vars,1)        
+    for vct = 1:size(bgc_vars,1)
         X  = d.(bgc_vars{vct})(t1,:);
         if isempty(X)
             disp('No parameter data found')
             continue
         end
-        
-        %XA
-        
         
         X  = X(:);
         X(Pnan) = []; % remove NaN's in P due to "squareness" of netcdf
@@ -277,78 +291,83 @@ for ct = 1:size(uSDN,1) % STEP THROUGH PROFILES
         XQC  = XQC(:);
         XQC(Pnan) = []; % remove NaN's in P due to "squareness" of netcdf
         
-%         if strcmp(bgc_vars{vct},'CHLA')
-%             Xbad = XQC > 3;
-%         else
-%             Xbad = XQC > 2; % set data flagged bad & bad flags to NaN
-%         end
-
+        
+        %         if strcmp(bgc_vars{vct},'CHLA')
+        %             Xbad = XQC > 3;
+        %         else
+        %             Xbad = XQC > 2; % set data flagged bad & bad flags to NaN
+        %         end
+        
         % UPDATED QC FLAG CRITERIA SO  MBARI RAW DOES GET SET TO NaN
         % 04/16/2017. THIS MAY allow more bad NON MBARI ARGO DATA through
         Xbad = XQC == 4;
-        
-        X(Xbad)   = NaN;
-        XQC(Xbad) = NaN;
+        %
+        %         X(Xbad)   = NaN; % 04/08/2019 not sure whay i was setting bad data to NaN????
+        %         XQC(Xbad) = NaN;
         
         sprof(:,vct*2-1) = X(ind); % shallow to deep
         sprof(:,vct*2)   = XQC(ind); % shallow to deep
         
         % Save some QC flag test, remove these line after looping done
-        if strcmp(bgc_vars{vct},'PRES') 
-            Pbad = Xbad(ind); % sorted shallow to deep
-        elseif strcmp(bgc_vars{vct},'PSAL')
-            Sbad = Xbad(ind); % sorted shallow to deep
-        elseif strcmp(bgc_vars{vct},'TEMP')
-            Tbad = Xbad(ind); % sorted shallow to deep
-        end
+        %         if strcmp(bgc_vars{vct},'PRES')
+        %             Pbad = Xbad(ind); % sorted shallow to deep
+        %         elseif strcmp(bgc_vars{vct},'PSAL')
+        %             Sbad = Xbad(ind); % sorted shallow to deep
+        %         elseif strcmp(bgc_vars{vct},'TEMP')
+        %             Tbad = Xbad(ind); % sorted shallow to deep
+        %         end
     end
     
-    sprof(Pbad|Sbad|Tbad,:) = [];
-  
+    %     sprof(Pbad|Sbad|Tbad,:) = [];
+    
     t_PSAL = ~isnan(sprof(:,iS)); % good PSAL
     if all(isnan(sprof(:))) % CHECK FOR DATA
         fprintf(['No good data retrieved for cycle %0.0f profile ', ...
             '%0.0f. Processing next profile\r\n'],cycle_ct, profile_ct)
         continue
-    elseif sum(t_PSAL,1) == 0
-        fprintf(['No good salinity data retrieved for cycle %0.0f profile ', ...
-            '%0.0f. Processing next profile\r\n'],cycle_ct, profile_ct)
-        continue        
     end
+    
+    %     elseif sum(t_PSAL,1) == 0
+    %         fprintf(['No good salinity data retrieved for cycle %0.0f profile ', ...
+    %             '%0.0f. Processing next profile\r\n'],cycle_ct, profile_ct)
+    %         continue
+    %     end
+    
     
     good_rows = size(sprof,1);
     out(line_ct:line_ct+good_rows-1,:) = [ones(good_rows,1) * info,sprof];
     line_ct = line_ct + good_rows;
     
-   
+    
     % ********************************************************************
     % CHECK IF S & T EXISTS FOR EACH O2 VALUE, IF NOT INTERPOLATE
     % NOT PERFECT BUT PROBABLY GOOD ENOUGH, NEED T, S & O at a P for MLR
-
-%     if iO
-%         t_DOXY = ~isnan(sprof(:,iO)); % good O2
-%         t_S    = t_DOXY & ~t_PSAL; % O2 but no PSAL
-%         if sum(t_S,1) > 0 % need to interpolate
-%             tmp = sprof(t_PSAL,[iP, iT,iT+1 iS, iS+1]); % good S rows only
-%             % only 1 row of data - can't interp, assign S to O's
-%             if size(tmp,1) == 1
-%                 sprof(t_S,[iT,iT+1,iS, iS+1]) = ones(sum(t_S),1)* tmp(1,2:5);
-%             else
-%                 [C,ia,ic] = unique(tmp(:,1));
-%                 tmp = tmp(ia,:); % good S & unique P
-%                 sprof(t_S,[iT,iT+1,iS,iS+1]) = interp1(tmp(:,1),tmp(:,2:5), ...
-%                     sprof(t_S,iP)); % QC flags are getting interpolated need to deal with this              
-%             end
-%         end
-%     else
-%         disp(['No Oxygen data found in ',Sprof_file]);
-%     end
+    
+    %     if iO
+    %         t_DOXY = ~isnan(sprof(:,iO)); % good O2
+    %         t_S    = t_DOXY & ~t_PSAL; % O2 but no PSAL
+    %         if sum(t_S,1) > 0 % need to interpolate
+    %             tmp = sprof(t_PSAL,[iP, iT,iT+1 iS, iS+1]); % good S rows only
+    %             % only 1 row of data - can't interp, assign S to O's
+    %             if size(tmp,1) == 1
+    %                 sprof(t_S,[iT,iT+1,iS, iS+1]) = ones(sum(t_S),1)* tmp(1,2:5);
+    %             else
+    %                 [C,ia,ic] = unique(tmp(:,1));
+    %                 tmp = tmp(ia,:); % good S & unique P
+    %                 sprof(t_S,[iT,iT+1,iS,iS+1]) = interp1(tmp(:,1),tmp(:,2:5), ...
+    %                     sprof(t_S,iP)); % QC flags are getting interpolated need to deal with this
+    %             end
+    %         end
+    %     else
+    %         disp(['No Oxygen data found in ',Sprof_file]);
+    %     end
     
 end
+
 t_out = isnan(out);
 out(sum(~t_out,2) == 0,:) =[]; % All NaN's so row no use
 
-clearvars -except dirs out out_hdr RCR INFO Sprof_path Sprof_file bad_sensor_file
+%clearvars -except dirs out out_hdr RCR INFO Sprof_path Sprof_file bad_sensor_file
 
 % ***********************************************************************
 % ***********************************************************************
@@ -430,43 +449,43 @@ if ~isempty(iB)
     clear tB
 end
 
-% NOW STEP THROUGH BBP700 PROFILES FOR DETAILED QC
-if ~isempty(iB)
-    t_bad = out(:,iB+1) == 4;
-    cycles = unique(out(:,iCYC));
-    for i = 1: size(cycles,1)
-        t1 = out(:,iCYC) == cycles(i) & ~t_bad;
-        tmp = out(t1,:);
-        tz = tmp(:,iP) > 400 ;
-        if sum(tz) > 0
-            tmpz = tmp(tz,iB);
-            bbp_med = median(tmpz,'omitnan');
-            bbp_std = std(tmpz,'omitnan');
-            t_flyers = tmpz < (bbp_med - 3*bbp_std) | ...
-                       tmpz > (bbp_med + 3*bbp_std); % set flyers to NaN
-            tmpz(t_flyers) = NaN;  %Set flyers to NaN     
-            bbp_med = median(tmpz,'omitnan'); %Redo stats
-            bbp_std = std(tmpz,'omitnan');
-                         
-            tQC = bbp_med > 0.01 | bbp_std > 0.001;
-            if sum(tQC) > 0
-%                 F1 = figure(1);
-%                 plot(tmp(:,iB),tmp(:,iP),'bo-','MarkerSize', 4);
-%                 set(gca,'Ydir','Reverse')
-                disp(['BBP700 on Cycle ', num2str(cycles(i)),' BBP profile ', ...
-                    'failed median (0.01) or std dev test(0.001) - whole ', ...
-                    'CHL & BBP profiles will be flagged bad (=4)']);
-                out(t1,iB+1) = 4;
-                out(t1,iC+1) = 4;
-%                 pause
-            end
-        end
-    end
-end
-
-% DO A FINAL WIPE BASED ON ODVbad_sensor_list
-if exist([dirs.bad_sensor,bad_sensor_file], 'file')
-    bad  = parse_bad_ODVsensor_list([dirs.bad_sensor,bad_sensor_file]);
+% % NOW STEP THROUGH BBP700 PROFILES FOR DETAILED QC
+% if ~isempty(iB)
+%     t_bad = out(:,iB+1) == 4;
+%     cycles = unique(out(:,iCYC));
+%     for i = 1: size(cycles,1)
+%         t1 = out(:,iCYC) == cycles(i) & ~t_bad;
+%         tmp = out(t1,:);
+%         tz = tmp(:,iP) > 400 ;
+%         if sum(tz) > 0
+%             tmpz = tmp(tz,iB);
+%             bbp_med = median(tmpz,'omitnan');
+%             bbp_std = std(tmpz,'omitnan');
+%             t_flyers = tmpz < (bbp_med - 3*bbp_std) | ...
+%                        tmpz > (bbp_med + 3*bbp_std); % set flyers to NaN
+%             tmpz(t_flyers) = NaN;  %Set flyers to NaN     
+%             bbp_med = median(tmpz,'omitnan'); %Redo stats
+%             bbp_std = std(tmpz,'omitnan');
+%                          
+%             tQC = bbp_med > 0.01 | bbp_std > 0.001;
+%             if sum(tQC) > 0
+% %                 F1 = figure(1);
+% %                 plot(tmp(:,iB),tmp(:,iP),'bo-','MarkerSize', 4);
+% %                 set(gca,'Ydir','Reverse')
+%                 disp(['BBP700 on Cycle ', num2str(cycles(i)),' BBP profile ', ...
+%                     'failed median (0.01) or std dev test(0.001) - whole ', ...
+%                     'CHL & BBP profiles will be flagged bad (=4)']);
+%                 out(t1,iB+1) = 4;
+%                 out(t1,iC+1) = 4;
+% %                 pause
+%             end
+%         end
+%     end
+% end
+% 
+% % DO A FINAL WIPE BASED ON ODVbad_sensor_list
+if exist(bad_sensor_file, 'file')
+    bad  = parse_bad_ODVsensor_list(bad_sensor_file);
     bad_hdr  = bad.hdr;
     bad_list = bad.list;
     
