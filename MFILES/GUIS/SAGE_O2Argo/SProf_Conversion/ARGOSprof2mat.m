@@ -60,9 +60,9 @@ fv.bio = 99999;
 fv.QC  = 99;
 
 % RANGE CHECk VALUES
-RCR.S     = [26 38]; % from argo parameter list
+RCR.S     = [2 41]; % from argo parameter list
 RCR.T     = [-2.5 40]; % from argo parameter list
-RCR.O     = [-5 550]; % from argo parameter list
+RCR.O     = [-5 600]; % from argo parameter list
 RCR.OP    = [10 70]; % optode phase, from argo parameter list
 RCR.OT    = [-2.5 40]; % optode temperature, from argo parameter list
 RCR.CHL   = [-0.1 150]; % argoBGC QC manual 09July2016

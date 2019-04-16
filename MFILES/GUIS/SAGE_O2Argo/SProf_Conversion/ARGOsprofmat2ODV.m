@@ -33,8 +33,8 @@ function tf_odv = ARGOsprofmat2ODV(f_info, outputDIR)
 % 10/16/2018 - modified for Sprof files
 % 04/13/19  - TM, modified fx routines to make running easier for
 % users. Also removed calls to MBARI network locations etc...
-% 04/15/2019 - fixed a QF flagging bug, added comment line describing Argo
-%              QF to ODV QF conversion.  Also renamed to "ARGOsprofmat2ODV.m" to distinguish from MBARI internal version.
+% 04/15/2019 - fixed QF flagging bugs, added comment line describing Argo
+%              QF to ODV QF conversion, added missing position interpolation,  Also renamed to "ARGOsprofmat2ODV.m" to distinguish from MBARI internal version.
 
 % TESTING
 %dirs =[]
@@ -93,7 +93,7 @@ rhdr    = [rhdr(1:iLAT),'Lat_QC', rhdr(iLAT+1:raw_c)]; % raw data
 rdata   = [rdata(:,1:iLAT),QC_lat , rdata(:,iLAT+1:raw_c)]; % ARGO QF's,
 [raw_r,raw_c] = size(rdata);
 
-[~,ia,~] = unique(rdata(:,1)); % unique casts
+[~,ia,~] = unique(rdata(:,2)); % unique casts
 pos_fix  = rdata(ia,1:6);   % WMO cast, profile, SDN, LON, LAT (position subset)
 
 
@@ -115,7 +115,79 @@ end
 clear i t1 missing_profiles
 
 % ************************************************************************
+% SCAN FOR MISSING POSITION FIXES & INTERPOLATE IF POSSIBLE
+missing_pos_str = '';
+interp_pos_str  = '';
+t_nan = isnan(pos_fix(:,6)); % any nan's in LAT? 
+
+%  if not all nans, try to interpolate
+% (ie if never a pos fix then no interpolation, move on)
+if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,6)) 
+    diff_nan   = [0;diff(t_nan)]; % 1 = start of NaN, -1 = start of good
+    nan_start  = find(diff_nan == 1);
+    nan_end    = find(diff_nan == -1) - 1;
+    
+    % some interp may be possible - resize to complete bounds only
+    % # of start indices should equal # of end indices
+    if size(nan_start,1) > size(nan_end,1) % more starts than ends, no last profile
+        nan_start = nan_start(1:size(nan_end,1));     
+    elseif size(nan_start,1) < size(nan_end,1) % more ends than starts
+        nan_end = nan_end(2:end); % 1st profile doesn't have a position
+    elseif nan_end(1)<nan_start(1) && nan_start(end)>nan_end(end) % same number of starts, ends, but don't line up cuz missing positions at both beginning and end
+        nan_end = nan_end(2:end);
+        nan_start = nan_start(1:end-1);
+    end
+    
+    for i = 1 : size(nan_start,1)
+        if isempty(nan_end) % no upper bound, can't interpolate, move on
+            break
+        end
+        
+        % all good now, nan's bounded at this point, procede to interp  
+        if size(nan_start,1) == size(nan_end,1) 
+            bnds = pos_fix([nan_start(i)-1,nan_end(i)+1],:); % bounds
+            bait = pos_fix(nan_start(i):nan_end(i),:); % data to interp
+            % Meridian crossing - float unlikely to move more than 180 deg
+            if abs(bnds(2,5) - bnds(1,5)) > 180 
+                t1 = bnds(:,5) < 180;
+                bnds(t1,5) = bnds(t1,5) + 360; % temp add 360 to small side
+            end
+            missing_pos = [bait(:,1:4), ...
+                           interp1(bnds(:,4),bnds(:,5:6),bait(:,4))];
+            % bring meridian crossing back to reality if need be           
+            t1 = missing_pos(:,5) > 360;
+            missing_pos(t1,5) = missing_pos(t1,5) - 360;
+            pos_fix(nan_start(i):nan_end(i),5:6) = missing_pos(:,5:6);
+            for j = 1:size(missing_pos,1) % step through casts
+                t1 = rdata(:,2) == missing_pos(j,2);
+                rdata(t1,4:6) = ones(sum(t1),1) * missing_pos(j,4:6); % matrix
+                rdata(t1,7)   = 3; %set QF to 3, ODV coversion takes it to 4
+            end          
+        end
+    end
+    clear diff_nan nan_start nan_end bnds bait i j t1
+   
+    % NOW ASSES WHAT HAS BEEN INTERPOLATED AND WHAT HAS NOT
+    t_nan2 = isnan(pos_fix(:,6)); % Still any nan's in LAT? NO INTERP YET
+    t_nan3 = t_nan & ~t_nan2; % used to be nan's but now interpolated
+    if sum(t_nan3 > 0) % Interpolated values
+        interp_pos_str = ['Missing Float position interpolated for ', ...
+            'station(s): ', sprintf('%0.0f ',pos_fix(t_nan3,2))];
+        interp_pos_str = [interp_pos_str,'\r\n//Latitude quality flag = 4',...
+            ' for interpolated float positions'];
+        disp(interp_pos_str)      
+    end
+    if sum(t_nan2 > 0) % Could not interpolate these casts
+        missing_pos_str = ['No position for station(s): ', ...
+            sprintf('%0.0f ',pos_fix(t_nan2, 2))];
+        disp(missing_pos_str)
+        rdata(isnan(rdata(:,4)),7) = 99;  % BIO ARGO MISSING DATA QF VALUE
+
+    end  
+    clear t_nan t_nan2 t_nan3 
+end
 % ************************************************************************
+% **********************************************************************																		  
 % NOW ADD SOME DATA COLUMNS AND HEADERS NEEDED FOR THE ODV FILE
 % PRES QC, TEMP QC, PSAL QC, density,  O2sat, pH25 
 % ************************************************************************
@@ -217,16 +289,18 @@ clear qc_chk data_chk tmp
 % CONVERT ARGO DATA QUALITY FLAGS TO ODV DATA QUALITY FLAGS
 % ************************************************************************
     for i = 1:raw_c
-        % SETTING ALL QF's TO 1, EXCEPT FOR PTSZ & OBVIOUSLY BAD
         if regexp(raw_hdr{i},'\_QC', 'once')   
             tmp1 = raw_data(:,i);
-            tmp1(tmp1 == 4) = 8;
-            tmp1(tmp1 == 3) = 4; % This will catch interp lat 2/9/17 jp
-            tmp1(tmp1 == 5) = 4; % THIS sets NPQ'ed CHL quality flags to questionable
-            tmp1(tmp1 == 2) = 0; % Probably good to good
-            tmp1(tmp1 == 0) = 10; % temporary
-            tmp1(tmp1 == 1) = 0; % Argo good to ODV GOOD
+            
+            tmp1(tmp1 == 0) = 10; % temporary (Argo not inspected)
+            tmp1(tmp1 == 1) = 0; % Argo good               => ODV good
+            tmp1(tmp1 == 2) = 0; % Argo probably good      => ODV good
+            tmp1(tmp1 == 8) = 0; % Argo interpolated value => ODV good
+            tmp1(tmp1 == 4) = 8; % Argo bad                => ODV bad
+            tmp1(tmp1 == 3) = 4; % Argo probably bad       => ODV questionable
+            tmp1(tmp1 == 5) = 4; % Argo changed value      => ODV questionable
             tmp1(tmp1 == 10 | tmp1 == 99) = 1; % NO QC or Missing value
+            
             raw_data(:,i) = tmp1;
         end
     end
@@ -336,8 +410,15 @@ fprintf(fid_raw,'//\r\n');
 
 fprintf(fid_raw,'//PLEASE READ:\r\n');
 fprintf(fid_raw,['//Data for this file has been extracted from the ',...
-    'Synthetic profiles (*.SProf.nc)\r\n']);
+    'Synthetic profiles (*SProf.nc)\r\n']);
 fprintf(fid_raw,'//Only RAW data parameters were used\r\n');
+fprintf(fid_raw,['//', missing_profile_str,'\r\n']);
+if ~isempty(interp_pos_str)
+    fprintf(fid_raw,['//',interp_pos_str,'\r\n']);
+end
+if ~isempty(missing_pos_str)
+    fprintf(fid_raw,['//',missing_pos_str,'\r\n']);
+end
 
 fprintf(fid_raw,'//\r\n');
 
@@ -356,8 +437,8 @@ fprintf(fid_raw,'//\r\n');
 % end
 
 fprintf(fid_raw,['//Missing data value = ',MVI_str,'\r\n']);
-fprintf(fid_raw,['//Argo to ODV QF conversion: Argo 0 => ODV 1, ',...
-    'Argo 1|2 => ODV 0, Argo 3|5 => ODV 4, Argo 4 => ODV 8\r\n']);
+fprintf(fid_raw,['//Argo to ODV QF conversion: Argo 0|99 => ODV 1, ', ...
+    'Argo 1|2|8 => ODV 0, Argo 3|5 => ODV 4, Argo 4 => ODV 8\r\n']);
 fprintf(fid_raw,['//Data quality flags: 0=Good, 4=Questionable, 8=Bad, '...
     '1=Missing or not inspected \r\n']);
 
