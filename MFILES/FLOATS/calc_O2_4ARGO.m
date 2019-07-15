@@ -4,7 +4,7 @@ function O2data = calc_O2_4ARGO(S, T, P, Phase, cal)
 % different flavors of calibration based on info found in the calibration
 % file. The calibration file is created with get_float_cals.m
 % 
-%      Last updated 12/29/15 by Josh Plant
+%      Last updated 04/29/19 by Tanya Maurer
 %
 % O2data = calc_O2_4ARGO(S, T,P Phase, cal)
 %
@@ -33,6 +33,12 @@ function O2data = calc_O2_4ARGO(S, T, P, Phase, cal)
 %       http://dx.doi.org/10.1175/JTECH-D-15-0108.1
 % 10/25/2018 Added code to calculate O2 using the SVUCoef's for 4330's that
 %       have these coefficients
+% 04/24/19 - Reverted back to the Garcia & Gordon (1992) combined fit coefficients for
+%       calculation of oxygen solubility for 4330 optodes with polynomial
+%       coefficients.  Although this doesn't conform to the SCOR WG 142
+%       recommendation, it is more accurate for these cases because more
+%       closely matches what Aanderaa used in derivation of cal coeffs. (And this is
+%       also reflected in the Argo O2 processing doc, and verified from Henry Bittig).
 
 % ************************************************************************
 % SET VARIABLES & PATHS & FORMATS
@@ -41,11 +47,12 @@ function O2data = calc_O2_4ARGO(S, T, P, Phase, cal)
 % OXYGEN SOLUBILITY COFFICIENTS
 %
 % NOTE: Aanderaa uses the combined fit coefficients for the salinity terms
-%       of the Co* calculation from Garcia & Gordon (1992) Equation 8.
+%       of the Co* calculation from Garcia & Gordon (1992) Equation 8 for 4330 optodes.
 %       Garcia & Gordon suggest using the more precise Benson & Krause
-%       coefficients which is what I do here. Very minor difference!!!
+%       coefficients but need to stay be consistent with how the cal coeffs
+%       were originally derived from the manufacturer.
 
-% Benson & Krause (cm^3/dm^3) *** USE THESE COEFFICIENTS!!!! ***
+% Benson & Krause (cm^3/dm^3) *** USE THESE COEFFICIENTS (for all floats except Aanderaa 4330 exceptions)!!!! ***
 pA = [3.88767 -0.256847 4.94457 4.05010 3.22014 2.00907]; % Temperature Coeff
 pB = [-8.17083e-3 -1.03410e-2 -7.37614e-3 -6.24523e-3]; % Salinity coff
 Co = -4.88682e-7;
@@ -53,19 +60,27 @@ O2_volume =  22.3916;
 
 % ************************************************************************
 % %Aanderaa default coeff (cm^3/dm^3) (Combined fit Garcia & Gordon 1992)
-% pA = [1.71069 0.978188 4.80299 3.99063 3.22400 2.00856]; % Temperature Coeff
-% pB = [-4.29155e-3 -6.90358e-3 -6.93498e-3 -6.24097e-3]; % Salinity coff
-% Co = -3.11680e-7;
-% O2_volume =  22.414; % Volume ideal gas
+pA_Aa = [1.71069 0.978188 4.80299 3.99063 3.22400 2.00856]; % Temperature Coeff
+pB_Aa = [-4.29155e-3 -6.90358e-3 -6.93498e-3 -6.24097e-3]; % Salinity coff
+Co_Aa = -3.11680e-7;
+%O2_volume_Aa =  22.414; % Volume ideal gas
 % ************************************************************************
 
 TK     = T + 273.15;
 Ts     = log((298.15-T)./ TK);
+
+% Used for final O2 conversions from [O2] to pO2:
 part1  = polyval(pB,Ts);
 S_corr = S.*part1 + S.^2 * Co;
 L      = polyval(pA,Ts) + S_corr;
 O2sol  = (1000/O2_volume) * exp(L); % Oxygen solubility real gas, mmol/m^3 =uM/L
-%O2sol  = 44.614 * exp(L); % Oxygen solubility ideal gas, mmol/m^3 =uM/L
+
+% Used for 4330s with polynomial coeffs for getting from pO2 (essentially, output from sensor after cal coeffs applied) to [O2], prior to application of conc coeffs:
+part1_Aa  = polyval(pB_Aa,Ts);
+S_corr_Aa = S.*part1_Aa + S.^2 * Co_Aa;
+L_Aa      = polyval(pA_Aa,Ts) + S_corr_Aa;
+O2sol_Aa  = 44.614 * exp(L_Aa); % Oxygen solubility ideal gas, mmol/m^3 =uM/L.  44.614 is the conversion factor listed in Argo O2 processing cookbook
+
 
 % CALCULATE VAPOR PRESSURE H2O
 pH2O = exp(52.57 -(6690.9./TK) - 4.681 .* log(TK));
@@ -128,8 +143,7 @@ elseif strcmp(cal.type,'4330')
         O2Sat = pO2 ./ ((1013.25- pH2O) * 0.20946) * 100;
         
         % CALCULATE O2 CONC FOR S = XX
-        %O2 = (O2sol .* O2Sat * 44.614) / 100;
-        O2 = (O2sol .* O2Sat) / 100;
+        O2 = (O2sol_Aa .* O2Sat) / 100;
         
         
     elseif isfield(cal,'SVUFoilCoef') % 4330 Stern Volmer (Uchida) returns [O2]
@@ -143,9 +157,10 @@ elseif strcmp(cal.type,'4330')
     end
     
     % IF ConcCoef variable exist need to update pO2 too
+	% Use B&K solubility coeffs for final conversion from [O2] back to pO2 for all models, per Henry
     if isfield(cal,'ConcCoef')
         O2 = cal.ConcCoef(1) + O2 * cal.ConcCoef(2);
-        pO2 = (O2 ./ O2sol) .* ((1013.25- pH2O) * 0.20946);
+        pO2 = (O2 ./ O2sol) .* ((1013.25- pH2O) * 0.20946);  
     end
     
 % ************************************************************************
