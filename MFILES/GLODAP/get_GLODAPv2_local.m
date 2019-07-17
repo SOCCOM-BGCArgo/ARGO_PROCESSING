@@ -50,7 +50,8 @@ function d = get_GLODAPv2_local(datadir, track, tol, depth_bnds)
 % user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
 % GLODAP_dir          = [user_dir,'\Documents\MATLAB\ARGO_PROCESSING\', ...
 %                       'DATA\GLODAP\'];
-GLODAP_fn           = 'GLODAPv2 Merged Master 102716.mat';
+% GLODAP_fn           = 'GLODAPv2 Merged Master 102716.mat';
+GLODAP_fn           = 'GLODAPv2.2019_Merged_Master_File.mat';
 %GLODAP_expocode_fn  = 'GLODAPv2_ExpoCodes_102716.txt';
 
 % ***********************************************************************
