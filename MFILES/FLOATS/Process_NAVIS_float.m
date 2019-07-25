@@ -497,7 +497,6 @@ for msg_ct = 1:size(msg_list,1)
     
     %disp(['Processing float ' cal.info.name, ' profile ',cast_num])
     d = parse_NAVISmsg4ARGO([dirs.temp,msg_file]);
-	d
 %     if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP2')==1) %Quick hack to get around different column headers in msg file for flbb!!
 if ~isempty(d.lr_hdr)
     if strcmp(d.lr_hdr{7},'Mch1') %Quick hack to get around different column headers in msg file for flbb!!

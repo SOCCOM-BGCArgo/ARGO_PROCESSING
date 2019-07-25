@@ -170,7 +170,7 @@ xlim(gui.whichAX(1),DATA.xlims{1});
 myxlim = get(gui.whichAX(1),'xlim');
 set(gui.whichAX(1),'xtick',sdn_ticks);
 % ylim auto
-datetick(gui.whichAX(1),'x','mm/dd/yy', 'keeplimits', 'keepticks')
+datetick(gui.whichAX(1),'x','mm/dd/yy', 'keeplimits', 'keepticks');
 
 ylabel(gui.whichAX(1),inputs.y_label)
 hold(gui.whichAX(1),'on')

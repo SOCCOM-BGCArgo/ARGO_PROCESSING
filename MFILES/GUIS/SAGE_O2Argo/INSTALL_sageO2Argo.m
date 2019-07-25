@@ -7,8 +7,8 @@ function INSTALL_sageO2Argo
 % working directory path for sageO2 to reference.
 %
 %
-% USE AS:  INSTALL_sageO2Argo('\\atlas\ChemWebData\floats\');
-%          INSTALL_sageO2Argo('C:\mymsgfilelocation\')
+% USE AS:  INSTALL_sageO2Argo
+%          INSTALL_sageO2Argo
 %
 % INPUTS:  
 %
@@ -45,7 +45,7 @@ else
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GLODAP',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE_O2Argo',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'MISC',fp]);
-    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'WOA2013',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'WOA',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,]);
 
     disp('INSTALLING "ARGO_PROCESSING\DATA" PATHS...')
@@ -57,12 +57,12 @@ end
 save([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE_O2Argo',fp,'sageO2Argo_workingDIR.mat'],'topdir');
 
 % CHECK FOR WOA DATA.  IF DOESN'T EXIST, DOWNLOAD IT.
-disp('CHECKING FOR LOCAL WOA2013 FILES...')
-WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2013',fp,'o2sat',fp];
-wdir = dir([WOAdir,'woa13_all_O*_01.nc']);
+disp('CHECKING FOR LOCAL WOA2018 FILES...')
+WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp,'o2sat',fp];
+wdir = dir([WOAdir,'woa18_all_O*_01.nc']);
 woafiles = char(wdir.name);
 if size(woafiles,1)<17 %not all files exist on repo
-    disp('POPULATING LOCAL WOA2013 REPOSITORY...')
+    disp('POPULATING LOCAL WOA2018 REPOSITORY...')
     disp('May take a few minutes.')
     disp(['You can monitor download progress at ',WOAdir])
     try
@@ -70,11 +70,11 @@ if size(woafiles,1)<17 %not all files exist on repo
         cd(f);
         sf = struct(f);
         sf.jobject.enterLocalPassiveMode();
-        cd(f,'pub/woa/WOA13/DATAv2/o2sat/netcdf/all/1.00/')
-        disp('FTP CONNECTION TO ftp.nodc.noaa.gov/pub/woa/WOA13/DATAv2/o2sat/netcdf/all/1.00/ WAS SUCCESSFUL.')
+        cd(f,'pub/woa/WOA18/DATA/o2sat/netcdf/all/1.00/')
+        disp('FTP CONNECTION TO ftp.nodc.noaa.gov/pub/woa/WOA18/DATA/o2sat/netcdf/all/1.00/ WAS SUCCESSFUL.')
         dir_list = dir(f);
-        mget(f,'woa13_all_O*.nc',WOAdir)
-        disp(['WOA2013 files saved to ',WOAdir])
+        mget(f,'woa18_all_O*.nc',WOAdir)
+        disp(['WOA2018 files saved to ',WOAdir])
         char(dir_list.name)
         close(f)
     catch

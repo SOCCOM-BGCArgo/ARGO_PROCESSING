@@ -79,7 +79,10 @@ function varargout = sage()
 %   10/1/18  Added CANYON_B to reference options.  May remove CANVON
 %   (version 1) at a later date, defaulting to CANYONB
 %		   Dec2018 Added modifications to drift in gain.
-%          04/15/19 changed Make_Mprof_ODVQC to Make_Sprof_ODVQC.
+%   04/15/19 changed Make_Mprof_ODVQC to Make_Sprof_ODVQC.
+%   07/22/19 updated to WOA2018 and GLODAP2019; removed original CANYON
+%            reference options (now only CANYON-B listed)
+
 % NOTES: 
 %
 % ************************************************************************
@@ -217,12 +220,10 @@ function gui = createInterface( ~ )
                 rb3(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
                     'String','CANYON-B','tag','CANYON_B','Value',0,'Callback',@ref_onClicked );     
                 rb3(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','CANYON','tag','CANYON','Value',0,'Callback',@ref_onClicked ); 
+                    'String','WOA2018','tag','WOA','Value',0,'Callback',@ref_onClicked ); 
                 rb3(4) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','WOA2013','tag','WOA','Value',0,'Callback',@ref_onClicked ); 
-                rb3(5) = uicontrol('Parent',bbox,'Style','radiobutton',...
                     'String','Williams_50Sto80S','tag','MLR W50to80','Value',0,'Callback',@ref_onClicked ); 
-                rb3(6) = uicontrol('Parent',bbox,'Style','radiobutton',...
+                rb3(5) = uicontrol('Parent',bbox,'Style','radiobutton',...
                     'String','Williams_30Sto50S','tag','MLR W30to50','Value',0,'Callback',@ref_onClicked ); 
                 gui.rb3 = rb3;
                 
@@ -449,14 +450,18 @@ function gui = createInterface( ~ )
        
 
         % CACULATE MLR OR GET WOA(USE QC DATA FOR THIS)
-%         tNaN_QCO2 = isnan(handles.qc_data.data(:,iO)); %Any NaN's in QC O2 (for MLR)
-%         tNaN_QCS = isnan(handles.qc_data.data(:,iS)); %Any NaN's in QC Salinity (for MLR)
-        if strcmp(DATA.paramtag,'O2') == 1 || strcmp(DATA.paramtag,'S') == 1 || strcmp(DATA.paramtag,'T') == 1 || strcmp(DATA.reftag,'NOQC') == 1 
+        %         tNaN_QCO2 = isnan(handles.qc_data.data(:,iO)); %Any NaN's in QC O2 (for MLR)
+        %         tNaN_QCS = isnan(handles.qc_data.data(:,iS)); %Any NaN's in QC Salinity (for MLR)
+        if strcmp(DATA.paramtag,'O2') == 1 || strcmp(DATA.paramtag,'S') == 1 || strcmp(DATA.paramtag,'T') == 1 || strcmp(DATA.reftag,'NOQC') == 1
             DATA.refdata = handles.qc_data.data(:,iP) * NaN; %replace with nans for sal, temp, oxygen
         else
             switch DATA.reftag
                 case 'WOA'
-                    DATA.refdata = DATA.reftemp;
+                    if strcmp(DATA.paramtag,'PH') == 1
+                        DATA.refdata = handles.qc_data.data(:,iP)*NaN; %replace with nans for PH (only WOA case because no pH data in WOA)
+                    else
+                        DATA.refdata = DATA.reftemp;
+                    end
                 case 'CANYON'
                     DATA.refdata = DATA.reftemp(:,DATA.CIND);
                 case 'CANYON_B'
@@ -465,20 +470,20 @@ function gui = createInterface( ~ )
                     DATA.refdata = DATA.reftemp(:,DATA.LIND);
                 case {'MLR W50to80','MLR W30to50'}
                     DATA.refdata = DATA.MLRdata.(DATA.paramtag).(DATA.refs);
-%                     MLR = DATA.refs.(DATA.paramtag);
-%                     if ~isempty(MLR) %will be empty for salinity, temp, oxygen
-%                         tMLR = isnan(handles.qc_data.data(:,iO)) | isnan(handles.qc_data.data(:,iS));
-%                         potT = theta(handles.qc_data.data(:,iP), handles.qc_data.data(:,iT), handles.qc_data.data(:,iS),0);
-%                         sig_theta  = density(handles.qc_data.data(:,iS), potT)-1000; %density at p =0 t= pot temp
-%                         DATA.refdata = MLR.cC + handles.qc_data.data(:,iO)*MLR.cO + handles.qc_data.data(:,iS)*MLR.cS + ...
-%                             handles.qc_data.data(:,iT)*MLR.cT + sig_theta*MLR.cST + handles.qc_data.data(:,iP)*MLR.cP;
-%                         DATA.refdata(tMLR) = NaN;
-%                     else
-%                         DATA.refdata = handles.qc_data.data(:,iP) * NaN; %replace with nans
-%                     end
+                    %                     MLR = DATA.refs.(DATA.paramtag);
+                    %                     if ~isempty(MLR) %will be empty for salinity, temp, oxygen
+                    %                         tMLR = isnan(handles.qc_data.data(:,iO)) | isnan(handles.qc_data.data(:,iS));
+                    %                         potT = theta(handles.qc_data.data(:,iP), handles.qc_data.data(:,iT), handles.qc_data.data(:,iS),0);
+                    %                         sig_theta  = density(handles.qc_data.data(:,iS), potT)-1000; %density at p =0 t= pot temp
+                    %                         DATA.refdata = MLR.cC + handles.qc_data.data(:,iO)*MLR.cO + handles.qc_data.data(:,iS)*MLR.cS + ...
+                    %                             handles.qc_data.data(:,iT)*MLR.cT + sig_theta*MLR.cST + handles.qc_data.data(:,iP)*MLR.cP;
+                    %                         DATA.refdata(tMLR) = NaN;
+                    %                     else
+                    %                         DATA.refdata = handles.qc_data.data(:,iP) * NaN; %replace with nans
+                    %                     end
             end
         end
-
+        
         if ~isempty(DATA.IND) && ~isempty(DATA.refdata)
             inputs.y_label = DATA.datatype.hdr{DATA.IND};
             DATA.DIFF_X = DATA.datatype.data(:,DATA.IND) - DATA.refdata;
@@ -486,34 +491,34 @@ function gui = createInterface( ~ )
             inputs.y_label = DATA.datatype.hdr{DATA.IND};
             DATA.DIFF_X = DATA.refdata .* NaN;
         end
-
         
-                % SUBSET DATA SETS WITHIN DEPTH WINDOW (profile subset will
-                % happen in PlotGuiData.  Do this because for calculating 
-%         DATA.datasub = DATA.datatype.data(DATA.datatype.data(:,iP) >= depthmin & ...
-%             DATA.datatype.data(:,iP) <= depthmax & DATA.datatype.data(:,2) >= PROFmin &...
-%             DATA.datatype.data(:,2) <= PROFmax,:);
-%         DATA.refsub = DATA.refdata(DATA.datatype.data(:,iP) >= depthmin & ...
-%             DATA.datatype.data(:,iP) <= depthmax & DATA.datatype.data(:,2) >= PROFmin &...
-%             DATA.datatype.data(:,2) <= PROFmax,:);
-%         DATA.diffsub = DATA.DIFF_X(DATA.datatype.data(:,iP) >= depthmin & ...
-%             DATA.datatype.data(:,iP) <= depthmax & DATA.datatype.data(:,2) >= PROFmin &...
-%             DATA.datatype.data(:,2) <= PROFmax,:); 
+        
+        % SUBSET DATA SETS WITHIN DEPTH WINDOW (profile subset will
+        % happen in PlotGuiData.  Do this because for calculating
+        %         DATA.datasub = DATA.datatype.data(DATA.datatype.data(:,iP) >= depthmin & ...
+        %             DATA.datatype.data(:,iP) <= depthmax & DATA.datatype.data(:,2) >= PROFmin &...
+        %             DATA.datatype.data(:,2) <= PROFmax,:);
+        %         DATA.refsub = DATA.refdata(DATA.datatype.data(:,iP) >= depthmin & ...
+        %             DATA.datatype.data(:,iP) <= depthmax & DATA.datatype.data(:,2) >= PROFmin &...
+        %             DATA.datatype.data(:,2) <= PROFmax,:);
+        %         DATA.diffsub = DATA.DIFF_X(DATA.datatype.data(:,iP) >= depthmin & ...
+        %             DATA.datatype.data(:,iP) <= depthmax & DATA.datatype.data(:,2) >= PROFmin &...
+        %             DATA.datatype.data(:,2) <= PROFmax,:);
         DATA.rawsub = handles.raw_data.data(handles.raw_data.data(:,iP)>=depthmin & ...
             handles.raw_data.data(:,iP)<=depthmax,:);
         DATA.qcsub = handles.qc_data.data(handles.qc_data.data(:,iP)>=depthmin & ...
-            handles.qc_data.data(:,iP)<=depthmax,:); 
+            handles.qc_data.data(:,iP)<=depthmax,:);
         
-       DATA.datasub = DATA.datatype.data(DATA.datatype.data(:,iP) >= depthmin & ...
+        DATA.datasub = DATA.datatype.data(DATA.datatype.data(:,iP) >= depthmin & ...
             DATA.datatype.data(:,iP) <= depthmax,:);
         DATA.refsub = DATA.refdata(DATA.datatype.data(:,iP) >= depthmin & ...
             DATA.datatype.data(:,iP) <= depthmax,:);
         DATA.diffsub = DATA.DIFF_X(DATA.datatype.data(:,iP) >= depthmin & ...
-            DATA.datatype.data(:,iP) <= depthmax,:); 
+            DATA.datatype.data(:,iP) <= depthmax,:);
         DATA.glosub = DATA.G.data(DATA.G.data(:,DATA.iGP)>=depthmin & DATA.G.data(:,DATA.iGP)<=depthmax,:);
-
         
-                     
+        
+        
     end % updateInterface
 
 %-------------------------------------------------------------------------%
@@ -529,7 +534,7 @@ function gui = createInterface( ~ )
     end % onHelp
 
 %-------------------------------------------------------------------------%
- %%
+%%
     function on_selectfloat( ~, ~ )
         % select float data dir from dialog box
         % first set some limits and defaults
@@ -723,7 +728,7 @@ function gui = createInterface( ~ )
 %                 handles.info.cal = cal;
             end
 
-            % SAVE FLOAT TRACK & GET WOA 2013 NITRATE DATA FOR TRACK
+            % SAVE FLOAT TRACK & GET WOA 2018 NITRATE DATA FOR TRACK
             d = handles.raw_data.data; % Get raw data
             [~,ia,~] = unique(d(:,2));
             DATA.track = d(ia,1:4); % sdn cycle lon lat
@@ -733,11 +738,11 @@ function gui = createInterface( ~ )
 
 %             set(handles.recumpute_text,'Visible','on')
 %             set(handles.recumpute_text, ...
-%                 'String','LOADING WOA 2013 NITRATE DATA ....')
+%                 'String','LOADING WOA 2018 NITRATE DATA ....')
             set( gui.Fbutton,'String','Loading WOA data ...');
             drawnow
             try
-                WOA_NO3 = get_WOA2013_local(dirs.woa,DATA.track(:,[1,4,3]), [0 2000], 'NO3');
+                WOA_NO3 = get_WOA_local(dirs.woa,DATA.track(:,[1,4,3]), [0 2000], 'NO3');
                 % NOW MATCH WOA DATA TO RAW PROFILE DATA, sample by sample
 
                 WNO3 = ones(size(handles.raw_data.data(:,1))) * NaN; % predim
@@ -757,7 +762,7 @@ function gui = createInterface( ~ )
                 potT  = theta(handles.raw_data.data(:,6), ...
                     handles.raw_data.data(:,8),handles.raw_data.data(:,10),0); % P,T,S,P0
                 den  = density(handles.raw_data.data(:,10), potT);
-                DATA.WOA_NO3 = WNO3./den*1000; %µmol/kg
+                DATA.WOA_NO3 = WNO3; %./den*1000; %µmol/kg  %% WOA2018 IS IN UNITS OF UMOL/KG!!!  WOA2013 WAS IN UMOL/L!!!
                 clear WOA_NO3 d WNO3 t1 t2 tmp WOAtmp Z N ia potT den
             catch
                 msgbox({'ERROR: getWOA failed. No WOA reference data will be plotted.'})
@@ -908,6 +913,8 @@ function gui = createInterface( ~ )
         else
            disp([fn, ' COULD NOT BE LOADED INTO SAGE']);
         end
+% %         set(gui.Window,'PaperPositionMode','auto')
+% %         print(gui.Window,'sageinterface.png','-dpng','-r600')
     end %end selectfloat
 %%
 %-------------------------------------------------------------------------%
@@ -957,6 +964,8 @@ function gui = createInterface( ~ )
        else
            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
        end
+% %         set(gui.Window,'PaperPositionMode','auto')
+% %         print(gui.Window,'sageinterfaceQC.png','-dpng','-r600')
     end
  
 %-------------------------------------------------------------------------%        
@@ -1083,7 +1092,6 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','on')
                 set(gui.rb3(4),'Value',0,'Enable','on')
                 set(gui.rb3(5),'Value',0,'Enable','on')
-                set(gui.rb3(6),'Value',0,'Enable','on')
                 set(gui.calcadjs,'Enable','on')
                 set(gui.findchpts,'Enable','on')
                 set(gui.removerow,'Enable','on')
@@ -1098,10 +1106,9 @@ function gui = createInterface( ~ )
                 DATA.LIND = DATA.iLPH;
                 set(gui.rb3(1),'Value',0,'Enable','on')
                 set(gui.rb3(2),'Value',0,'Enable','on')
-                set(gui.rb3(3),'Value',0,'Enable','on')
-                set(gui.rb3(4),'Value',0,'Enable','off')
+                set(gui.rb3(3),'Value',0,'Enable','off')
+                set(gui.rb3(4),'Value',0,'Enable','on')
                 set(gui.rb3(5),'Value',0,'Enable','on')
-                set(gui.rb3(6),'Value',0,'Enable','on')
                 set(gui.calcadjs,'Enable','on')
                 set(gui.findchpts,'Enable','on')
                 set(gui.removerow,'Enable','on')
@@ -1116,7 +1123,6 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
-                set(gui.rb3(6),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','off')
@@ -1130,7 +1136,6 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
-                set(gui.rb3(6),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','off')
@@ -1144,7 +1149,6 @@ function gui = createInterface( ~ )
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
-                set(gui.rb3(6),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','of')
@@ -1192,7 +1196,7 @@ function gui = createInterface( ~ )
                 end
             end
             DATA.refs = 'Williams_50Sto80S';
-            DATA.paramrefnum = 5;
+            DATA.paramrefnum = 4;
         elseif (strcmp(reftag,'MLR W30to50')) == 1
             if inputs.depthedit(1) <1000
                 if inputs.isprof == 1
@@ -1205,16 +1209,13 @@ function gui = createInterface( ~ )
                 end
             end
             DATA.refs = 'Williams_30Sto50S';
-            DATA.paramrefnum = 6;
+            DATA.paramrefnum = 5;
         elseif (strcmp(reftag,'WOA')) == 1
             DATA.reftemp = DATA.WOA_NO3;
-            DATA.paramrefnum = 4;
+            DATA.paramrefnum = 3;
         elseif (strcmp(reftag,'CANYON_B')) == 1
             DATA.reftemp = DATA.C.data;
             DATA.paramrefnum = 2;
-        elseif (strcmp(reftag,'CANYON')) == 1
-            DATA.reftemp = DATA.C.data;
-            DATA.paramrefnum = 3;
         elseif (strcmp(reftag,'LIR')) == 1
             DATA.reftemp = DATA.L.data;
             DATA.paramrefnum = 1;

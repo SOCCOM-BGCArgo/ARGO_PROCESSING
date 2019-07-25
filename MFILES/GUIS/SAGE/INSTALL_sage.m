@@ -41,7 +41,7 @@ else
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE_O2Argo',fp]);
 	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'MISC',fp]);
-    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'WOA2013',fp]);
+    addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'WOA',fp]);
 	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'CANYON',fp]);
 	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'CANYON_B',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,]);
@@ -55,7 +55,7 @@ else
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'FLOATVIZ',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'LIAR',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'SHIPBOARD',fp]);
-    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2013',fp]));
+    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp]));
 
     if ~isempty(strfind(computer,'PC'))
         tmploc     = ['C:',filesep,'temp',filesep];
@@ -71,12 +71,12 @@ end
 save([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE',fp,'sage_workingDIR.mat'],'topdir');
 
 % CHECK FOR WOA DATA.  IF DOESN'T EXIST, DOWNLOAD IT.
-disp('CHECKING FOR LOCAL WOA2013 OXYGEN FILES...')
-WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2013',fp,'oxygen',fp];
-wdir = dir([WOAdir,'woa13_all_o*_01.nc']);
+disp('CHECKING FOR LOCAL WOA2018 OXYGEN FILES...')
+WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp,'oxygen',fp];
+wdir = dir([WOAdir,'woa18_all_o*_01.nc']);
 woafiles = char(wdir.name);
 if size(woafiles,1)<17 %not all files exist on repo
-    disp('POPULATING LOCAL WOA2013 REPOSITORY FOR OXYGEN...')
+    disp('POPULATING LOCAL WOA2018 REPOSITORY FOR OXYGEN...')
     disp('May take a few minutes.')
     disp(['You can monitor download progress at ',WOAdir])
     try
@@ -84,11 +84,11 @@ if size(woafiles,1)<17 %not all files exist on repo
         cd(f);
         sf = struct(f);
         sf.jobject.enterLocalPassiveMode();
-        cd(f,'pub/woa/WOA13/DATAv2/oxygen/netcdf/all/1.00/')
-        disp('FTP CONNECTION TO ftp.nodc.noaa.gov/pub/woa/WOA13/DATAv2/oxygen/netcdf/all/1.00/ WAS SUCCESSFUL.')
+        cd(f,'pub/woa/WOA18/DATA/oxygen/netcdf/all/1.00/')
+        disp('FTP CONNECTION TO ftp.nodc.noaa.gov/pub/woa/WOA18/DATA/oxygen/netcdf/all/1.00/ WAS SUCCESSFUL.')
         dir_list = dir(f);
-        mget(f,'woa13_all_o*.nc',WOAdir)
-        disp(['WOA2013 files saved to ',WOAdir])
+        mget(f,'woa18_all_o*.nc',WOAdir)
+        disp(['WOA2018 files saved to ',WOAdir])
         char(dir_list.name)
         close(f)
     catch
@@ -101,12 +101,12 @@ else
 end
 
 %pause(30)
-disp('CHECKING FOR LOCAL WOA2013 NITRATE FILES...')
-WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2013',fp,'nitrate',fp];
-wdir = dir([WOAdir,'woa13_all_n*_01.nc']);
+disp('CHECKING FOR LOCAL WOA2018 NITRATE FILES...')
+WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp,'nitrate',fp];
+wdir = dir([WOAdir,'woa18_all_n*_01.nc']);
 woafiles = char(wdir.name);
 if size(woafiles,1)<17 %not all files exist on repo
-    disp('POPULATING LOCAL WOA2013 REPOSITORY FOR NITRATE...')
+    disp('POPULATING LOCAL WOA2018 REPOSITORY FOR NITRATE...')
     disp('May take a few minutes.')
     disp(['You can monitor download progress at ',WOAdir])
     try
@@ -114,12 +114,12 @@ if size(woafiles,1)<17 %not all files exist on repo
         cd(f);
         sf = struct(f);
         sf.jobject.enterLocalPassiveMode();
-        cd(f,'pub/woa/WOA13/DATAv2/nitrate/netcdf/all/1.00/')
-        disp('FTP CONNECTION TO ftp.nodc.noaa.gov/pub/woa/WOA13/DATAv2/nitrate/netcdf/all/1.00/ WAS SUCCESSFUL.')
+        cd(f,'pub/woa/WOA18/DATA/nitrate/netcdf/all/1.00/')
+        disp('FTP CONNECTION TO ftp.nodc.noaa.gov/pub/woa/WOA18/DATA/nitrate/netcdf/all/1.00/ WAS SUCCESSFUL.')
         disp('COPYING FILES....')
         dir_list = dir(f);
-        mget(f,'woa13_all_n*.nc',WOAdir)
-        disp(['WOA2013 files saved to ',WOAdir])
+        mget(f,'woa18_all_n*.nc',WOAdir)
+        disp(['WOA2018 files saved to ',WOAdir])
         char(dir_list.name)
         close(f)
     catch

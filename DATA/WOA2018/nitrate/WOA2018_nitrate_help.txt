@@ -1,0 +1,1 @@
+Download all WOA2018 files for nitrate at ftp://ftp.nodc.noaa.gov/pub/woa/WOA18/DATA/nitrate/netcdf/all/1.00/ prior to launching sage.

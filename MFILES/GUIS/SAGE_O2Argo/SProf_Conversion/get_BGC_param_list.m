@@ -42,6 +42,7 @@ param_list = param_list{1,1}; % remove outer shell
 iType = find(strcmp(param_hdr,'core/bio/intermediate') == 1);
 t1    = strcmp('c',param_list(:,iType)) | strcmp('b',param_list(:,iType));
 param_list  = param_list(t1,:);
+fclose(fid);
 
 % ASIGN OUTPUT
 list.hdr = param_hdr;

@@ -38,7 +38,7 @@ end
 
 dirs.user_dir = topdir;
 dirs.mfiles    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'MFILES',filesep];
-dirs.woa       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2013',filesep];
+dirs.woa       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2018',filesep];
 dirs.glodap    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'GLODAP',filesep];
 dirs.mat       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATS',filesep];
 dirs.cal       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'CAL',filesep];

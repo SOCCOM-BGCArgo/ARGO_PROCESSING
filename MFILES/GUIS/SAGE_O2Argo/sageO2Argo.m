@@ -37,6 +37,7 @@ function varargout = sageO2Argo()
 %          gets applied to the data and written to file).
 %		   04/11/19 Added modifications to drift in gain.
 %          04/15/19 changed Make_Mprof_ODVQC to Make_Sprof_ODVQC.
+%          07/22/19 updated to WOA2018 and GLODAP2019
 % NOTES: Adapted from sageO2 (original version made for MBARI)
 % ************************************************************************
 %
@@ -160,7 +161,7 @@ function gui = createInterface( ~ )
 %                     rb3(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
 %                         'String','ERA-INT','tag','ERA_INT','Value',0,'Callback',@ref_onClicked ); 
                     rb3(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','WOA2013','tag','woa','Value',0,'Callback',@ref_onClicked ); 
+                        'String','WOA2018','tag','woa','Value',0,'Callback',@ref_onClicked ); 
                 gui.rb3 = rb3;
                                
             % Control Box 4 (Oxygen Gain Adjustments)
@@ -443,7 +444,7 @@ function gui = createInterface( ~ )
         [~,inputs.intersect_cycles_WOA,~] = intersect(DATA.track(:,2),DATA.O2data{1}(:,2));
         Wtrack = [DATA.track(inputs.intersect_cycles_WOA,1) DATA.track(inputs.intersect_cycles_WOA,4) DATA.track(inputs.intersect_cycles_WOA,3)];
         try
-            Wdata = get_WOA2013_local_sO2Argo(Wtrack, [0 2000], 'O2sat',dirs.user_dir);
+            Wdata = get_WOA_local(dirs.woa,Wtrack, [0 2000], 'O2sat');
             zsurf = Wdata.Z<=25;
             WOA_surf = Wdata.d(zsurf,:);
             DATA.WOAsurf = nanmean(WOA_surf,1);
@@ -925,14 +926,14 @@ function gui = createInterface( ~ )
             DATA.refdata(:,1) = DATA.track(inputs.intersect_cycles,1);
             DATA.refdata(:,2) = DATA.track(inputs.intersect_cycles,2);
             Wtrack = [DATA.track(inputs.intersect_cycles,1) DATA.track(inputs.intersect_cycles,4) DATA.track(inputs.intersect_cycles,3)];
-            Wdata = get_WOA2013_local_sO2Argo(Wtrack, [0 2000], 'O2sat',dirs.user_dir);
+            Wdata = get_WOA_local(dirs.woa,Wtrack, [0 2000], 'O2sat');
             zsurf = Wdata.Z<=25;
             WOA_surf = Wdata.d(zsurf,:);
             DATA.WOAsurf = nanmean(WOA_surf,1);
             DATA.refdata(:,3) = nan(length(DATA.refdata(:,2)),1);
             DATA.refdata(:,4) = DATA.WOAsurf;
             updateInterface()
-            if   inputs.isprof == 1; %profile selected?
+            if   inputs.isprof == 1 %profile selected?
                 redraw_PROF_sageO2Argo(dirs,gui,DATA,inputs);
             else
                 DATA = redraw_WOA_sageO2Argo(dirs,gui,DATA,inputs);
