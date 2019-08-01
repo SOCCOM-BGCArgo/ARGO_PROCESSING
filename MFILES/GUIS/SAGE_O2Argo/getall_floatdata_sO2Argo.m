@@ -34,18 +34,18 @@ BRtraj = [thedatadir,floatID,'_BRtraj.nc'];
 metaF = [thedatadir,floatID,'_meta.nc'];
 Mprof = [thedatadir,floatID,'_Mprof.nc'];
 Sprof = [thedatadir,floatID,'_Sprof.nc'];
+odvfile = [thedatadir,'ODV',floatID,'.TXT'];
 % if exist(BRtraj,'file')==0 || exist(metaF,'file')==0 || exist(Mprof,'file')==0 % if missing any of the 3
 % if exist(metaF,'file')==0 || exist(Mprof,'file')==0 % if missing any of the 2;  if missing BRtraj is ok, just cal O2 to WOA
 %     errorstring = [floatID,'_meta.nc, or ',floatID,'_Mprof.nc is missing from ',thedatadir,'.  Download these files from the GDAC before proceeding.'];
-if exist(Mprof,'file')==0 && exist(Sprof,'file')==0 % if missing Mprof and Sprof;  if missing BRtraj is ok, just cal O2 to WOA; meta may not be needed anymore
-    errorstring = [floatID,'_Mprof.nc and/or ',floatID,'_Sprof.nc is missing from ',thedatadir,'.  One must be present before proceeding.'];
+if exist(odvfile,'file')==0  % if missing ODV file;  if missing BRtraj is ok, just cal O2 to WOA; meta may not be needed anymore
+    errorstring = ['ODV',floatID,'.TXT is missing from ',thedatadir,'.  Must be present before proceeding.  Use Sprof converter code to generate ODV file.'];
     h = errordlg(errorstring,'Missing File');
 end
  
 %__________________________________________________________________________
 %__________________________________________________________________________
 % PARSE CORIOLIS ODV FILE TO GET PROFILE DATA
-odvfile = [thedatadir,'ODV',floatID,'.TXT'];
 D = get_FloatViz_data(odvfile);
 % PARSE HEADER INFORMATION TO GET COLUMN INDICES
 iST   = find(strcmp('Station',      D.hdr) == 1); % station

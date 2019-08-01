@@ -3,7 +3,7 @@ function tf = get_ARGOifremer_files(WMOs,DAC,savedir)
 % get_ARGOifremer_files.m
 % ************************************************************************
 %
-% Function to grab *BRtraj.nc, *Mprof.nc, and *meta.nc files from user-specifed
+% Function to grab *BRtraj.nc, *Sprof.nc, and *meta.nc files from user-specifed
 % external floats through the GDAC at ifremer.  Files are saved to
 % user-specified local directory.
 %
@@ -40,12 +40,10 @@ function tf = get_ARGOifremer_files(WMOs,DAC,savedir)
 %         tmaurer@mbari.org
 %
 % DATE: 10/05/2017
-% UPDATES: 
+% UPDATES: 7/31/19 Updated to extract Sprof file instead of Mprof file.
 % NOTES: *Acquiring data from floats from separate DACs requires separate
 % calls to the function.
-%		04/15/19: NOTE THAT THIS FUNCTION HAS NOT BEEN UPDATED TO AUTO-GRAB SPROF FILES!  
-%				  IT CAN EASILY BE MODIFIED TO DO SO, I JUST HAVE NOT DONE SO YET.  FEEL FREE TO MODIFY TO SUIT YOUR NEEDS.
-%				  THIS IS A HELPER-FUNCTION TO HELP EASE SETUP FOR USERS.  IT IS NOT REQUIRED FOR GUI FUNCTION! (AND THUS MAINTENANCE NOT FULLY SUPPORTED).  
+%
 % ************************************************************************
 %
 % ************************************************************************
@@ -102,14 +100,14 @@ for i = 1:length(WMOs)
 
     % get Mprof file-------------------------------------------------------
     %----------------------------------------------------------------------
-    IndexC = strfind(argo_files, [WMO,'_Mprof.nc']);
+    IndexC = strfind(argo_files, [WMO,'_Sprof.nc']);
     Index = find(not(cellfun('isempty', IndexC)), 1);
     if ~isempty(Index)
-        disp(['Grabbing ',WMO,'_Mprof.nc from ',ftp_target,'...'])
-        str = mget(f, [WMO,'_Mprof.nc'], [savedir,WMO,'/']);
-        disp([WMO,'_Mprof.nc saved to ',savedir,WMO,'\'])
+        disp(['Grabbing ',WMO,'_Sprof.nc from ',ftp_target,'...'])
+        str = mget(f, [WMO,'_Sprof.nc'], [savedir,WMO,'/']);
+        disp([WMO,'_Sprof.nc saved to ',savedir,WMO,'\'])
     else
-        disp([WMO,'_Mprof.nc NOT FOUND AT ',ftp_dir])
+        disp([WMO,'_Sprof.nc NOT FOUND AT ',ftp_dir])
         tf{i}(2) = 0;
     end
     disp(' ')

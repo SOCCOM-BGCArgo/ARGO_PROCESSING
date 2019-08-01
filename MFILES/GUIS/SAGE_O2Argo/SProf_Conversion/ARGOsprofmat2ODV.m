@@ -14,7 +14,7 @@ function tf_odv = ARGOsprofmat2ODV(f_info, outputDIR)
 %           f_info.dac_path   = '/ifremer/argo/etc/argo-synthetic-profile/';
 %           f_info.local_path = 'C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\DATA\ARGO_REPO\6901580\';
 %           f_info.dac = 'coriolis';
-%           tf_odv = sprofmat2ODV(f_info, f_info.local_path)
+%           tf_odv = ARGOsprofmat2ODV(f_info, f_info.local_path)
 %
 % INPUTS:
 %   f_info: a structure containing the following:
