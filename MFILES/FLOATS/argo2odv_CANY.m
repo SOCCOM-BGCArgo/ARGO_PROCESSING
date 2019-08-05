@@ -62,8 +62,6 @@ function tf_odv = argo2odv_CANY(MBARI_ID_str, dirs, update_str, HR_flag)
 
 % TESTING
 %MBARI_ID_str = '8514Hawaii';
-% MBARI_ID_str = '8501CalCurrent';
-% MBARI_ID_str = '0507SOOCN';
 % dirs =[];
 % update_str = 'update';
 
