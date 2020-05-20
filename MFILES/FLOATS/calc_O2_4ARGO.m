@@ -117,7 +117,7 @@ if strcmp(cal.type,'3830')
     O2 = O2 .* exp(S_corr); % Aanderaa S correction to O2 concentration
     
    % BACK OUT pO2 from O2 CONC. 
-    pO2 = O2 ./ O2sol  .* (1013.25 - pH2O) .* 0.20964 ; % partial pressure O2
+    pO2 = O2 ./ O2sol  .* (1013.25 - pH2O) .* 0.20946 ; % partial pressure O2
 
 % ************************************************************************
 % AANDERAA 4330 OPTODE
@@ -153,7 +153,7 @@ elseif strcmp(cal.type,'4330')
         PC  = SVU(6) + SVU(7).*CalPhase;
         O2  = (P0./PC -1) ./ Ksv;
         O2  = O2 .* exp(S_corr); % Aanderaa S correction to O2 concentration
-        pO2 = O2 ./ O2sol  .* (1013.25 - pH2O) .* 0.20964 ; % partial pressure O2
+        pO2 = O2 ./ O2sol  .* (1013.25 - pH2O) .* 0.20946 ; % partial pressure O2
     end
     
     % IF ConcCoef variable exist need to update pO2 too
