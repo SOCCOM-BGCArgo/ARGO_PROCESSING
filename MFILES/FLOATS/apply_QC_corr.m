@@ -78,7 +78,8 @@ t_fv = data == fv.bio; % flag fill values in data
 
 % IF QC LEG DOES NOT START ON PROFILE #1 SET QC DATA = NAN
 if QC.steps(1,1) > cast_sdn % 1st QC step does not start at profile 1
-    adj_data = data * 0 + fv.QC;
+    %adj_data = data * 0 + fv.QC;
+    adj_data = data * 0 + fv.bio; %jp 9/23/19 9634 cycle 138- clock bad cuasing problems
     return
 end  
       

@@ -31,7 +31,10 @@ function sdn = get_QCstep_dates(flt_name,QC_data,dirs)
 %               on data flag.
 % EXAMPLES:
 %   sdn = get_QCstep_dates(flt_str,cal_struct)
-
+% CHANGES
+%   05/11/2020 JP Added code to correct gps weekday rollover bug if found
+%      9634SOOCN is the only float we have with this problem
+%
 % TESTING
 % flt_name = cal.info.UW_ID; % TESTING
 % QC_data = QC.steps(:,2:end);       % TESTING
@@ -134,10 +137,32 @@ for i = 1:rows
         clear fid
     end
     
-    % STILL NO DATE RECOVERED - REPORT IT
+    % CHECK FOR BAD GPS TIME (week day roll over problem) 05/11/20 -jp
+    % WE ARE GETTING TIME FROM PROFILE TERMINATION TIME NOT GPS FIX TIME!!!
     if isnan(sdn(i))
         disp(['No sdn recovered for profile ',num2str(QC_data(i,1))])
+    else
+        dvec = datevec(sdn(i));
+        if sdn(i) > sdn(1) + 365*20 && dvec(1) == 2099 % 20 yrs from start?
+            disp(['GPS time for this profile is > 20 years past start ', ...
+                '- gps week day number bug?!!'])
+            %dvec = datevec(INFO.sdn);
+            dvec(1)  = 1999; % per aoml suggestion don't quite understand jump to 2099
+            sdn(i) = datenum(dvec) + 1024*7;
+        elseif sdn(i) < sdn(1) % bad gps time fix 10/30/19
+            disp('GPS time for this profile is unreasonable - gps week day number bug!!')
+            disp(['days since first profile = ',num2str((sdn(i) - ...
+                sdn(1)),'%0.0f')]);
+            sdn(i) = sdn(i) + 1024*7;
+        end
     end
+    
+    
+    
+    % STILL NO DATE RECOVERED - REPORT IT
+%     if isnan(sdn(i))
+%         disp(['No sdn recovered for profile ',num2str(QC_data(i,1))])
+%     end
     
 end
 
