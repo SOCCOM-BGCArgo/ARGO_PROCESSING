@@ -333,7 +333,7 @@ if ~isempty(vdata)
                 plot(DATA.b.data(:,DATA.bIND2), DATA.b.data(:,DATA.ibP), 'ko', ...
                     'MarkerSize',6, 'MarkerFaceColor',[255 255 0]/255,...
                     'parent',gui.whichAX(4),'MarkerEdgeColor', 'r')
-                legend_str = [legend_str, 'bottle pH1','bottle pH2'];
+                legend_str = [legend_str, 'ship bottle pH','ship calc pH'];
             else
                 legend_str = [legend_str, 'bottle'];
             end
@@ -351,5 +351,5 @@ if ~isempty(vdata)
 
     end
 end
-
+save('mydata.mat','DATA')
 end

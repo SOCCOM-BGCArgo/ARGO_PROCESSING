@@ -78,7 +78,7 @@ function varargout = sage()
 %             Toolbox (old version is archived as sage_version1.m)
 %   10/1/18  Added CANYON_B to reference options.  May remove CANVON
 %   (version 1) at a later date, defaulting to CANYONB
-%		   Dec2018 Added modifications to drift in gain.
+%	Dec2018 Added modifications to drift in gain, and change-point detection!!
 %   04/15/19 changed Make_Mprof_ODVQC to Make_Sprof_ODVQC.
 %   07/22/19 updated to WOA2018 and GLODAP2019; removed original CANYON
 %            reference options (now only CANYON-B listed)
@@ -635,6 +635,7 @@ function gui = createInterface( ~ )
             handles.raw_data.hdr  = d.hdr([1:DATA.iZ+1,DATA.iO:DATA.iOsat+1,DATA.iN,DATA.iN+1,DATA.iPH,DATA.iPH+1]);
             handles.raw_data.data = d.data(:,[1:DATA.iZ+1,DATA.iO:DATA.iOsat+1,DATA.iN,DATA.iN+1,DATA.iPH,DATA.iPH+1]);
             handles.raw_data.data(handles.raw_data.data == -1e10) = NaN;
+            r_raw = size(d.data,1);
             clear d     
 
             % TRY TO GET QC DATA NEXT
@@ -647,6 +648,13 @@ function gui = createInterface( ~ )
                 handles.qc_data.hdr  = d.hdr([1:DATA.iZ+1,DATA.iO:DATA.iOsat+1,DATA.iN,DATA.iN+1,DATA.iPH,DATA.iPH+1]);
                 handles.qc_data.data = d.data(:,[1:DATA.iZ+1,DATA.iO:DATA.iOsat+1,DATA.iN,DATA.iN+1,DATA.iPH,DATA.iPH+1]);
                 handles.qc_data.data(handles.qc_data.data == -1e10) = NaN;
+                r_qc = size(d.data,1);
+                if r_qc ~= r_raw
+                    disp(['WARNING: raw data file (',num2str(r_raw), ...
+                        ') and qc data file (', num2str(r_qc),') are ',...'
+                        'not the same length']);
+                    clear r_raw r_qc
+                end
             else
                 handles.info.qc_flag = 0; % NO QC DATA = 0
                 handles.qc_data.hdr  = handles.raw_data.hdr;
@@ -935,7 +943,7 @@ function gui = createInterface( ~ )
             m_proj('stereographic','latitude',-90,'radius',60,'rotangle',45);
         end
         m_tbase('contourf','edgecolor','none');
-        legend_cell = {};
+        %         legend_cell = {};
         hold on
         m_plot(track(:,3),track(:,4),'ko-', 'MarkerSize',3)%     xlim(lon_limits);
         title(['FLOAT ',handles.info.float_name],'FontSize', 16)
@@ -944,15 +952,15 @@ function gui = createInterface( ~ )
             'MarkerEdgeColor','k');
         Hm2 = m_plot(track(end,3),track(end,4),'o', 'MarkerSize',10, 'MarkerFaceColor','r', ...
             'MarkerEdgeColor','k');
-        whos Hm
-        legend_cell = [legend_cell, 'first', 'last'];
+        %         legend_cell = [legend_cell, 'first', 'last'];
         colorbar
-
-        track_legend = legend([Hm1 Hm2],legend_cell);
-    %     track_legend.Orientation = 'Horizontal';
-        track_legend.Location = 'northeastoutside';
+        
+        %     track_legend.Orientation = 'Horizontal';
         set(gca,'ydir','normal');
         m_grid('linewidth',2,'tickdir','out','xaxislocation','top');
+        
+        track_legend = legend([Hm1 Hm2],'first', 'last');
+        track_legend.Location = 'northeastoutside';
     end
 
 %-------------------------------------------------------------------------%
@@ -1435,6 +1443,13 @@ function gui = createInterface( ~ )
             set(gui.tbl,'Data',tableMAT)
             on_calcadj
             inputs.findchp = 1;
+			%IF A FLOAT HAS A SHALLOW DEPTH FOR FIRST CYCLE, ISCHANGE WILL NOT INCLUDE FIRST CYCLE.  THIS IS A PROBLE!
+			%RESULTS IN EMPTY VALUES PROPAGATED TO QC FILE FOR FIRST CYCLE.  NEED A BETTER FIX, BUT FOR STARTERS, 
+			%WARN USER!
+			if ischng_CHPTS(1) ~=1
+			     msgbox(['WARNING!! QC-MATRIX DOES NOT START AT CYCLE 1!'])
+			end
+
         end
         updateInterface()
        if inputs.isprof == 1 %profile selected?
