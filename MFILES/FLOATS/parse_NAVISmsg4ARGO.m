@@ -35,7 +35,11 @@ function data = parse_NAVISmsg4ARGO(msg_file)
 %               type and serial number ultimately for ODV meta info
 %   06/09/2017 - add code to look for <EOT> and record # of instances
 %   12/13/2018 - Added code to eliminate return of data records that lack pressure (unusable!)
-
+%   12/13/2019 - JP, Rewrote cp_data extraction code to better catch partial
+%                hex lines of good data. 0569.100.msg was breaking the code
+%   07/14/2020 - improved partial hex line extraction - only extract
+%                complete hex blocks. 0571 cycle 58 first deep cp line = case
+%                example
 % ************************************************************************
 % FORMATS & VARIABLES
 % ************************************************************************
@@ -44,8 +48,15 @@ function data = parse_NAVISmsg4ARGO(msg_file)
 %msg_file = 'c:\temp\0509.018.msg'; % TESTING
 %msg_file = 'c:\temp\0276.002.msg'; % TESTING
 %msg_file = 'c:\temp\0037.005.msg'; % TESTING
-%msg_file = 'c:\temp\0511.008.msg';
- 
+%msg_file = 'c:\temp\0948.003.msg';
+%msg_file = '\\atlas\chemwebdata\floats\alternate\n0569\0569.100.msg';
+%msg_file = 'c:\temp\0569.100.msg'; 
+% msg_file = 'c:\temp\0508.044.msg';
+%msg_file = 'c:\temp\0949.088.msg';
+%msg_file = 'c:\temp\0571.058.msg';
+
+
+
 % PREDIMENSION OUTPUT STRUCTURE (If no data this is the output)
 data.pk_hdr = {}; % park data header cell array
 data.pk_d   = []; % park data matrix
@@ -128,19 +139,21 @@ hex_conv = [32768 10; ...     % p  these are used to convert to pst
         
 if sum(strcmp('phV', data.lr_hdr)) == 1 % O2, MCOMS, pH
     pH_flag = 1;
-    hex_format = '%04x%04x%04x%02x%06x%06x%02x%06x%06x%06x%02x%06x%04x%02x';
-    hex_length = 60;
-    hex_cols   = size(regexp(hex_format,'x'),2);
-    hex_ind    = [hex_ind, 12:13]; % PTS, O2 Phase&T, MCOMS, pH V&T 
-    nbin_ind   = [nbin_ind, 14];
-    nbin_hdr   = [nbin_hdr; 'nbin pH'];
-    hex_conv   = [hex_conv; 61440 1000]; % Add for pH T
-    conv_ind   = [conv_ind, 10]; % add col indice for pH T
+    hex_format  = '%04x%04x%04x%02x%06x%06x%02x%06x%06x%06x%02x%06x%04x%02x';
+    hex_char_ct = cumsum(str2double(regexp(hex_format,'\d+','match')));
+    hex_length  = 60;
+    hex_cols    = size(regexp(hex_format,'x'),2);
+    hex_ind     = [hex_ind, 12:13]; % PTS, O2 Phase&T, MCOMS, pH V&T 
+    nbin_ind    = [nbin_ind, 14];
+    nbin_hdr    = [nbin_hdr; 'nbin pH'];
+    hex_conv    = [hex_conv; 61440 1000]; % Add for pH T
+    conv_ind    = [conv_ind, 10]; % add col indice for pH T
 else % O2, MCOMS
-    pH_flag    = 0;
-    hex_format = '%04x%04x%04x%02x%06x%06x%02x%06x%06x%06x%02x';
-    hex_length = 48;
-    hex_cols   = size(regexp(hex_format,'x'),2);
+    pH_flag     = 0;
+    hex_format  = '%04x%04x%04x%02x%06x%06x%02x%06x%06x%06x%02x';
+    hex_char_ct = cumsum(str2double(regexp(hex_format,'\d+','match')));
+    hex_length  = 48;
+    hex_cols    = size(regexp(hex_format,'x'),2);
 end
 
 % BUILD HIGH RES HEADER (CP DATA HEADER)
@@ -273,34 +286,35 @@ while ischar(tline)
             else % No high resolution data found - look for a fix
                 msg_task = 'GPS data';
             end
-            
+        
+        % JP 12/12/19, MODIFIED TO BETTER CATCH PARTIAL HEX LINES W DATA 
         case 'cp_data'     % EXTRACT CP SAMPLE DATA
-            % find cp data line & make sure hex characters only
-            if length(tline) == hex_length % check size
-                if regexp(tline,['[A-F0-9]{',num2str(hex_length),'}'],...
-                        'once'); % hex chars?
-                    tmp = sscanf(tline,hex_format);
-                    if sum(tmp(1:3)) ~= 0 % IS THERE P,S,T or EMPTY LINE?
-                        high_res = [high_res; tmp']; % cp
-                    end
-                    if data_chk == 1
-                        data_chk = 2; % In the cp data lines now
-                    end
+            %HEX CHARS BEGINING OF STR, EXPECTED LENGTH & ALL CHARS HEX CHARS?
+            if size(tline,2) == hex_length && ...
+                size(regexp(tline,'^[A-F0-9]+','match','once'),2) == hex_length
+                tmp = sscanf(tline,hex_format);
+                if sum(tmp(1:3)) ~= 0 % IS THERE P,S,T or EMPTY LINE?
+                    high_res = [high_res; tmp']; % cp
                 end
                 
-            % DEAL WITH CP DATA BUG (2nd to last line)
-            % BUILD UP SHORT DATA LINE WITH 0's and F's
-            elseif hex_length == 60 && length(tline) == 52 % short data line
-                if regexp(tline,'[A-F0-9]{52}','once'); % hex chars?
-                    tmp = sscanf([tline,'FFFFFF00'],hex_format); %build up
-                    high_res = [high_res; tmp']; 
-                    
-                    if data_chk == 1
-                        data_chk = 2; % In the cp data lines now
-                    end
+            %SIZE ~= HEX_LENGTH & ALL HEX CHARS, BUT PARTIAL OR SHORT LINE
+            elseif size(tline,2) > 11 && ... % 12 chars means p t & s (14 for bin count too)        
+                    size(tline,2) == size(regexp(tline,'^[A-F0-9]+','match','once'),2)
+                % figure out # of valid measurements
+                ind = find(hex_char_ct <= size(tline,2),1,'last'); % jp 7/2020
+
+                [tmp,N] = sscanf(tline,hex_format);
+                if sum(tmp(1:3)) ~= 0 % IS THERE P,S,T or EMPTY LINE?
+                    dtmp = ones(hex_cols,1)* NaN; % predim to except variable size input jp 7/2020
+                    %dtmp(1:N) = tmp;
+                    dtmp(1:ind) = tmp(1:ind); % jp 7/2020
+                    high_res = [high_res; dtmp']; % cp
                 end
-                    
-            elseif data_chk == 2 && length(tline) ~= hex_length % end of cp
+
+
+            % CHECK FOR END OF CP DATA & CHANGE SWITCH
+            elseif strcmp(msg_task,'cp_data') && ...
+                    ~isempty(regexp(tline,'^Resm','once'))
                 msg_task = 'GPS data';
             end
             
@@ -428,7 +442,7 @@ else
 end
 
 
-clearvars -except data
+%clearvars -except data
 
 
 
