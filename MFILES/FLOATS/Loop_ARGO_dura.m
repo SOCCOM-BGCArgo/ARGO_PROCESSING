@@ -1,11 +1,24 @@
-% Script to step through all floats in list for ARGO
+function Loop_ARGO_dura(float_num,float_type)
 
+% Script to step through all floats in list for ARGO and create ODV-type
+% txt file of dura diagnostics for use in E-Viz. http://www3.mbari.org/chemsensor/eviz.htm
+%
+% Created by Josh Plant, MBARI, May2020
+%
+% Updates: TM, June 2, 2020, turned into a function for calling within
+% Loop_ARGO_float after routine float processing.  Only called for floats
+% with new incoming msg files.
+%
+% INPUTS: float_num = MBARI float ID (ie '9095SOOCN')
+%         float_type = ie 'APEX' or 'NAVIS'
+%
+%
 % ************************************************************************
 % FILTER EXPRESSIONS
 % ************************************************************************
 % %refine_expr  = ''; % REFINE FLOAT LIST FOR REGION
 % refine_expr  = '^9\d+SoOcn'; % SOUTHERN OCEAN 9000 series
-% %refine_expr  = 'SoOcn|Drake|Ross|SoAtl'; % REFINE FOR SOUTHERN OCEAN 
+% %refine_expr  = 'SoOcn|Drake|Ross|SoAtl'; % REFINE FOR SOUTHERN OCEAN
 % exclude_expr = '(MTY)|(cor)|(Surface0)|(\d+\.txt)';
 
 % ************************************************************************
@@ -23,47 +36,50 @@
 %   dirs.FVlocal   = path to Floatviz file made by matlab go here
 
 % PATHS & NAMES - JOSH DEFAULTS
-    dirs.msg       = '\\atlas\ChemWebData\floats\';
-    dirs.mat       = 'C:\Users\jplant\Documents\MATLAB\ARGO\DURA\';
-    dirs.temp      = 'C:\temp\';
-% ************************************************************************
+dirs.temp  = 'C:\temp\';
+dirs.msg   = '\\atlas\ChemWebData\floats\';
+% dirs.cal   = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\';
+% dirs.FV    = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
+%     'DATA\FLOATVIZ\'];
+dirs.cal   = '\\atlas\chem\ARGO_PROCESSING\DATA\CAL\';
+dirs.FV    = '\\atlas\chem\ARGO_PROCESSING\DATA\FLOATVIZ\';
+dirs.save = ['C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\', ...
+    'DATA\PH_DIAGNOSTICS\'];
 
-Float_type_list2
-
-%FLOAT_LIST = SOCCOM_list;
-% FLOAT_LIST = NON_SOCCOM_list;
-%FLOAT_LIST = [NON_SOCCOM_list;SOCCOM_list];
-
-% jp = regexpi(NON_SOCCOM_list(:,1),'RosSea|SoAtl|SoPac|SoOcn|drake');
-% t1 = cellfun(@isempty,jp);
-% FLOAT_LIST = [SOCCOM_list; NON_SOCCOM_list(~t1,:)];
-FLOAT_LIST = [SOCCOM_list; NON_SOCCOM_list];
-
-[~, ind] = sort(FLOAT_LIST(:,2)); % sort by UW ID
-FLOAT_LIST = FLOAT_LIST(ind,:);
-
-% % ***************** SOCCOM ONLY *****************
-
-clearvars -except SOCCOM_list NON_SOCCOM_list FLOAT_LIST update_str dirs
+% GET PH SENSOR SN & VERSION LIST, WILL ADD INFO TO ODV TEXT FILES
+% Pass to merge_dura fuction via dirs structure
+% dirs.ph_ver = get_ph_version; % THIS WAS CHANGED INTO A MAT FILE; WINDOWS
+% TASK SCHEDULER HAVING TROUBLE WITH XLSREAD!!!
+D = load([dirs.save,'MBARI_pHsensor_versions.mat']);
+dirs.ph_ver = D.d;
 
 
-NO_GO_LIST = cell(1000,5);
-NO_GO_ct   = 0;
-for loop_ctr = 1: size(FLOAT_LIST,1)
-    if FLOAT_LIST{loop_ctr,4} < 100 % All
-        flt_str = FLOAT_LIST{loop_ctr,2};
-        if strcmp('APEX',FLOAT_LIST{loop_ctr,5});
-            Merge_dura_msgs(flt_str, dirs)
-        end
-    end
+% % LOAD MASTER FLOAT LIST & DO SOME FILTERING
+% load([dirs.cal,'MBARI_float_list.mat'])
+% tNAVIS = strcmp(list(:,4),'NAVIS');
+% list(tNAVIS,:) =[];
+
+
+% for ct = 1:rlist
+%     MBARI_ID = list{ct,1};
+if strcmp(float_type,'NAVIS') == 1 %dura diagnostic files do not exist for NAVIS floats
+    return
+end
+MBARI_ID = float_num;
+cal_fn = ['cal',MBARI_ID,'.mat'];
+load([dirs.cal,cal_fn]);
+
+if cal.info.pH_flag == 0
+    disp(['No pH cal data found for ',float_type,' float ',MBARI_ID,'; moving to next float.']);
+    return
 end
 
+disp(['Processing pH diagnostic data for ',float_type,' float ', MBARI_ID,'.'])
+d = Merge_dura_msgs(MBARI_ID, dirs);
+close all
+% end
 
-
-
-
-
-
-
-
-
+%% Move this to full copy batchfile, keep all copies in same place for now
+% % COPY FILES TO NETWORK WITH BATCH FILE
+% system(['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\batchfiles\', ...
+%     'Copy_Eviz_to_network.bat'])
