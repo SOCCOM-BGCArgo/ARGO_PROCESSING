@@ -59,10 +59,28 @@ function tf_odv = argo2odv_CANY(MBARI_ID_str, dirs, update_str, HR_flag)
 %   fixes (ie 12768, deployed too close to ice).  If no position info, try to
 %   grab the position from the 000.msg file as estimate for first cycle.
 %   This only goes in the ODV files.  QF will be = 4 (questionable).
+% 11/05/19 - JP added code to fix minor BIAS pH calc bug. I previously assumed
+%   if pressure value existed so would pH. Now check for valid pH value
+%   too. This is a fix for spotty pH data in floats like 12888.
+% 02/26/20 - JP Changed index searches (iP & look up tables)  argo2ODV* 
+%   for adjusted data from 'PRES' to 'PRES_ADJUSTED to account for changes
+%   in Process_APEX_float & Process_NAVIS_float
+% 05/11/2020 - TM modification to fix implemented on 01/10/19 (deals with floats with missing position fixes for cycle 1.  Now 2 floats in this category, 12768soocn and 12783eqpac)  Bug fix.
+
 
 % TESTING
 %MBARI_ID_str = '8514Hawaii';
+% MBARI_ID_str = '8501CalCurrent';
+% MBARI_ID_str = '0948STNP2';
 % dirs =[];
+% update_str = 'all';
+% HR_flag = 1;
+%  MBARI_ID_str = '12888SOOCN';
+% % %MBARI_ID_str = '17898SOOCN';
+%   MBARI_ID_str = '17267HOT';
+% dirs =[];
+% % update_str = 'all';
+% HR_flag = 1;
 % update_str = 'update';
 
 % ************************************************************************
@@ -159,6 +177,7 @@ end
 % HAS BEEN DONE ON Annie's end -- VALID BIO ARGO RANGE CHECK [MIN MAX]
 RC.S    = [2 41]; % from argo parameter list
 RC.T    = [-2.5 40]; % from argo parameter list
+RC.P    = [0 12000]; % from argo parameter list
 
 % ************************************************************************
 % MERGE INDIVIDUAL MAT FILES FOR GIVEN BIO-ARGO FLOAT
@@ -233,10 +252,12 @@ clear i t1 missing_profiles
 
 missing_pos_str = '';
 interp_pos_str  = '';
-t_nan = isnan(pos_fix(:,4)); % any nan's in LAT? 
+%t_nan = isnan(pos_fix(:,4)); % any nan's in LAT? 
 cy1 = pos_fix(pos_fix(:,1)==1,:);
-
-if sum(t_nan,1)==length(pos_fix(:,4)) && ~isempty(cy1) %all nans; never a pos fix, and includes first cycle
+t_nan = isnan(cy1(:,4)); % any nans in first cycle LAT?
+if ~isempty(cy1)
+if sum(t_nan,1)==length(cy1(:,4))  %first cycle missing position fix
+    disp('POSITION INFO MISSING AT CYCLE 1...ATTEMPTING TO GRAB LAT/LON FROM 000.msg file...')
     %Try to retrieve the position info from cycle 000 if available.  Use
     %this as an estimate of the first cycle.
     B = regexp(MBARI_ID_str,'\d*','Match');
@@ -253,8 +274,11 @@ if sum(t_nan,1)==length(pos_fix(:,4)) && ~isempty(cy1) %all nans; never a pos fi
         rdata(rdata(:,1)==1,3) = LON;
         rdata(rdata(:,1)==1,4) = LAT;
         rdata(rdata(:,1)==1,5) = 3; %if using 000.msg position info, mark lat/lon QF as "questionable"
+		disp('Lat/Lon successfully extracted from 000.msg file for cycle 1.')
     end
 end
+end
+
 
 t_nan = isnan(pos_fix(:,4)); % any nan's in LAT? Try again now that checked for 000 position info.
 if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never a pos fix) then no interpolation, move on
@@ -361,8 +385,14 @@ iP  = find(strcmp('PRES',rhdr)     == 1);
 iT  = find(strcmp('TEMP',rhdr)     == 1); 
 iS  = find(strcmp('PSAL',rhdr)     == 1);
 
-PRES_QF = fill_0 + 1;             % ARGO QF = GOOD
-PRES_QF(isnan(rdata(:,iP))) = 99; % BIO ARGO QF MISSING VALUE
+% 02/11/20 CHECK FOR PRESS_QC FIELD - IT MAY NOT EXIST IN OLDER MAT FILES
+% THIS IS  MESSY WORK AROUND - mfiles need an overhaul
+if sum(strcmp(rhdr,'PRES_QC'),2) == 0 % NO PRES QC YET - old file
+    PRES_QF = fill_0 + 1;             % ARGO QF = GOOD
+    PRES_QF(isnan(rdata(:,iP))) = 99; % BIO ARGO QF MISSING VALUE
+else
+    PRES_QF = max([rdata(:,iP+1) adata(:,iP+1)],[],2);
+end
 
 % ADJUSTED & RAW ARE THE SAME VALUES BUT FLAGGS MAY ONLY BE SET IN ADJUSTED
 % DATA SO LOOK AT BOTH AND TAKE THE GREATEST VALUE
@@ -396,7 +426,7 @@ raw_data = [rdata(:,1:iL+1), rdata(:,iP), PRES_QF, rdata(:,iT), ...
     TEMP_QF, rdata(:,iS), PSAL_QF, den, den_QF, float_z, float_z_QF, ...
     rdata(:,iS+2:dc)];
 
-adj_hdr = [ahdr(1:iL+1),ahdr(iP),'PRES_QC',ahdr(iT:iT+3), ...
+adj_hdr = [ahdr(1:iL+1),ahdr(iP),'PRES_ADJUSTED_QC',ahdr(iT:iT+3), ...
     'SIGMA_THETA','SIGMA_THETA_QC','DEPTH','DEPTH_QC',ahdr(iS+2:dc)];
 
 adj_data = [adata(:,1:iL+1), adata(:,iP), PRES_QF, adata(:,iT), ...
@@ -406,6 +436,7 @@ adj_data = [adata(:,1:iL+1), adata(:,iP), PRES_QF, adata(:,iT), ...
 if strcmp(info.float_type, 'APEX') %
     hrPRES_QF = hr_fill_0 + 1;             % ARGO QF = GOOD
     hrPRES_QF(isnan(hrrdata(:,iP))) = 99; % BIO ARGO QF MISSING VALUE
+    hrPRES_QF(hrrdata(:,iP) < RC.P(1) | hrrdata(:,iP) > RC.P(2)) = 4;
     
     hrTEMP_QF = hrrdata(:,iT+1);
     hrTEMP_QF(isnan(hrrdata(:,iT))) = 99;
@@ -485,7 +516,7 @@ end
 % ************************************************************************
 
 % BUILD SOME INDICES AGAIN
-iP  = find(strcmp('PRES',adj_hdr)   == 1); % order always lat, p, t, s
+iP  = find(strcmp('PRES_ADJUSTED',adj_hdr)   == 1); % order always lat, p, t, s
 iT  = find(strcmp('TEMP_ADJUSTED',adj_hdr)   == 1); 
 iS  = find(strcmp('PSAL_ADJUSTED',adj_hdr)   == 1);
 iZ  = find(strcmp('DEPTH',adj_hdr)  == 1); 
@@ -588,14 +619,21 @@ if ~isempty(iPH) % pH data exists
         pres_tol = 100; % max lookup offset in meters
         ind      = [];
         disp('Calculating biased pH for CO2 calculation using CO2SYS')
+
         for i = 1:size(cycles,1)
             ind = [];
             tcycle  = adj_data(:,1) == cycles(i); % flag profile
             
             % get P, pH, pH25C for profile
-            tmp     = [adj_data(tcycle,[iP,iPH,iPH+1]), CANYON_PH25C(tcycle)]; 
-            tbad    = tmp(:,3) == 4;
-            tmp(tbad,:) = NaN; 
+            tmp     = [adj_data(tcycle,[iP,iPH,iPH+1]), CANYON_PH25C(tcycle)];
+            tbad    = tmp(:,3) == 4 | isnan(tmp(:,2));
+            tmp(tbad,:) = [];
+            
+            if isempty(tmp)
+                disp(['Could not calculate biased pH for cycle ', ...
+                    num2str(cycles(i)), 'no usable deep pH found']);
+                continue
+            end
             
             p1500   = abs(tmp(:,1) - 1500); 
             min1500 = min(p1500);
@@ -608,6 +646,7 @@ if ~isempty(iPH) % pH data exists
                     ind = find(p1000 == min1000,1);
                 end
             end
+            
             if ~isempty(ind)
                 pH_bias = 0.034529 * tmp(ind,4) - 0.26709;
                 BIAS_PH(tcycle) = adj_data(tcycle,iPH) - pH_bias;
@@ -616,6 +655,7 @@ if ~isempty(iPH) % pH data exists
                     num2str(cycles(i))]);
             end
         end
+        
         % SET OUT OF RANGE pH = NAN SO CO2SYS DOESN't BUG DOWN
         BIAS_PH(~tQC_PH) = NaN;
         
@@ -788,9 +828,9 @@ if ~isempty(iChl_raw) && exist(float_cal_path,'file')
         disp('Creating experimental gain & NPQ corrected data set ...')
         for i = 1: size(cycle_ct,1)
             if i == size(cycle_ct,1)
-                fprintf('%0.0f \r\n',i)
+                fprintf('%0.0f \r\n',cycle_ct(i))
             else
-                fprintf('%0.0f ',i)
+                fprintf('%0.0f ',cycle_ct(i))
             end
                 
             t1 = raw_data(:,iSTA) == cycle_ct(i);
@@ -1161,7 +1201,7 @@ end
 % ************************************************************************
 % ************************************************************************
 % QC ODV FILE
-ODV_adj(1,:)  = {'Pressure[dbar]'        '%0.2f' 'PRES' '' '' ''}; 
+ODV_adj(1,:)  = {'Pressure[dbar]'        '%0.2f' 'PRES_ADJUSTED' '' '' ''}; 
 ODV_adj(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP_ADJUSTED' '' '' ''};   
 ODV_adj(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL_ADJUSTED' '' '' ''};   
 ODV_adj(4,:)  = {'Sigma_theta[kg/m^3]'   '%0.3f' 'SIGMA_THETA' '' '' ''};
