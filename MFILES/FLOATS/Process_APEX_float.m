@@ -94,7 +94,26 @@ function tf_float = Process_APEX_float(MBARI_ID_str, dirs, update_str)
 %       flagging of good data as bad if pH data was processed from msg file
 %       while dura was present but incomplete.
 % 09/11/2018, TM changed calls to isbadsensor.m in support of adding QF='questionable' to bad sensor list capabilities.
-% 01/16/19, TM, replaced calls to phcalc_jp after transition to phcalc mfile used in Argo documentation.
+% 01/16/19, TM, replaced phcalc_jp.m with phcalc.m
+% 10/04/19, JP Added code to recheck _ADJ fill value flags for NO3 & pH
+%              gps rollover bug is causing bad end date & no adj data values
+%              oven though QC file exists. reset qc from 1 back to 99
+% 10/08/19, JP Changed logical test for flbbmode. Used to be 1 or 0. For float
+%               17534 flbbmode = 255
+% 10/31/19, JP added code to deal with gps week number rollover bug (float
+%       9634 for now) which adjusts the date if is determined to be bad
+% 02/11/20, JP added PRES QC, PRES_ADJUSTED & PRES_ADJUSTED_QC as variables
+%       to cacth bad pressure values as seen in 7593Hawaii cycle 32
+% 04/07/20, JP Updated NO3 & pH QC flag assignment. Using a flag matix now.
+%     find the max flag in each row for non fill value samples. This will not
+%     work for CHL wherea 5 may be entered in the NPQ zone
+%04/10/20, JP improvedQC lagging for pH incase dura diagnostics not there
+%    or diagnostic data fails the file size test( i.e. 12884)
+%6/11/20 TM - added the ".*1e9" to this line.  It was lacking in Josh's update from 4/7/20 
+%    and causing erroneous flagging for certain cases, ie float 9634 surface samples of cycles 67 and 97.
+%    However, this has pointed to the need to re-evaluate this code, and make it cleaner and more modular.  So, additional 
+%    changes to how the flagging is handled may be forthcoming.
+
 % ************************************************************************
 
 % *** FOR TESTING ***
@@ -104,6 +123,17 @@ function tf_float = Process_APEX_float(MBARI_ID_str, dirs, update_str)
 % MBARI_ID_str = '9095SOOCN';
 % MBARI_ID_str = '7647CALCURRENT';
 % MBARI_ID_str = '9660SOOCN';
+% MBARI_ID_str = '9634SOOCN';
+%MBARI_ID_str = '17534EqPacE';
+% MBARI_ID_str = '9634SOOCN';
+% MBARI_ID_str = '7593Hawaii';
+% MBARI_ID_str = '17898SOOCN';
+ %MBARI_ID_str = '12888SOOCN';
+%   MBARI_ID_str = '17267HOT';
+% MBARI_ID_str = '9632SOOCN';
+% MBARI_ID_str = '12543SOOCN';
+% MBARI_ID_str = '12559SOOCN';
+% MBARI_ID_str = '12884SOOCN';
 % update_str = 'all';
 % dirs =[];
 
@@ -183,6 +213,7 @@ fv.bio = 99999;
 fv.QC  = 99;
 
 % VALID BIO ARGO RANGE CHECKS - RAW DATA [MIN MAX]
+RCR.P     = [0 12000];
 RCR.S     = [26 38]; % from argo parameter list
 RCR.T     = [-2.5 40]; % from argo parameter list
 RCR.O     = [-5 550]; % from argo parameter list
@@ -199,6 +230,7 @@ RCR.IB   = [-100 100]; % Range check on pH Ib, nano amps
 RCR.IK   = [-100 100]; % Range check on pH Ik, nano amps
 
 % VALID BIO ARGO RANGE CHECKS - QC DATA [MIN MAX]
+RC.P     = [0 12000];
 RC.S     = [26 38]; % from argo parameter list
 RC.T     = [-2.5 40]; % from argo parameter list
 RC.O     = [-5 550]; % from argo parameter list
@@ -268,7 +300,8 @@ QC = get_QC_adjustments(cal.info.name, dirs);
 % ONLY WANT NEW OR MISSING CASTS IN THE COPY LIST
 % YOU MUST DELETE A MAT FILE TO REDO IF IT IS PARTIAL FOR A GIVEN CAST
 % ************************************************************************
-[last_cast, missing_casts] = get_last_cast(dirs.mat,cal.info.WMO_ID);
+[last_cast, missing_casts, first_sdn] = get_last_cast(dirs.mat,cal.info.WMO_ID);
+%[last_cast, missing_casts] = get_last_cast(dirs.mat,cal.info.WMO_ID);
 if isempty(last_cast)
     last_cast = 0; % set low for logic tests later
 end
@@ -293,7 +326,7 @@ end
 % CREATE ANONYMOUS FONCTION TO TEST FOR FILE AGE LESS THEN 4 HOURS OLD
 % REMOVE THESE FILES FROM LIST
 age_test = @(x) x > (now-4/24);
-%age_test = @(x) x > (now);
+% age_test = @(x) x > (now);
 
 % if strcmp(MBARI_ID_str,'12701SOOCN')==1
 %     if ~isempty(mlist) && ~isempty(mlist.reg_list)
@@ -538,6 +571,7 @@ if rr > 0
                 datestr(mdir(m_ct).datenum,'mm/dd/yy HH:MM'), ...
                 mdir(m_ct).bytes/1000);
             new_msgs{ct} = str;
+            tf_float.status = 1;
         end
     end
     tf_float.new_messages = new_msgs(1:ct); % list of new msgs from float
@@ -583,6 +617,7 @@ for msg_ct = 1:size(msg_list,1)
             tf_float.bad_messages = [tf_float.bad_messages; ...
                 tf_float.new_messages(t1)];
             tf_float.new_messages(t1) =[];
+            tf_float.status = 0;
         end
     end
     
@@ -593,7 +628,10 @@ for msg_ct = 1:size(msg_list,1)
     %otherwise, end processing for this cycle (but if msg file is > 20 days old, and still no isus or dura, then process as usual)
 %     timediff = 50; % for manual processing override.
     %disp(['MBARI_ID_str ===>  ',MBARI_ID_str])
-    if (strcmp(MBARI_ID_str,'6091SOOCN')==1) || (strcmp(MBARI_ID_str,'0569SOOCN')==1) || (strcmp(MBARI_ID_str,'7622HAWAII')==1) %these 3 will never have .isus files
+    if (strcmp(MBARI_ID_str,'6091SOOCN')==1) || ...
+            (strcmp(MBARI_ID_str,'0569SOOCN')==1) || ...
+            (strcmp(MBARI_ID_str,'7622HAWAII')==1) || ...
+            (strcmp(MBARI_ID_str,'18340CalCurrent')==1)%these 4 will never have .isus files
     else
         if (exist([dirs.temp, NO3_file],'file')==0 && isfield(cal,'N') && ...
                 timediff<=20) || (exist([dirs.temp, pH_file],'file')==0 && ...
@@ -634,11 +672,30 @@ for msg_ct = 1:size(msg_list,1)
     INFO.CTDtype  = d.CTDtype;
     INFO.CTDsn    = d.CTDsn;
     INFO.FlbbMode = d.FlbbMode;
-    if INFO.FlbbMode == 1
+    if isfinite(INFO.FlbbMode)  && INFO.FlbbMode >0 
         master_FLBB = 1;
     end
     
     INFO.sdn      = d.sdn;
+    
+    
+    % CHECK FOR BAD GPS TIME 10/30/19 -jp
+    % WE ARE GETTING TIME FROM PROFILE TERMINATION TIME NOT GPS FIX TIME!!!
+    if ~isempty(first_sdn) && ~isempty(INFO.sdn)  
+        if INFO.sdn > first_sdn + 365*20 && dvec(1) == 2099 % 20 yrs from start?
+            disp(['GPS time for this profile is > 20 years past start ', ...
+                '- gps week day number bug?!!'])
+            dvec = datevec(INFO.sdn);
+            dvec(1)  = 1999; % per aoml suggestion don't quite understand jump to 2099
+            INFO.sdn = datenum(dvec) + 1024*7;
+        elseif INFO.sdn < first_sdn % bad gps time fix 10/30/19
+            disp('GPS time for this profile is unreasonable - gps week day number bug!!')
+            disp(['days since first profile = ',num2str((INFO.sdn - ...
+                first_sdn),'%0.0f')]);
+            INFO.sdn = INFO.sdn + 1024*7;
+        end
+    end
+
     INFO.cast     = d.cast;
     INFO.gps      = d.gps;
     
@@ -714,6 +771,10 @@ for msg_ct = 1:size(msg_list,1)
     % MAKE AN ARRAY OF ZEROS FOR FILLING ARRAYS LATER
     fill0  = ones(size(LR.PRES))* 0;
     
+    LR.PRES_QC          = fill0 + fv.QC;
+    LR.PRES_ADJUSTED    = LR.PRES;
+    LR.PRES_ADJUSTED_QC = fill0 + fv.QC;
+
     LR.PSAL             = lr_d(:,iS);
     LR.PSAL_QC          = fill0 + fv.QC;
     LR.PSAL_ADJUSTED    = LR.PSAL;
@@ -723,6 +784,14 @@ for msg_ct = 1:size(msg_list,1)
     LR.TEMP_QC          = fill0 + fv.QC;
     LR.TEMP_ADJUSTED    = LR.TEMP;
     LR.TEMP_ADJUSTED_QC = fill0 + fv.QC;
+    
+    % CHECK FOR BAD PRESS VALUES
+    LRQF_P = LR.PRES < RCR.P(1) | LR.PRES > RCR.P(2);
+    LR.PRES_QC(LRQF_P)  = 4;  % BAD
+    LR.PRES_QC(~LRQF_P & LR.PRES ~= fv.bio) = 1; % GOOD    
+    
+    LR.PRES_ADJUSTED_QC(LRQF_P)  = 4;  % BAD
+    LR.PRES_ADJUSTED_QC(~LRQF_P & LR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD     
     
     % FIND BAD SALINITY & TEMP QF BECAUSE BAD S PERCOLATES TO
     % O, N and pH, density
@@ -814,7 +883,7 @@ for msg_ct = 1:size(msg_list,1)
 %             LR.DOXY_ADJUSTED(~t_nan)  = LR.DOXY(~t_nan) .* QC.O.steps(1,3);
             QCD = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), LR.DOXY(~t_nan)];
             LR.DOXY_ADJUSTED(~t_nan) = ...
-                apply_QC_corr(QCD, d.sdn, QC.O);
+                apply_QC_corr(QCD, INFO.sdn, QC.O);
             tDOXY_ADJ = abs(LR.DOXY_ADJUSTED) > crazy_val & ~t_nan; % Unrealistic bad value
             LR.DOXY_ADJUSTED(tDOXY_ADJ) = crazy_val; % SET TO crazy bad value
             LR.DOXY_ADJUSTED_QC(~t_nan) = 1; % set=1 9/27/16 vs 2 = probably good
@@ -830,7 +899,7 @@ for msg_ct = 1:size(msg_list,1)
             else
                 O2_cal_str = 'Polynomial calibration coeficients were used. ';
             end
-            if ~isempty(d.air);
+            if ~isempty(d.air)
                 INFO.DOXY_SCI_CAL_COM  = [O2_cal_str,'G determined from ',...
                     'float  measurements in air. See Johnson et al.,2015,', ...
                     'doi:10.1175/JTECH-D-15-0101.1'];
@@ -867,7 +936,8 @@ for msg_ct = 1:size(msg_list,1)
         % DO SOME FINAL CHECK ON VALUES, IF BAD SET QF = 4
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'O');
         t_bio = LR.DOXY ~= fv.bio; % Non fill value samples
-        tST   = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect O2
+        %tST   = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect O2
+        tST   = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4; % Bad S or T will affect O2
         t_chk = LR.DOXY < RCR.O(1)| LR.DOXY > RCR.O(2); % range check
         t_chk = t_chk | O2_chk | tST; % BAD O2 T or phase
         
@@ -898,7 +968,9 @@ for msg_ct = 1:size(msg_list,1)
         
         if isfield(QC,'O')
             t_bio = LR.DOXY_ADJUSTED ~= fv.bio;
-            tST   = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect O2
+            %tST   = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect O2
+            tST   = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 ...
+                | LR.PRES_ADJUSTED_QC == 4;
             t_chk = LR.DOXY_ADJUSTED < RC.O(1)| ...
                 LR.DOXY_ADJUSTED > RC.O(2) | O2_chk;
             t_chk = (t_chk | tST) & t_bio;
@@ -941,7 +1013,13 @@ for msg_ct = 1:size(msg_list,1)
         % ****************************************************************
     % CALCULATE CHLOROPHYLL CONCENTRATION (µg/L or mg/m^3)
     % ****************************************************************
-    if ~isempty(iChl) && master_FLBB ~= 0
+    if (~isempty(iChl) && master_FLBB ~= 0) || (~isempty(iChl) && (strcmp(MBARI_ID_str,'12542SOOCN')==1))
+        % 5/11/20, add exception for 12542, flbb dying and sampling turned
+        % off by Dana Swift on cycle 117.  But, still need to create BR file
+        % fields as this float has an flbb sensor so these variables should
+        % be present.  Not sure why master_FLBB variable part of the
+        % statement, seems having just ~istempty(iChl) would suffice?  Add
+        % special case for this float for now.
         %disp(INFO.FlbbMode)
         % Predim variables with fill values then adjust as needed
         LR.FLUORESCENCE_CHLA    = fill0 + fv.bio;
@@ -1060,7 +1138,8 @@ for msg_ct = 1:size(msg_list,1)
     % SCATTERING FUNCTION (VSF) (m^-1)
     % APEX FLBB
     % ****************************************************************
-    if ~isempty(iBb) && master_FLBB ~= 0
+    if (~isempty(iBb) && master_FLBB ~= 0) || (~isempty(iBb) && (strcmp(MBARI_ID_str,'12542SOOCN')==1))
+        %     if ~isempty(iBb) && master_FLBB ~= 0
         VSF                          = fill0 + fv.bio;
         BETA_SW                      = fill0 + fv.bio;
         LR.BETA_BACKSCATTERING700    = fill0 + fv.bio;
@@ -1109,7 +1188,7 @@ for msg_ct = 1:size(msg_list,1)
             if isfield(QC,'BB')
                 QCD = [LR.PRES, LR.TEMP, LR.PSAL, LR.BBP700];
                 LR.BBP700_ADJUSTED(~t_nan) = ...
-                    apply_QC_corr(QCD(~t_nan,:), d.sdn, QC.BB);
+                    apply_QC_corr(QCD(~t_nan,:), INFO.sdn, QC.BB);
                 LR.BBP700_ADJUSTED_QC(~t_nan) =  2;
                 LR.BBP700_ADJUSTED_ERROR(~t_nan) = fv.bio; % PLACE HOLDER FOR NOW
                 INFO.BBP700_SCI_CAL_EQU  = 'BBP700_ADJUSTED=BBP700*A-B';
@@ -1250,7 +1329,7 @@ for msg_ct = 1:size(msg_list,1)
         else 
             ph_filesize = 0;
         end
-        if isempty(dura.data) || ph_filesize< 10000 % usually > 10 Kb for full profile
+        if (isempty(dura.data) || ph_filesize< 10000) % usually > 10 Kb for full profile
             disp(['Not enough pH data returned for ',pH_file])
         else
             pH_data = dura.data;
@@ -1297,7 +1376,7 @@ for msg_ct = 1:size(msg_list,1)
         if isfield(cal,'pH') && isfield(QC,'pH')
             QCD = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), phtot];
             LR.PH_IN_SITU_TOTAL_ADJUSTED(~t_nan) = ...
-                apply_QC_corr(QCD, d.sdn, QC.pH);
+                apply_QC_corr(QCD, INFO.sdn, QC.pH);
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_nan) = 1; % set=1 9/27/16 vs
             LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~t_nan) = 0.01;
             
@@ -1310,8 +1389,8 @@ for msg_ct = 1:size(msg_list,1)
                 'interfernece in CP mode,OFFSET(S) and DRIFT(S) from ',...
                 'climatology comparisons at 1000m or 1500m,','TCOR=', ...
                 '(2+273.15)./(T+273.15)'];
-            INFO.PH_SCI_CAL_COM  =['Contact Ken Johnson ',...
-                '(johnson@mbari.org) or Josh Plant (jplant@mbari.org) ',...
+            INFO.PH_SCI_CAL_COM  =['Contact Tanya Maurer ',...
+                '(tmaurer@mbari.org) or Josh Plant (jplant@mbari.org) ',...
                 'for more information'];
             
             % TEMPORARY ADJUSTED pH FIX 08/02/2016
@@ -1344,68 +1423,124 @@ for msg_ct = 1:size(msg_list,1)
             end    
         end
         
-        % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-        % RAW DATA
-        tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect pH
-        t_bio   = LR.PH_IN_SITU_TOTAL ~= fv.bio;        
+%         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
+%         % RAW DATA
+%         %tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect pH
+%         tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4; 
+%         t_bio   = LR.PH_IN_SITU_TOTAL ~= fv.bio;        
+%         
+%         t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
+%                  LR.PH_IN_SITU_TOTAL > RCR.PH(2) | tST); % RANGE
+%         t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
+%             & (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2) | ...
+%             IK < RCR.IK(1) | IK > RCR.IK(2)); % DIAGNOSTIC
+%         %t_chk3 = t_bio & (LRQF_S | LRQF_T);
+%         t_chk4 = LR.VRS_PH ~= fv.bio &  (LR.VRS_PH < RCR.PHV(1) | ...
+%             LR.VRS_PH > RCR.PHV(2));
+%         t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio  ...
+%             & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
+%             IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
+% 
+%         %LR.PH_IN_SITU_TOTAL_QC(t_chk1 | t_chk2 | t_chk3) = 4;
+%         LR.PH_IN_SITU_TOTAL_QC(t_chk2) = 3; % set pH with out of range Ik/Ib to questionable, unless pH is also out of range (then set to bad)
+%         LR.PH_IN_SITU_TOTAL_QC(t_chk5) = 4;
+% 		LR.PH_IN_SITU_TOTAL_QC(t_chk1) = 4;
+%         LR.VRS_PH_QC(t_chk4) = 4;
+%         LR.IB_PH_QC(t_chk2)  = 3;
+%         LR.IB_PH_QC(t_chk5)  = 4;        
+%         
+% 		[BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
+%         LR.VRS_PH_QC(t_bio) = LR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+%         LR.IB_PH_QC(t_bio)  = LR.IB_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+%         LR.PH_IN_SITU_FREE_QC(t_bio) = LR.PH_IN_SITU_FREE_QC(t_bio) ...
+%             * ~BSLflag + BSLflag*theflag;
+%         LR.PH_IN_SITU_TOTAL_QC(t_bio) = LR.PH_IN_SITU_TOTAL_QC(t_bio) ...
+%             * ~BSLflag + BSLflag*theflag;
         
-        t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
-                 LR.PH_IN_SITU_TOTAL > RCR.PH(2) | tST); % RANGE
-        t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
-            & (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2) | ...
-            IK < RCR.IK(1) | IK > RCR.IK(2)); % DIAGNOSTIC
-        %t_chk3 = t_bio & (LRQF_S | LRQF_T);
-        t_chk4 = LR.VRS_PH ~= fv.bio &  (LR.VRS_PH < RCR.PHV(1) | ...
-            LR.VRS_PH > RCR.PHV(2));
-        t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio  ...
-            & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
-            IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
+       
+        % DO A FINAL QC CHECK
+        % 04/07/2020 JP - Now that the BSL flag can be 3 or 4 it has the
+        % potential to overwrite a 4 with a 3 so don't let this happen
+        t_bio = LR.PH_IN_SITU_TOTAL ~= fv.bio;
+        t_diag = LR.IB_PH ~= fv.bio.*1e9; % need this incase no diagnostic data, 0 if no data.  %6/11/20 TM - added the ".*1e9" to this line.  It was lacking in Josh's update from 4/7/20 and causing erroneous flagging for certain cases, ie float 9634 surface samples of cycles 67 and 97.
+        [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
+        tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
+        tSTP  = (LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4)*4; % Bad STP will affect nitrate
+        tRC   = (LR.PH_IN_SITU_TOTAL < RCR.PH(1)|LR.PH_IN_SITU_TOTAL > RCR.PH(2))*4; % Range check
+        tVRS  = (LR.VRS_PH < RCR.PHV(1) | LR.VRS_PH > RCR.PHV(2))*4;
+        tIB3  = (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2)).*t_diag*3; % DIAGNOSTIC
+        tIK3  = (IK < RCR.IK(1) | IK > RCR.IK(2)).*t_diag*3; % DIAGNOSTIC
+        tIB4  = (LR.IB_PH < RCR.IB(1)*25 | LR.IB_PH > RCR.IB(2)*25).*t_diag*4; % DIAGNOSTIC
+        tIK4  = (IK < RCR.IK(1)*25 | IK > RCR.IK(2)*25).*t_diag*4; % DIAGNOSTIC
+        
+        tALL  = max([LR.PH_IN_SITU_TOTAL_QC, tBSL, tSTP, tRC, ...
+            tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
+        LR.PH_IN_SITU_TOTAL_QC(t_bio) = tALL(t_bio);
+        LR.PH_IN_SITU_FREE_QC(t_bio)  = tALL(t_bio);
+        
+        tALL  = max([LR.VRS_PH_QC, tBSL, tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag           
+        LR.VRS_PH_QC(t_bio) = tALL(t_bio);
 
-        %LR.PH_IN_SITU_TOTAL_QC(t_chk1 | t_chk2 | t_chk3) = 4;
-        LR.PH_IN_SITU_TOTAL_QC(t_chk2) = 3; % set pH with out of range Ik/Ib to questionable, unless pH is also out of range (then set to bad)
-        LR.PH_IN_SITU_TOTAL_QC(t_chk5) = 4;
-		LR.PH_IN_SITU_TOTAL_QC(t_chk1) = 4;
-        LR.VRS_PH_QC(t_chk4) = 4;
-        LR.IB_PH_QC(t_chk2)  = 3;
-        LR.IB_PH_QC(t_chk5)  = 4;
-        
-		[BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
-        LR.VRS_PH_QC(t_bio) = LR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-        LR.IB_PH_QC(t_bio)  = LR.IB_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-        LR.PH_IN_SITU_FREE_QC(t_bio) = LR.PH_IN_SITU_FREE_QC(t_bio) ...
-            * ~BSLflag + BSLflag*theflag;
-        LR.PH_IN_SITU_TOTAL_QC(t_bio) = LR.PH_IN_SITU_TOTAL_QC(t_bio) ...
-            * ~BSLflag + BSLflag*theflag;
+        tALL  = max([LR.IB_PH_QC, tBSL, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag       
+        LR.IB_PH_QC(t_bio)  = tALL(t_bio);
+
+       
 		
-        % ADJUSTED DATA
-        t_bio = LR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
-        tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
+%         % *****   ADJUSTED DATA   *****
+%         t_bio = LR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
+%         %tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
+%         tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 |...
+%                   LR.PRES_ADJUSTED_QC == 4; 
+%         
+%         t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
+%             LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST); 
+%         t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio & ...
+%             (LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2) | ...
+%             IK < RC.IK(1) | IK > RC.IK(2));
+%         %t_chk3 = t_bio & (LRQF_S | LRQF_T);
+%         t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
+%             & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
+%             IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
+%         
+%         %LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk1 | t_chk2 |t_chk3) = 4;
+%         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk2) = 3;  % set pH with out of range Ik/Ib to questionable, unless pH is also out of range (then set to bad)
+% 		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk5) = 4;
+%         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk1) = 4;
+% 		
+% 		% double check fill value QC flags - 9634 returns fv's from
+% 		qc_adjustmet   
+% 		% due to bad gps date bug - jp 10/04/19
+% 		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_bio)  = fv.QC;
+%  
+% 		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) =  ...
+%             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         
-        t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
-            LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST); 
-        t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio & ...
-            (LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2) | ...
-            IK < RC.IK(1) | IK > RC.IK(2));
-        %t_chk3 = t_bio & (LRQF_S | LRQF_T);
-        t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
-            & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
-            IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
         
-        %LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk1 | t_chk2 |t_chk3) = 4;
-        LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk2) = 3;  % set pH with out of range Ik/Ib to questionable, unless pH is also out of range (then set to bad)
-		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk5) = 4;
-        LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk1) = 4;
- 
-		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) =  ...
-            LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        % 04/07/2020 JP - Now that the BSL flag can be 3 or 4 it has the
+        % potential to overwrite a 4 with a 3 so don't let this happen
+        t_bio = LR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;  
+        tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
+        tSTP  = (LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | ....
+                LR.PRES_ADJUSTED_QC == 4)*4; % Bad STP will affect nitrate
+        tRC   = (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1) | ...
+                LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2))*4; % Range check
+        tVRS  = (LR.VRS_PH < RC.PHV(1) | LR.VRS_PH > RC.PHV(2))*4;
+
+        % double check fill value QC flags - 9634 returns fv's from qc_adjustmet
+		% due to bad gps date bug - jp 10/04/19
+        LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_bio)  = fv.QC;
+        
+         tALL  = max([LR.PH_IN_SITU_TOTAL_ADJUSTED_QC, tBSL, tSTP, tRC, ...
+                 tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
+        LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) = tALL(t_bio);               
 			
         if ~isempty(dura.data) && ph_filesize> 10000 && ... % usually > 10000 bytes for full profile...
-                any(LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2)) ;
+                any(LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2))
             disp([pH_file,' has out of range pH Ib values. pH ', ...
                 'QF''s for these samples will be set to bad or questionable'])
         end
         if ~isempty(dura.data) && ph_filesize> 10000 && ... % usually > 10000 bytes for full profile...
-                any(IK < RC.IK(1) | IK > RC.IK(2)) ;
+                any(IK < RC.IK(1) | IK > RC.IK(2))
             disp([pH_file,' has out of range pH Ik values. pH ', ...
                 'QF''s for these samples will be set to bad or questionable'])
         end
@@ -1566,7 +1701,7 @@ for msg_ct = 1:size(msg_list,1)
                 QCD = [LR.PRES, LR.TEMP, LR.PSAL,NO3_p0_kg];
                 LR.NITRATE_ADJUSTED = fill0 + fv.bio;
                 LR.NITRATE_ADJUSTED(~t_nan) = ...
-                    apply_QC_corr(QCD(~t_nan,:), d.sdn, QC.N);
+                    apply_QC_corr(QCD(~t_nan,:), INFO.sdn, QC.N);
                 
                 LR.NITRATE_ADJUSTED_QC = fill0 + 1; % set=1 9/27/16
                 LR.NITRATE_ADJUSTED_QC(t_nan) = fv.QC; % nan's to fill value
@@ -1581,6 +1716,7 @@ for msg_ct = 1:size(msg_list,1)
                 LR.NITRATE_ADJUSTED_ERROR = (abs(LR.NITRATE - ...
                     LR.NITRATE_ADJUSTED)) * 0.1 + 0.5;
                 LR.NITRATE_ADJUSTED_ERROR(t_nan) = fv.bio;
+               
                 
                 INFO.NITRATE_SCI_CAL_EQU  = ['NITRATE_ADJUSTED=', ...
                     '[NITRATE-SUM(OFFSET(S)+DRIFT(S))]/GAIN'];
@@ -1588,37 +1724,69 @@ for msg_ct = 1:size(msg_list,1)
                     'from climatology comparisons at 1000m or 1500m. GAIN ',...
                     'from surface/deep comparison where surface values ',...
                     'are known'];
-                INFO.NITRATE_SCI_CAL_COM  =['Contact Ken Johnson ',...
-                    '(johnson@mbari.org) or Josh Plant (jplant@mbari.org) ',...
+                INFO.NITRATE_SCI_CAL_COM  =['Contact Tanya Maurer ',...
+                    '(tmaurer@mbari.org) or Josh Plant (jplant@mbari.org) ',...
                     'for more information'];
             end
             clear QCD UV_INTEN
         end
         
-        % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-        % RAW
+%         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
+%         % RAW
+%         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'N');
+%         t_bio   = LR.NITRATE ~= fv.bio;
+%         %tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect nitrate
+%         tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4; % Bad STP will affect nitrate
+%         LR.NITRATE_QC(t_bio) = LR.NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+%         LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) = ...
+%             LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+%         
+%         t_chk1 = t_bio &(LR.NITRATE < RCR.NO3(1)| LR.NITRATE > RCR.NO3(2)); % RANGE
+%         t_chk2 = t_bio & tST; % SALT
+%         LR.NITRATE_QC(t_chk1 | t_chk2) = 4;
+%         LR.UV_INTENSITY_DARK_NITRATE_QC(t_chk1)  = 4;
+        
+        % DO A FINAL RANGE CHECK BASED ON BSL & OTHER DEPENDANT PARAMETERS
+        % MODIFIED 04/07/2020 BY JP BECAUSE BSL FLAG OF 3 COULD OVERWRITE A 4
+        t_bio = LR.NITRATE ~= fv.bio; % non fill values
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'N');
-        t_bio   = LR.NITRATE ~= fv.bio;
-        tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect nitrate
-        LR.NITRATE_QC(t_bio) = LR.NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-        LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) = ...
-            LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
+        tSTP  = (LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4)*4; % Bad STP will affect nitrate
+        tRC   = (LR.NITRATE < RCR.NO3(1)| LR.NITRATE > RCR.NO3(2))*4; % RAnge check
         
-        t_chk1 = t_bio &(LR.NITRATE < RCR.NO3(1)| LR.NITRATE > RCR.NO3(2)); % RANGE
-        t_chk2 = t_bio & tST; % SALT
-        LR.NITRATE_QC(t_chk1 | t_chk2) = 4;
-        LR.UV_INTENSITY_DARK_NITRATE_QC(t_chk1)  = 4;
+        tALL  = max([LR.NITRATE_QC, tBSL, tSTP, tRC],[],2); % get highest flag
+        LR.NITRATE_QC(t_bio) = tALL(t_bio);
         
-        % ADJUSTED
-        t_bio   = LR.NITRATE_ADJUSTED ~= fv.bio;
-        tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect nitrate
-        LR.NITRATE_ADJUSTED_QC(t_bio) = LR.NITRATE_ADJUSTED_QC(t_bio) ...
-            * ~BSLflag + BSLflag*theflag;
+        tALL  = max([LR.UV_INTENSITY_DARK_NITRATE_QC, tBSL, tRC],[],2); % get highest flag
+        LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) = tALL(t_bio);
         
-        t_chk1 = t_bio & (LR.NITRATE_ADJUSTED < RC.NO3(1)| ...
-                 LR.NITRATE_ADJUSTED > RC.NO3(2));
-        t_chk2 = t_bio & tST;
-        LR.NITRATE_ADJUSTED_QC(t_chk1 | t_chk2) = 4;
+        
+        
+        % *****  ADJUSTED  *****
+%         t_bio   = LR.NITRATE_ADJUSTED ~= fv.bio;
+%         %tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect nitrate
+%         tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | ...
+%                   LR.PRES_ADJUSTED_QC == 4;         
+%         LR.NITRATE_ADJUSTED_QC(t_bio) = LR.NITRATE_ADJUSTED_QC(t_bio) ...
+%             * ~BSLflag + BSLflag*theflag;
+%         
+%         t_chk1 = t_bio & (LR.NITRATE_ADJUSTED < RC.NO3(1)| ...
+%                  LR.NITRATE_ADJUSTED > RC.NO3(2));
+%         t_chk2 = t_bio & tST;
+%         LR.NITRATE_ADJUSTED_QC(t_chk1 | t_chk2) = 4;
+        
+        t_bio = LR.NITRATE_ADJUSTED ~= fv.bio;
+        tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
+        tSTP  = (LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | ...
+                  LR.PRES_ADJUSTED_QC == 4)*4; 
+        tRC   = (LR.NITRATE_ADJUSTED < RC.NO3(1)| LR.NITRATE_ADJUSTED > RC.NO3(2))*4;
+        
+        tALL  = max([LR.NITRATE_ADJUSTED_QC, tBSL, tSTP, tRC],[],2); % get highest flag
+        LR.NITRATE_ADJUSTED_QC(t_bio) = tALL(t_bio);
+              
+        % double check fill value QC flags - 9634 returns fv's from qc_adjustmet
+        % due to bad gps date bug - jp 10/04/19
+        LR.NITRATE_ADJUSTED_QC(~t_bio)  = fv.QC;
         
 % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
         % DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
@@ -1788,6 +1956,7 @@ for msg_ct = 1:size(msg_list,1)
         disp(['No high res data in message file for ', ...
             strtrim(msg_list(msg_ct,:))])
         HR.PRES = [];
+		HR.PRES_ADJUSTED = [];
         HR.PSAL = [];
         HR.PSAL_ADJUSTED = [];
         HR.TEMP = [];
@@ -1805,6 +1974,7 @@ for msg_ct = 1:size(msg_list,1)
             iBIN   = find(strcmp('nbin ctd', d.hr_hdr) == 1); % CTD S
         end
         HR.PRES = hr_d(:,iPP);
+        HR.PRES_ADJUSTED = HR.PRES;
         HR.PSAL = hr_d(:,iSS);
         HR.PSAL_ADJUSTED = HR.PSAL; % NO CORRECTIONS DONE FOR S OR T
         HR.TEMP = hr_d(:,iTT);
@@ -1815,7 +1985,15 @@ for msg_ct = 1:size(msg_list,1)
         HR.PSAL_ADJUSTED_QC = HR.PSAL_QC;
         HR.TEMP_QC = HR.PSAL_QC;
         HR.TEMP_ADJUSTED_QC = HR.PSAL_QC;
+        HR.PRES_QC = HR.PSAL_QC;
+        HR.PRES_ADJUSTED_QC = HR.PSAL_QC;
         
+        HRQF_P  = HR.PRES < RC.P(1) | HR.PRES > RC.P(2); % BAD HR S
+        t_bio  = HR.PRES ~= fv.bio;
+        HR.PRES_QC(HRQF_P)  = 4;  % BAD
+        HR.PRES_QC(~HRQF_P & HR.PRES ~= fv.bio) = 1; % GOOD
+        HR.PRES_ADJUSTED_QC(HRQF_P)  = 4;  % BAD
+        HR.PRES_ADJUSTED_QC(~HRQF_P & HR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD
         
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
         HRQF_S  = HR.PSAL < RC.S(1) | HR.PSAL > RC.S(2); % BAD HR S
@@ -1952,7 +2130,7 @@ for msg_ct = 1:size(msg_list,1)
     %-----------------------------------------------------------
     % Add LR.parameter_DATA_MODE for each parameter.  12/21/17
 
-%     cycdate = d.sdn;
+%     cycdate = INFO.sdn;
     cycdate = datenum(timestamps); %use date when file came in, not internal cycle date
 
     % OXYGEN
@@ -2079,9 +2257,8 @@ end
     if ~isempty(ls([dirs.temp,'*.dura']))
         delete([dirs.temp,'*.dura']);
     end
-    tf_float.status = 1;
+%     tf_float.status = 1;
 %end
-
 
 
 

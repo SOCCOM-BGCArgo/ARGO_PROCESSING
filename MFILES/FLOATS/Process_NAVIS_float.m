@@ -113,8 +113,14 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 % MBARI_ID_str = '0412HAWAII';
 % MBARI_ID_str = '0037SOOCN';
 % MBARI_ID_str = '0568SOOCN';
+% MBARI_ID_str = '0566SOOCN';
+% MBARI_ID_str = '0569SOOCN';
+% MBARI_ID_str = '0412HAWAII';
+% MBARI_ID_str = '0949STNP';
+% MBARI_ID_str = '0566SOOCN';
 % update_str = 'all';
 % dirs =[];
+
 % ************************************************************************
 % SET FORMATS, DEFAULT DIRS, PREDIMENSION STRUCTURE, BOOKKEEPING
 % ************************************************************************
@@ -187,6 +193,7 @@ fv.bio = 99999;
 fv.QC  = 99;
 
 % VALID BIO ARGO RANGE CHECKS - RAW DATA [MIN MAX]
+RCR.P     = [0 12000];
 RCR.S     = [26 38]; % from argo parameter list
 RCR.T     = [-2.5 40]; % from argo parameter list
 RCR.O     = [-5 550]; % from argo parameter list
@@ -204,6 +211,7 @@ RCR.IB   = [-100 100]; % Range check on pH Ib, nano amps
 RCR.IK   = [-100 100]; % Range check on pH Ik, nano amps
 
 % VALID BIO ARGO RANGE CHECKS - QC DATA [MIN MAX]
+RC.P     = [0 12000];
 RC.S     = [26 38]; % from argo parameter list
 RC.T     = [-2.5 40]; % from argo parameter list
 RC.O     = [-5 550]; % from argo parameter list
@@ -273,11 +281,13 @@ QC = get_QC_adjustments(cal.info.name, dirs);
 % ONLY WANT NEW OR MISSING CASTS IN THE COPY LIST
 % YOU MUST DELETE A MAT FILE TO REDO IF IT IS PARTIAL FOR A GIVEN CAST
 % ************************************************************************
-[last_cast, missing_casts] = get_last_cast(dirs.mat,cal.info.WMO_ID);
+[last_cast, missing_casts, first_sdn] = get_last_cast(dirs.mat,cal.info.WMO_ID);
+%[last_cast, missing_casts] = get_last_cast(dirs.mat,cal.info.WMO_ID);
 if isempty(last_cast)
     last_cast = 0; % set low for logic tests later
 end
 
+% GET FILE LISTS
 mlist = get_msg_list(MBARI_ID_str,dirs,'msg');  % message file list
 ilist = get_msg_list(MBARI_ID_str,dirs,'isus'); % isus file list
 
@@ -585,6 +595,7 @@ end
     [r_lr, c_lr] = size(lr_d);   % low res data dimmensions
     [r_hr, c_hr] = size(hr_d); % high res data dimmensions
     
+    
     % if nitrate add col to high res data
     if r_hr > 0 && sum(strcmp('no3', d.lr_hdr)) == 1
         hr_d = [hr_d(:,1:3), hr_d(:,1)*NaN, hr_d(:,4:c_hr)];
@@ -643,6 +654,9 @@ end
     
     % P, T, S
     LR.PRES  = lr_d(:,iP);
+	LR.PRES_QC          = fill0 + fv.QC;
+    LR.PRES_ADJUSTED    = LR.PRES;
+    LR.PRES_ADJUSTED_QC = fill0 + fv.QC;
     
     LR.PSAL             = lr_d(:,iS);
     LR.PSAL_QC          = fill0 + fv.QC;
@@ -654,6 +668,13 @@ end
     LR.TEMP_ADJUSTED    = LR.TEMP;
     LR.TEMP_ADJUSTED_QC = fill0 + fv.QC;
     
+    % CHECK FOR BAD PRESS VALUES
+    LRQF_P = LR.PRES < RCR.P(1) | LR.PRES > RCR.P(2);
+    LR.PRES_QC(LRQF_P)  = 4;  % BAD
+    LR.PRES_QC(~LRQF_P & LR.PRES ~= fv.bio) = 1; % GOOD    
+    
+    LR.PRES_ADJUSTED_QC(LRQF_P)  = 4;  % BAD
+    LR.PRES_ADJUSTED_QC(~LRQF_P & LR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD     
     % ADD SALINITY & TEMP QF BECAUSE BAD S PERCOLATES TO 
     % O, N and pH, density
     [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
@@ -684,16 +705,30 @@ end
     % HIGH RES DATA
     if r_hr > 0
         HR.PRES = hr_d(:,iP);
+		HR.PRES_ADJUSTED = HR.PRES;
         
         HR.PSAL = hr_d(:,iS);
         HR.PSAL_ADJUSTED = HR.PSAL;
         HR.TEMP = hr_d(:,iT);
         HR.TEMP_ADJUSTED = HR.TEMP;
-        
+		
+
+        HR.PRES_QC = fill0_hr + fv.QC; % Predimmension QF's
+        HR.PRES_ADJUSTED_QC = HR.PRES_QC;
         HR.PSAL_QC = fill0_hr + fv.QC; % Predimmension QF's
         HR.PSAL_ADJUSTED_QC = HR.PSAL_QC;
         HR.TEMP_QC = HR.PSAL_QC;
         HR.TEMP_ADJUSTED_QC = HR.PSAL_QC;
+		
+		    % CHECK FOR BAD PRESS VALUES
+        HRQF_P = HR.PRES < RCR.P(1) | HR.PRES > RCR.P(2);
+        HR.PRES_QC(HRQF_P)  = 4;  % BAD
+        HR.PRES_QC(~HRQF_P & HR.PRES ~= fv.bio) = 1; % GOOD    
+    
+        HR.PRES_ADJUSTED_QC(HRQF_P)  = 4;  % BAD
+        HR.PRES_ADJUSTED_QC(~HRQF_P & HR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD 
+		
+
         
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
         HRQF_S  = HR.PSAL < RCR.S(1) | HR.PSAL > RCR.S(2);
@@ -734,6 +769,7 @@ end
         
     else
         HR.PRES = [];
+		HR.PRES_ADJUSTED = [];
         HR.PSAL = [];
         HR.PSAL_ADJUSTED = [];
         HR.TEMP = [];
@@ -870,7 +906,7 @@ end
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'O');
         t_bio = LR.DOXY ~= fv.bio;
-        tST   = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect O2
+        tST   = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4; % Bad S or T will affect O2
         t_chk = t_bio & (LR.DOXY < RCR.O(1)|LR.DOXY > RCR.O(2) | tST);
         tz = LR.PRES == max(LR.PRES) & t_bio; % 1st sample at depth always bad on NAVIS
         
@@ -886,7 +922,8 @@ end
         
         
         t_bio = LR.DOXY_ADJUSTED ~= fv.bio;
-        tST   = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect O2
+        tST   = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | ...
+		LR.PRES_ADJUSTED_QC == 4 ; % Bad S or T will affect O2
         t_chk = t_bio & ...
             (LR.DOXY_ADJUSTED < RC.O(1)|LR.DOXY_ADJUSTED > RC.O(2) | tST);
         tz = LR.PRES == max(LR.PRES) & t_bio; %
@@ -897,7 +934,7 @@ end
         
         if r_hr > 0
             t_bio = HR.DOXY ~= fv.bio;
-            tST   = HR.PSAL_QC == 4 | HR.TEMP_QC == 4; % Bad S or T will affect O2
+            tST   = HR.PSAL_QC == 4 | HR.TEMP_QC == 4 | HR.PRES_QC == 4; % Bad S or T will affect O2
             t_chk = t_bio & (HR.DOXY < RCR.O(1)|HR.DOXY > RCR.O(2) | tST);
             
             HR.DOXY_QC(t_chk) = 4;
@@ -907,7 +944,8 @@ end
                 * ~BSLflag + BSLflag*theflag;
             
             t_bio = HR.DOXY_ADJUSTED ~= fv.bio;
-            tST   = HR.PSAL_ADJUSTED_QC == 4 | HR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect O2
+            tST   = HR.PSAL_ADJUSTED_QC == 4 | HR.TEMP_ADJUSTED_QC == 4 ...
+			| HR.PRES_ADJUSTED_QC == 4; % Bad S or T will affect O2
             t_chk = t_bio & ...
                 (HR.DOXY_ADJUSTED < RC.O(1)|HR.DOXY_ADJUSTED > RC.O(2) | tST);
             HR.DOXY_ADJUSTED_QC(t_chk) = 4;
@@ -1609,16 +1647,17 @@ end
               
         LR.PH_IN_SITU_FREE(~lr_nan)     = lr_phfree; % I param
         LR.PH_IN_SITU_FREE_QC(~lr_nan)  = fv.QC;
-        LR.PH_IN_SITU_FREE_QC(LRQF_S | LRQF_T) = 4;
+        LR.PH_IN_SITU_FREE_QC(LRQF_S | LRQF_T | LRQF_P) = 4;
         LR.PH_IN_SITU_TOTAL(~lr_nan)    = lr_phtot;
         LR.PH_IN_SITU_TOTAL_QC(~lr_nan) = 3;
-        LR.PH_IN_SITU_TOTAL_QC(LRQF_S | LRQF_T) = 4;
+        LR.PH_IN_SITU_TOTAL_QC(LRQF_S | LRQF_T | LRQF_P) = 4;
         
         LR_inf = isinf(LR.PH_IN_SITU_FREE); % happens if S = 0
         LR.PH_IN_SITU_FREE(LR_inf)     = 20.1; %UNREAL #
         LR.PH_IN_SITU_FREE_QC(LR_inf)  = 4;
         LR.PH_IN_SITU_TOTAL(LR_inf)    = 20.1; %UNREAL #
         LR.PH_IN_SITU_TOTAL_QC(LR_inf) = 4; 
+        
         
         if r_hr > 0
             hr_nan = isnan(hr_d(:,iphV));
@@ -1676,10 +1715,10 @@ end
             
             HR.PH_IN_SITU_FREE(~hr_nan)     = hr_phfree; % I param
             HR.PH_IN_SITU_FREE_QC(~hr_nan)  = fv.QC;
-            HR.PH_IN_SITU_FREE_QC(HRQF_S | HRQF_T)  = 4;
+            HR.PH_IN_SITU_FREE_QC(HRQF_S | HRQF_T | HRQF_P)  = 4;
             HR.PH_IN_SITU_TOTAL(~hr_nan)    = hr_phtot;
             HR.PH_IN_SITU_TOTAL_QC(~hr_nan) = 3;
-            HR.PH_IN_SITU_TOTAL_QC(HRQF_S | HRQF_T)  = 4;
+            HR.PH_IN_SITU_TOTAL_QC(HRQF_S | HRQF_T | HRQF_P)  = 4;
             
             HR_inf = isinf(HR.PH_IN_SITU_FREE); % happens if S = 0
             HR.PH_IN_SITU_FREE(HR_inf)     = 20.1; %UNREAL #
@@ -1694,7 +1733,7 @@ end
             LR.PH_IN_SITU_TOTAL_ADJUSTED(~lr_nan) = ...
                 apply_QC_corr(QCD, d.sdn, QC.pH);
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~lr_nan)  = 1;
-            LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(LRQF_S | LRQF_T)  = 4;
+            LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(LRQF_S | LRQF_T | LRQF_P)  = 4;
             LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~lr_nan) = 0.02;
             
             LR.PH_IN_SITU_TOTAL_ADJUSTED(LR_inf) = 20.1; %UNREAL #
@@ -1706,8 +1745,8 @@ end
                 'interfernece in CP mode,OFFSET(S) and DRIFT(S) from ',...
                 'climatology comparisons at 1000m or 1500m,','TCOR=', ...
                 '(2+273.15)./(T+273.15)'];
-            INFO.PH_SCI_CAL_COM  =['Contact Ken Johnson ',...
-                '(johnson@mbari.org) or Josh Plant (jplant@mbari.org) ',...
+            INFO.PH_SCI_CAL_COM  =['Contact Tanya Maurer ',...
+                '(tmaurer@mbari.org) or Josh Plant (jplant@mbari.org) ',...
                 'for more information'];
             
             % TEMPORARY ADJUSTED pH FIX 08/02/2016
@@ -1720,7 +1759,6 @@ end
             %             LR.PH_IN_SITU_TOTAL_ADJUSTED(~lr_nan) = ...
             %                 LR.PH_IN_SITU_TOTAL_ADJUSTED(~lr_nan) - 0.0167; % TEMPORARY FIX
             
-            
             if r_hr > 0
                 QCD = [HR.PRES(~hr_nan), hr_wrk_temp(~hr_nan), ...
                     HR.PSAL(~hr_nan), HR.PH_IN_SITU_TOTAL(~hr_nan)];
@@ -1728,7 +1766,7 @@ end
                     apply_QC_corr(QCD, d.sdn, QC.pH);
                 
                 HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~hr_nan)    = 1;
-                HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(HRQF_S | HRQF_T)  = 4;
+                HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(HRQF_S | HRQF_T | HRQF_P)  = 4;
                 HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~hr_nan) = 0.02;
                 
                 HR.PH_IN_SITU_TOTAL_ADJUSTED(HR_inf) = 20.1; %UNREAL #
@@ -1749,7 +1787,7 @@ end
         t_bio    = LR.PH_IN_SITU_TOTAL ~= fv.bio;
         chk_wrkT = lr_wrk_temp ~= fv.bio & (lr_wrk_temp < RCR.T(1) ...
                    | lr_wrk_temp > RCR.T(2));
-        tST     = LR.PSAL_QC == 4 | chk_wrkT; % Bad S or T will affect pH
+        tST     = LR.PSAL_QC == 4 | chk_wrkT | LR.PRES_QC ==4; % Bad S or T will affect pH
         %tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect pH
         t_chk   = t_bio & (LR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
             LR.PH_IN_SITU_TOTAL > RCR.PH(2) | tST); 
@@ -1762,8 +1800,10 @@ end
         LR.PH_IN_SITU_TOTAL_QC(t_chk) = 4;
         LR.VRS_PH_QC(t_chk) = 4;
         
+%         if INFO.cast == 2, pause, end % TESTING
+        
         t_bio   = LR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
-        tST     = LR.PSAL_ADJUSTED_QC == 4 | chk_wrkT; % Bad S or T will affect pH
+        tST     = LR.PSAL_ADJUSTED_QC == 4 | chk_wrkT | LR.PRES_ADJUSTED_QC == 4; % Bad S or T will affect pH
         %tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
         t_chk = t_bio & (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
             LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST);
@@ -1771,11 +1811,12 @@ end
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk) = 4;
         
+        
         if r_hr > 0
             t_bio   = HR.PH_IN_SITU_TOTAL ~= fv.bio;
             chk_wrkT = hr_wrk_temp ~= fv.bio & (hr_wrk_temp < RCR.T(1) ...
                 | hr_wrk_temp > RCR.T(2));
-            tST     = HR.PSAL_QC == 4 | chk_wrkT; % Bad S or T will affect pH
+            tST     = HR.PSAL_QC == 4 | chk_wrkT | HR.PRES_QC == 4; % Bad S or T will affect pH
             %tST     = HR.PSAL_QC == 4 | HR.TEMP_QC == 4; % Bad S or T will affect pH
             t_chk = t_bio & (HR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
                 HR.PH_IN_SITU_TOTAL > RCR.PH(2)| tST);
@@ -1786,7 +1827,7 @@ end
             HR.VRS_PH_QC(t_chk) = 4;
             
             t_bio   = HR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
-            tST     = HR.PSAL_ADJUSTED_QC == 4 | chk_wrkT; % Bad S or T will affect pH
+            tST     = HR.PSAL_ADJUSTED_QC == 4 | chk_wrkT | HR.PRES_ADJUSTED_QC == 4; % Bad S or T will affect pH
             %tST     = HR.PSAL_ADJUSTED_QC == 4 | HR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
             t_chk = t_bio & (HR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
                 HR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST);
@@ -1794,6 +1835,8 @@ end
                 HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk) = 4;
         end
+        
+        
 % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*- 
 % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
         % FINALLY DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
@@ -1971,7 +2014,7 @@ end
             LR.NITRATE_QC = fill0 + 3; % ZERO = NO QC
             LR.NITRATE_QC(t_nan) = fv.QC;
             LR.NITRATE_QC(~t_nan & tABS11) = 4;
-            LR.NITRATE_QC(LRQF_S | LRQF_T) = 4; % BAD S or T
+            LR.NITRATE_QC(LRQF_S | LRQF_T | LRQF_P) = 4; % BAD S or T
             
             % ********************************************************
             % APPLY QC CORRECTIONS
@@ -1998,8 +2041,8 @@ end
                     'from climatology comparisons at 1000m or 1500m. GAIN ',...
                     'from surface/deep comparison where surface values ',...
                     'are known'];
-                INFO.NITRATE_SCI_CAL_COM  =['Contact Ken Johnson ',...
-                    '(johnson@mbari.org) or Josh Plant (jplant@mbari.org) ',...
+                INFO.NITRATE_SCI_CAL_COM  =['Contact Tanya Maurer ',...
+                    '(tmaurer@mbari.org) or Josh Plant (jplant@mbari.org) ',...
                     'for more information'];
             end
             clear QCD NO3 UV_INTEN
@@ -2008,7 +2051,7 @@ end
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
         [BSLflag,theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'N');
         t_bio = LR.NITRATE ~= fv.bio;
-        tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect nitrate
+        tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4; % Bad S or T will affect nitrate
         t_chk = t_bio &(LR.NITRATE < RCR.NO3(1)| LR.NITRATE > RCR.NO3(2) | tST);
         LR.NITRATE_QC(t_bio) = LR.NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) = ...
@@ -2017,7 +2060,7 @@ end
         LR.UV_INTENSITY_DARK_NITRATE_QC(t_chk)  = 4;
         
         t_bio = LR.NITRATE_ADJUSTED ~= fv.bio;
-        tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect nitrate
+        tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | LR.PRES_ADJUSTED_QC == 4; % Bad S or T will affect nitrate
         t_chk = t_bio & (LR.NITRATE_ADJUSTED < RC.NO3(1)| ...
             LR.NITRATE_ADJUSTED > RC.NO3(2) | tST);
         LR.NITRATE_ADJUSTED_QC(t_bio) = LR.NITRATE_ADJUSTED_QC(t_bio) * ...
