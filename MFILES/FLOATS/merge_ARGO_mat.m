@@ -44,7 +44,9 @@ function d = merge_ARGO_mat(MBARI_ID_str, dirs)
 % ************************************************************************
 % CHANGE HISTORY
 % 4/21/2017 - added code to include S & T ADJUSTED & QC variables for LR
-% and HR data
+%    and HR data
+% 02/11/2020 JP - Added PRES_QC, PRES_ADJUSTED & PRES_ADJUSTED_QC to the
+%    parameter search list
 
 % ************************************************************************
 %TESTING
@@ -55,11 +57,17 @@ function d = merge_ARGO_mat(MBARI_ID_str, dirs)
 % MBARI_ID_str = '9018SOOCN';
 % MBARI_ID_str = '0568SOOCN';
 % MBARI_ID_str = '0569SOOCN';
-%dirs =[];
+%MBARI_ID_str = '7593Hawaii';
+% MBARI_ID_str = '0949STNP';
+% MBARI_ID_str = '12888SOOCN';
+% MBARI_ID_str = '18081SOOCN';
+% MBARI_ID_str = '0566SOOCN';
+% dirs =[];
 
 % *************************************************************************
 %  SET DATA DIRS AND PATHS
 % *************************************************************************
+RC.P    = [0 12000]; % from argo parameter list
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
 if isempty(dirs)
     user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
@@ -103,14 +111,12 @@ WMO_ID      = list(:,3);
 clear list
 
 ind = find(strcmpi(MBARI_ID_str, float_names) == 1);
-
+%pause
 if isempty(ind)
     disp(['No MBARI_ID match found in lookup table for ',MBARI_ID_str])
     disp('NO MATCH FOUND - EXITING')
     d = []; % Return this if no data
     return
-    %     end
-    
 end
 
 WMO       = WMO_ID{ind};
@@ -140,44 +146,46 @@ end
 %            THIS CAN BE UPDATED AS NEW VARIABLES COME ON LINE
 % *************************************************************************
 raw_vars(1,1)  = {'PRES'}; 
-raw_vars(2,1)  = {'TEMP'};
-raw_vars(3,1)  = {'TEMP_QC'};
-raw_vars(4,1)  = {'PSAL'}; 
-raw_vars(5,1)  = {'PSAL_QC'};
-raw_vars(6,1)  = {'DOXY'};
-raw_vars(7,1)  = {'DOXY_QC'};
-raw_vars(8,1)  = {'NITRATE'}; 
-raw_vars(9,1)  = {'NITRATE_QC'}; 
-raw_vars(10,1)  = {'CHLA'};  
-raw_vars(11,1)  = {'CHLA_QC'};
-raw_vars(12,1) = {'BBP700'};
-raw_vars(13,1) = {'BBP700_QC'};
-raw_vars(14,1) = {'CDOM'};   
-raw_vars(15,1) = {'CDOM_QC'};  
-raw_vars(16,1) = {'BBP532'};
-raw_vars(17,1) = {'BBP532_QC'};
-raw_vars(18,1) = {'PH_IN_SITU_TOTAL'}; 
-raw_vars(19,1) = {'PH_IN_SITU_TOTAL_QC'}; 
+raw_vars(2,1)  = {'PRES_QC'}; 
+raw_vars(3,1)  = {'TEMP'};
+raw_vars(4,1)  = {'TEMP_QC'};
+raw_vars(5,1)  = {'PSAL'}; 
+raw_vars(6,1)  = {'PSAL_QC'};
+raw_vars(7,1)  = {'DOXY'};
+raw_vars(8,1)  = {'DOXY_QC'};
+raw_vars(9,1)  = {'NITRATE'}; 
+raw_vars(10,1)  = {'NITRATE_QC'}; 
+raw_vars(11,1)  = {'CHLA'};  
+raw_vars(12,1)  = {'CHLA_QC'};
+raw_vars(13,1) = {'BBP700'};
+raw_vars(14,1) = {'BBP700_QC'};
+raw_vars(15,1) = {'CDOM'};   
+raw_vars(16,1) = {'CDOM_QC'};  
+raw_vars(17,1) = {'BBP532'};
+raw_vars(18,1) = {'BBP532_QC'};
+raw_vars(19,1) = {'PH_IN_SITU_TOTAL'}; 
+raw_vars(20,1) = {'PH_IN_SITU_TOTAL_QC'}; 
 
-adj_vars(1,1)  = {'PRES'}; 
-adj_vars(2,1)  = {'TEMP_ADJUSTED'};
-adj_vars(3,1)  = {'TEMP_ADJUSTED_QC'};
-adj_vars(4,1)  = {'PSAL_ADJUSTED'}; 
-adj_vars(5,1)  = {'PSAL_ADJUSTED_QC'};
-adj_vars(6,1)  = {'DOXY_ADJUSTED'}; % ADJUSTED VARIABLES
-adj_vars(7,1)  = {'DOXY_ADJUSTED_QC'};
-adj_vars(8,1)  = {'NITRATE_ADJUSTED'};
-adj_vars(9,1)  = {'NITRATE_ADJUSTED_QC'};
-adj_vars(10,1)  = {'CHLA_ADJUSTED'};
-adj_vars(11,1)  = {'CHLA_ADJUSTED_QC'};
-adj_vars(12,1) = {'BBP700_ADJUSTED'};
-adj_vars(13,1) = {'BBP700_ADJUSTED_QC'};
-adj_vars(14,1) = {'CDOM_ADJUSTED'};
-adj_vars(15,1) = {'CDOM_ADJUSTED_QC'};
-adj_vars(16,1) = {'BBP532_ADJUSTED'};
-adj_vars(17,1) = {'BBP532_ADJUSTED_QC'};
-adj_vars(18,1) = {'PH_IN_SITU_TOTAL_ADJUSTED'};
-adj_vars(19,1) = {'PH_IN_SITU_TOTAL_ADJUSTED_QC'};  
+adj_vars(1,1)  = {'PRES_ADJUSTED'}; 
+adj_vars(2,1)  = {'PRES_ADJUSTED_QC'}; 
+adj_vars(3,1)  = {'TEMP_ADJUSTED'};
+adj_vars(4,1)  = {'TEMP_ADJUSTED_QC'};
+adj_vars(5,1)  = {'PSAL_ADJUSTED'}; 
+adj_vars(6,1)  = {'PSAL_ADJUSTED_QC'};
+adj_vars(7,1)  = {'DOXY_ADJUSTED'}; % ADJUSTED VARIABLES
+adj_vars(8,1)  = {'DOXY_ADJUSTED_QC'};
+adj_vars(9,1)  = {'NITRATE_ADJUSTED'};
+adj_vars(10,1)  = {'NITRATE_ADJUSTED_QC'};
+adj_vars(11,1)  = {'CHLA_ADJUSTED'};
+adj_vars(12,1)  = {'CHLA_ADJUSTED_QC'};
+adj_vars(13,1) = {'BBP700_ADJUSTED'};
+adj_vars(14,1) = {'BBP700_ADJUSTED_QC'};
+adj_vars(15,1) = {'CDOM_ADJUSTED'};
+adj_vars(16,1) = {'CDOM_ADJUSTED_QC'};
+adj_vars(17,1) = {'BBP532_ADJUSTED'};
+adj_vars(18,1) = {'BBP532_ADJUSTED_QC'};
+adj_vars(19,1) = {'PH_IN_SITU_TOTAL_ADJUSTED'};
+adj_vars(20,1) = {'PH_IN_SITU_TOTAL_ADJUSTED_QC'};  
 
 raw_vars_ct = size(raw_vars,1);
 adj_vars_ct = size(adj_vars,1);
@@ -217,12 +225,32 @@ for file_ct = 1 : r_list
         
     if gps(1) < 0, gps(1) = gps(1) + 360; end
     
+    % RECENT ADDITION OF PRES, PRES_QC, PRES_ADJUSTED & PRES_ADJUSTED_QC
+    % TO FLOAT PROCESSING (3/3/2020 JP). OLDER MAT FILES MAY NOT HAVE THEM
+    % SO ADD TO LR & HR STRUCTURES IF NEED BE
+    if exist('LR','var') == 1 && ~isfield(LR,'PRES_ADJUSTED')
+        LR.PRES_QC = ones(size(LR.PRES));
+        LR.PRES_QC(LR.PRES < RC.P(1) | LR.PRES > RC.P(2)) = 4;
+        LR.PRES_QC(LR.PRES == 99999) = 99;
+        LR.PRES_ADJUSTED = LR.PRES;
+        LR.PRES_ADJUSTED_QC = LR.PRES_QC;
+    end
+    
+    if exist('HR','var') == 1 && ~isfield(HR,'PRES_ADJUSTED')
+        HR.PRES_QC = ones(size(HR.PRES));
+        HR.PRES_QC(HR.PRES < RC.P(1) | HR.PRES > RC.P(2)) = 4;
+        HR.PRES_QC(HR.PRES == 99999) = 99;
+        HR.PRES_ADJUSTED = HR.PRES;
+        HR.PRES_ADJUSTED_QC = HR.PRES_QC;
+    end
+    
     % ********************************************************************
     % BUILD HEADER ARRAY
     % ********************************************************************
     if file_ct == 1 
         rhdr = {}; % predim ARGO QC vars list
         ahdr = {};
+        
         
         for i = 1: raw_vars_ct % LOOP THROUGH MASTER LIST & FIND FLOAT VARIABLES
             if isfield(LR, raw_vars{i,1})
@@ -235,6 +263,7 @@ for file_ct = 1 : r_list
         ahdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' ahdr];
     end
    
+
     % ********************************************************************
     % IF NAVIS FLOAT MAKE HR NITRATE, MERGE DEEP LR WITH HR, & THEN SET 
     % LR fields=HR fields for ODV NITRATE IS REALLY THE ONLY LR FIELD
@@ -275,20 +304,23 @@ for file_ct = 1 : r_list
                 LR.(rhdr{i}) = [LR.(rhdr{i})(t1); HR.(rhdr{i})]; % deep LR + HR
                 LR.(rhdr{i}) = LR.(rhdr{i})(LRHR_ind); % sorted
             end
+
            
             % DONT DO P TWICE  ADJUSTED & RAW HEADER NAME ARE EQUAL!
             % UPDATED 05/02/17 due to addind PSAl_ADJUSTED & TEMP_ADJUSTED
             % variables
+            % Updated 2/26/20 PRES_ADJUSTED added as variable
             %if isempty(regexp(ahdr{i},'^PRES|^TEMP|^PSAL','once')) 
-            if isempty(regexp(ahdr{i},'^PRES','once')) % ADJUSTED DATA    
+            %if isempty(regexp(ahdr{i},'^PRES','once')) % ADJUSTED DATA    
                 if isfield(LR,ahdr{i}) && isfield(HR,ahdr{i})
                     LR.(ahdr{i}) = [LR.(ahdr{i})(t1); HR.(ahdr{i})]; % deep LR + HR
                     LR.(ahdr{i}) = LR.(ahdr{i})(LRHR_ind); % sorted
                 end
-            end
+            %end
         end
     end
  
+    
     % ********************************************************************
     % MERGE LR APEX OR NAVIS FLOAT DATA
     
