@@ -40,6 +40,8 @@ function data = parse_NAVISmsg4ARGO(msg_file)
 %   07/14/2020 - improved partial hex line extraction - only extract
 %                complete hex blocks. 0571 cycle 58 first deep cp line = case
 %                example
+%    10/26/20 - TM, Modified gps fix extraction to carry over datetime.  Was not included in original code.
+
 % ************************************************************************
 % FORMATS & VARIABLES
 % ************************************************************************
@@ -322,7 +324,15 @@ while ischar(tline)
             if ~isempty(regexp(tline,'^Fix:','once'))
                 gps = sscanf(tline,'%*s %f %f',2); %[lon; lat]
                 if ~isempty(gps)
-                    data.gps = [data.gps; gps'];
+                     gps_sdn = char(sscanf(tline,'%*s %*f %*f %17c',1))'; %[mm/dd/yyyy; hhmmss]
+                    if size(gps_sdn,2) == 17;
+                        Gsdn = datenum(gps_sdn,'mm/dd/yyyy HHMMSS'); 
+                        data.gps = [data.gps; [Gsdn gps']];
+                    else
+                    data.gps = [data.gps; [data.sdn NaN NaN]];
+                    end
+                else
+                    data.gps = [data.gps; [data.sdn NaN NaN]];
                 end
             end
             if (regexp(tline,'^(SurfaceObs)','once'))
@@ -364,7 +374,7 @@ end
 fclose(fid);
 
 if isempty(data.gps)
-    data.gps = [NaN NaN];
+    data.gps = [data.sdn NaN NaN];
 end
 
 % ************************************************************************

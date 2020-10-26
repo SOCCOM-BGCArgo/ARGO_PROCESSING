@@ -36,6 +36,13 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %   04/06/2017 - add code to catch bad cp data lines, "00000000000000[2]",
 %       in middle of cp section of msg file ~line 230
 %   05/16/2017 - add code to look for <EOT> and record # of instances
+%
+%   09/28/2020 - Code was skipping over first line of optode air-cal
+%   sequence.  Added a fix at the end of cp-mode hex extraction. (may be
+%   revised at a later date).
+%
+%   10/26/20 - TM, Modified gps fix extraction to carry over datetime.  Was not included in original code.
+
 % ************************************************************************
 % FORMATS & VARIABLES
 % ************************************************************************
@@ -235,14 +242,36 @@ while ischar(tline)
                 disp(['No data hex line in middle of cp data: ',tline, ...
                     ' for ', msg_file])
             elseif data_chk == 2 && length(tline) ~= 14 % end of cp
+                % TM 9/28/20 Code was skipping first line of aircal data.
+                % Add OptodeAirCal block here after end of cpmode
+                % extraction.  The remainder of the aircal array will get
+                % appended further down.  (Perhaps a better way to do
+                % this!)
+                if (regexp(tline,'^OptodeAirCal','once'))
+                    ac_tmp = textscan(tline,f_aircal,1,'collectoutput',1);
+                    d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
+                        ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
+                    data.aircal =[data.aircal; ...
+                        datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+                        ac_tmp{1,2}];
+                    clear ac_tmp d_str
+                end
                 msg_task = 'GPS data';
             end
             
         case 'GPS data'    % GET GPS POSITION & AIR OXYGEN VALUES
             if ~isempty(regexp(tline,'^Fix:','once'))
                 gps = sscanf(tline,'%*s %f %f',2); %[lon; lat]
-                if ~isempty(gps)
-                    data.gps = [data.gps; gps'];
+                if ~isempty(gps);
+                    gps_sdn = char(sscanf(tline,'%*s %*f %*f %17c',1))'; %[mm/dd/yyyy; hhmmss]
+                    if size(gps_sdn,2) == 17;
+                        Gsdn = datenum(gps_sdn,'mm/dd/yyyy HHMMSS'); 
+                        data.gps = [data.gps; [Gsdn gps']];
+                    else
+                    data.gps = [data.gps; [data.sdn NaN NaN]];
+                    end
+                else
+                    data.gps = [data.gps; [data.sdn NaN NaN]];
                 end
             end
             if (regexp(tline,'^(SurfaceObs)','once'))
@@ -297,7 +326,7 @@ end
 fclose(fid);
 
 if isempty(data.gps)
-    data.gps = [NaN NaN];
+    data.gps = [data.sdn NaN NaN];
 end
 
 % ************************************************************************
