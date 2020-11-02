@@ -109,31 +109,16 @@ function tf_float = Process_APEX_float(MBARI_ID_str, dirs, update_str)
 %     work for CHL wherea 5 may be entered in the NPQ zone
 %04/10/20, JP improvedQC lagging for pH incase dura diagnostics not there
 %    or diagnostic data fails the file size test( i.e. 12884)
-%6/11/20 TM - added the ".*1e9" to this line.  It was lacking in Josh's update from 4/7/20 
+%6/11/20 TM - added the ".*1e9" to this line.  It was lacking in previous update from 4/7/20 
 %    and causing erroneous flagging for certain cases, ie float 9634 surface samples of cycles 67 and 97.
 %    However, this has pointed to the need to re-evaluate this code, and make it cleaner and more modular.  So, additional 
-%    changes to how the flagging is handled may be forthcoming.
-
+%    changes to how the flagging is handled may be forthcoming!
+%9/30/20 TM - Added exclusion block to pH IK/IB diagnostic flagging for two recent EqPac floats (these floats are presenting railed diagnostics when pH sensor is actually working)
+%10/27/20 TM, minor mods to accomadate change to parser (inclusion of sdn in gps vector)
 % ************************************************************************
 
 % *** FOR TESTING ***
 % MBARI_ID_str = '9095SOOCN';
-% MBARI_ID_str = '9666SOOCN';
-% MBARI_ID_str = '6966Hawaii';
-% MBARI_ID_str = '9095SOOCN';
-% MBARI_ID_str = '7647CALCURRENT';
-% MBARI_ID_str = '9660SOOCN';
-% MBARI_ID_str = '9634SOOCN';
-%MBARI_ID_str = '17534EqPacE';
-% MBARI_ID_str = '9634SOOCN';
-% MBARI_ID_str = '7593Hawaii';
-% MBARI_ID_str = '17898SOOCN';
- %MBARI_ID_str = '12888SOOCN';
-%   MBARI_ID_str = '17267HOT';
-% MBARI_ID_str = '9632SOOCN';
-% MBARI_ID_str = '12543SOOCN';
-% MBARI_ID_str = '12559SOOCN';
-% MBARI_ID_str = '12884SOOCN';
 % update_str = 'all';
 % dirs =[];
 
@@ -259,7 +244,8 @@ if exist(float_cal_path,'file')
     disp(' ')
     disp(['FLOAT ',MBARI_ID_str, '(',cal.info.WMO_ID,')']);
     disp(['Existing calibration file loaded: ',float_cal_path])
-	if ~isempty(strfind(cal.info.WMO_ID,'NO_WMO'))
+%	if ~isempty(strfind(cal.info.WMO_ID,'NO_WMO'))
+	if ~isempty(strfind(cal.info.WMO_ID,'NO_WMO')) || ~isempty(strfind(cal.info.WMO_ID,'NaN')) %TM 8/16/20
 		old_WMO = cal.info.WMO_ID; %get old WMO
 		delete(float_cal_path)
 		disp(['Attempting to retrieve updated WMOnum by deleting and rebuilding cal file ',float_cal_path,'.'])
@@ -516,8 +502,8 @@ end
 % IF UPDATE = ALL, CLEAR FILES
 % ************************************************************************
 % CHECK FOR WMO ID
-WMO  = cal.info.WMO_ID; % string
-if isempty(WMO)
+WMO  = cal.info.WMO_ID;
+if isempty(WMO) | isnan(WMO) %TM 8/16/20
     disp(['NO WMO# FOUND FOR FLOAT! CREATING TEMPORARY ', ...
         'DATA DIR FOR ', MBARI_ID_str])
     WMO = ['NO_WMO_',cal.info.UW_ID]; % CREATE TEMPORARY WMO NAME
@@ -1072,8 +1058,10 @@ for msg_ct = 1:size(msg_list,1)
             % NPQ NEXT
             NPQ_CHL = LR.CHLA_ADJUSTED;
             NPQ_CHL(t_nan) = NaN; % fill back to NaN
-            NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
-                [lr_d(:,[iP,iT,iS]),NPQ_CHL], dirs);
+%                 NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
+%                 %INFO.gps now includes sdn, TM 10/27/20
+                NPQ = get_NPQcorr(nanmean(INFO.gps,1), ...
+                    [lr_d(:,[iP,iT,iS]),NPQ_CHL], dirs);
             NPQ.data(t_nan,2:end) = fv.bio; % nan back to fill
             
             if ~isempty(NPQ.data)
@@ -1388,7 +1376,7 @@ for msg_ct = 1:size(msg_list,1)
             INFO.PH_SCI_CAL_COEF = ['PUMP_OFFSET=Pump may add ', ...
                 'interfernece in CP mode,OFFSET(S) and DRIFT(S) from ',...
                 'climatology comparisons at 1000m or 1500m,','TCOR=', ...
-                '(2+273.15)./(T+273.15)'];
+                '(TREF+273.15)./(T+273.15).  TREF = TEMP at 1500m.'];
             INFO.PH_SCI_CAL_COM  =['Contact Tanya Maurer ',...
                 '(tmaurer@mbari.org) or Josh Plant (jplant@mbari.org) ',...
                 'for more information'];
@@ -1409,7 +1397,7 @@ for msg_ct = 1:size(msg_list,1)
                 % ambient light. Use Ib to correct for light sensitivity
                 %d(pH)/d(iB), daylight, <50m, Model I R*R > 0.8, = 1.488e6 
                 gps9660 = mean(INFO.gps,1);
-                [~,El] = SolarAzElq(INFO.sdn, gps9660(2),gps9660(1), 0);% sdn lat lon al
+                [~,El] = SolarAzElq(gps9660(1), gps9660(3),gps9660(2), 0);% sdn lat lon al
                 if El > 0
                     dz1 = LR.PRES <= 50;
                     dz2 = LR.PRES <= 120 & LR.PRES >= 70;
@@ -1472,7 +1460,17 @@ for msg_ct = 1:size(msg_list,1)
         tIK3  = (IK < RCR.IK(1) | IK > RCR.IK(2)).*t_diag*3; % DIAGNOSTIC
         tIB4  = (LR.IB_PH < RCR.IB(1)*25 | LR.IB_PH > RCR.IB(2)*25).*t_diag*4; % DIAGNOSTIC
         tIK4  = (IK < RCR.IK(1)*25 | IK > RCR.IK(2)*25).*t_diag*4; % DIAGNOSTIC
-        
+		
+		% 09/30/20 TM - EXCLUSION BLOCK FOR NEWER EQPAC FLOATS EXHIBITING THE ERRONEOUS RAILED DIAG VALUES
+		if strcmp(MBARI_ID_str,'17534EqPacE') == 1 || strcmp(MBARI_ID_str,'18601EqPacE')==1 || strcmp(MBARI_ID_str,'18114EqPacE')==1
+		%keep syntax the same to ensure proper function!  Set flags in this block to 0 (always good)
+			disp('Excluding float from pH sensor diagnostic checks (erroneous railed values!)!')
+		    tIB3  = (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2)).*t_diag*0; % DIAGNOSTIC
+			tIK3  = (IK < RCR.IK(1) | IK > RCR.IK(2)).*t_diag*0; % DIAGNOSTIC
+			tIB4  = (LR.IB_PH < RCR.IB(1)*25 | LR.IB_PH > RCR.IB(2)*25).*t_diag*0; % DIAGNOSTIC
+			tIK4  = (IK < RCR.IK(1)*25 | IK > RCR.IK(2)*25).*t_diag*0; % DIAGNOSTIC
+		end
+		   
         tALL  = max([LR.PH_IN_SITU_TOTAL_QC, tBSL, tSTP, tRC, ...
             tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
         LR.PH_IN_SITU_TOTAL_QC(t_bio) = tALL(t_bio);
@@ -1534,6 +1532,8 @@ for msg_ct = 1:size(msg_list,1)
                  tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) = tALL(t_bio);               
 			
+					% 09/30/20 TM - EXCLUSION BLOCK FOR NEWER EQPAC FLOATS EXHIBITING THE ERRONEOUS RAILED DIAG VALUES
+		if strcmp(MBARI_ID_str,'17534EqPacE') ~= 1 && strcmp(MBARI_ID_str,'18601EqPacE') ~=1 && strcmp(MBARI_ID_str,'18114EqPacE')~=1
         if ~isempty(dura.data) && ph_filesize> 10000 && ... % usually > 10000 bytes for full profile...
                 any(LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2))
             disp([pH_file,' has out of range pH Ib values. pH ', ...
@@ -1544,6 +1544,7 @@ for msg_ct = 1:size(msg_list,1)
             disp([pH_file,' has out of range pH Ik values. pH ', ...
                 'QF''s for these samples will be set to bad or questionable'])
         end
+		end
         
         % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
         % FINALLY DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4

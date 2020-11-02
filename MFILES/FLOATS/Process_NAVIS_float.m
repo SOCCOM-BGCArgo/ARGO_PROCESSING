@@ -105,6 +105,8 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 %   Updated QC flagging process to add flags for PH_TEMP_QC & use working
 %   temp to flag pH QC
 % 01/16/19, TM, replaced phcalc_jp.m with phcalc.m
+% 10/27/20, TM/JP Modification for compatability with NAVIS new msg file
+%   format (with pH diag); TM, minor mods to accomadate change to parser (inclusion of sdn in gps vector)
 % ************************************************************************
 
 % FOR TESTING
@@ -620,6 +622,9 @@ end
             iCdm   = find(strcmp('Cd', d.lr_hdr) == 1); % NAVIS 0037,0276
         end
         iphV   = find(strcmp('phV', d.lr_hdr) == 1); % pH volts
+        if isempty(iphV)
+            iphV   = find(strcmp('phVrs', d.lr_hdr) == 1); % pH volts
+        end
         iphT   = find(strcmp('phT', d.lr_hdr) == 1); % pH Temp
         
         iNB_CTD   = find(strcmp('nbin ctd',    d.hr_hdr) == 1); % CTD P
@@ -1080,7 +1085,9 @@ end
                 % NPQ NEXT
                 NPQ_CHL = HR.CHLA_ADJUSTED;
                 NPQ_CHL(hr_nan) = NaN; % fill back to NaN
-                NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
+%                 NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
+%                 %INFO.gps now includes sdn, TM 10/27/20
+                NPQ = get_NPQcorr(nanmean(INFO.gps,1), ...
                     [hr_d(:,[iP,iT,iS]),NPQ_CHL], dirs);
                 NPQ.data(hr_nan,2:end) = fv.bio; % nan back to fill
                 
