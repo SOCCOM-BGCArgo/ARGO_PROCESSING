@@ -41,7 +41,10 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %   sequence.  Added a fix at the end of cp-mode hex extraction. (may be
 %   revised at a later date).
 %
-%   10/26/20 - TM, Modified gps fix extraction to carry over datetime.  Was not included in original code.
+%   10/26/20 - TM, Modified gps fix extraction to carry over datetime. Was
+%              not included in original code.
+%   10/28/20 - JP, Modified Surface Obs parseing code to include PAL sensor
+%              float formats
 
 % ************************************************************************
 % FORMATS & VARIABLES
@@ -55,6 +58,15 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %msg_file = 'c:\temp\9752.002.msg';
 %msg_file = 'c:\temp\6966.004.msg'; % TESTING
 %msg_file = 'c:\temp\9031.006.msg';
+
+% 10/28/2020 JP testing
+%msg_file = 'c:\temp\12652.036.msg';
+%msg_file = 'c:\temp\11090.003.msg';
+%msg_file = 'c:\temp\7614.003.msg';
+%msg_file = 'c:\temp\12878.006.msg'; % under ice surf obs values = 0
+%msg_file = 'c:\temp\5143.002.msg'; % no surf obs line data.air = [];
+%msg_file = 'c:\temp\6968.002.msg'; %T & Phase onle , no RPhase
+
 
 % HIGH RESOLUTION SAMPLES FOR UW / MBARI APEX FLOATS
 % The first 4-bytes of the encoded sample represents the pressure in 
@@ -262,9 +274,9 @@ while ischar(tline)
         case 'GPS data'    % GET GPS POSITION & AIR OXYGEN VALUES
             if ~isempty(regexp(tline,'^Fix:','once'))
                 gps = sscanf(tline,'%*s %f %f',2); %[lon; lat]
-                if ~isempty(gps);
+                if ~isempty(gps)
                     gps_sdn = char(sscanf(tline,'%*s %*f %*f %17c',1))'; %[mm/dd/yyyy; hhmmss]
-                    if size(gps_sdn,2) == 17;
+                    if size(gps_sdn,2) == 17
                         Gsdn = datenum(gps_sdn,'mm/dd/yyyy HHMMSS'); 
                         data.gps = [data.gps; [Gsdn gps']];
                     else
@@ -274,35 +286,77 @@ while ischar(tline)
                     data.gps = [data.gps; [data.sdn NaN NaN]];
                 end
             end
-            if (regexp(tline,'^(SurfaceObs)','once'))
-                ind = regexp(tline,'/'); % 2nd & 3rd mark O2 data region
-                if size(ind,2) >= 3 % make sure data line complete
-                    str = strtrim(tline(ind(2)+1:ind(3)-1)); %O2 data string
-                    nct = length(regexp(str,'\d+\.')); % how many #'s in str
-                    T_pos = ~isempty(regexp(str,'^\d+\.\d+C|^-\d+\.\d+C','once')); % T 1st
-                    if nct == 3 % 4330 optode
-                        if T_pos == 1 % 3 #'s, T at begining
-                            tmp = sscanf(str,'%fC %f %f')'; % T TPh RPh
-                        else % 3 #'s, T at end
-                            tmp = sscanf(str,'%f %f %fC')'; % TPh RPh T
-                            tmp = tmp([3,1,2]);             % T TPh RPh
-                        end
-                        data.air =[data.air; tmp];
-                    elseif nct == 2 % 4330 optode or older optode
-                        if T_pos == 1 % 2 #'s, T at begining
-                            tmp = sscanf(str,'%fC %f')'; % temp, phase
-                        else          % 2 #'s, T at end
-                            tmp = sscanf(str,'%f %fC')'; % phase, temp
-                            tmp = tmp([2,1]);            % temp, phase
-                        end
-                        data.air =[data.air; tmp];
-                    else
-                        disp('Could not parse surf obs')
-                    end
+            
+            % complete surf line is bounded by curly braces, count to check
+            if ~isempty(regexp(tline,'^(SurfaceObs)','once')) && ...
+                    size(regexp(tline,'{|}'),2) == 2 
+                
+                % use slash as delimiter to break up string
+                stmp = regexp(tline,'/','split'); 
+                if size(stmp,2) == 4 % count substrings (in cell array now)
+                    O2_str = strtrim(stmp{3});
+                elseif size(stmp,2) == 2 % PAL SENSOR FLOATS!
+                    O2_str = strtrim(stmp{2});
+                    O2_str = regexprep(O2_str,'}',''); % get rid of "}"
                 else
-                    disp('Partial Surf Obs line - could not parse')
+                    disp(['SurfaceObs line format not recognized. ', ...
+                        'Could not parse line'])
+                    O2_str = '';
                 end
+                
+                %space charcter divides numbers, number ct = space count +1
+                %Is "C" at end of string?
+                num_ct  = sum(O2_str == ' ',2) + 1; 
+                tf_endC = ~isempty(regexp(O2_str,'C$', 'once'));
+                if num_ct == 3 && tf_endC % 3 #'s & "C" at end of string
+                    tmp = sscanf(O2_str,'%f %f %fC')'; % TPh RPh T
+                    tmp = tmp([3,1,2]);             % T TPh RPh
+                elseif num_ct == 3 % 3 #'s & "C" must be at begining
+                    tmp = sscanf(O2_str,'%fC %f %f')'; % T TPh RPh
+                elseif num_ct == 2 && tf_endC % 2 #'s & "C" at end of string
+                    tmp = sscanf(O2_str,'%f %fC')'; % phase, temp
+                    tmp = tmp([2,1]);            % temp, phase
+                elseif num_ct == 2
+                    tmp = sscanf(O2_str,'%fC %f')'; % temp, phase
+                else
+                    disp('Could not parse surf obs')
+                end
+                data.air =[data.air; tmp];
             end
+                
+                
+
+                
+%                 if size(ind,2) >= 3 % make sure data line complete
+%                     str = strtrim(tline(ind(2)+1:ind(3)-1)); %O2 data string
+%                     nct = length(regexp(str,'\d+\.')); % how many #'s in str
+%                     T_pos = ~isempty(regexp(str,'^\d+\.\d+C|^-\d+\.\d+C','once')); % T 1st
+%                     if nct == 3 % 4330 optode
+%                         if T_pos == 1 % 3 #'s, T at begining
+%                             tmp = sscanf(str,'%fC %f %f')'; % T TPh RPh
+%                         else % 3 #'s, T at end
+%                             tmp = sscanf(str,'%f %f %fC')'; % TPh RPh T
+%                             tmp = tmp([3,1,2]);             % T TPh RPh
+%                         end
+%                         data.air =[data.air; tmp];
+%                     elseif nct == 2 % 4330 optode or older optode
+%                         if T_pos == 1 % 2 #'s, T at begining
+%                             tmp = sscanf(str,'%fC %f')'; % temp, phase
+%                         else          % 2 #'s, T at end
+%                             tmp = sscanf(str,'%f %fC')'; % phase, temp
+%                             tmp = tmp([2,1]);            % temp, phase
+%                         end
+%                         data.air =[data.air; tmp];
+%                     else
+%                         disp('Could not parse surf obs')
+%                     end
+%                 else
+%                     disp('Partial Surf Obs line - could not parse')
+%                 end
+%                 pause
+%             else
+%                 disp('Partial Surf Obs line was not parses')
+%             end
 
             if (regexp(tline,'^OptodeAirCal','once'))
                 ac_tmp = textscan(tline,f_aircal,1,'collectoutput',1);

@@ -41,6 +41,8 @@ function data = parse_NAVISmsg4ARGO(msg_file)
 %                complete hex blocks. 0571 cycle 58 first deep cp line = case
 %                example
 %    10/26/20 - TM, Modified gps fix extraction to carry over datetime.  Was not included in original code.
+%  10/27/20, TM/JP Modification for compatability with NAVIS new msg file format (with pH diag)
+
 
 % ************************************************************************
 % FORMATS & VARIABLES
@@ -56,7 +58,7 @@ function data = parse_NAVISmsg4ARGO(msg_file)
 % msg_file = 'c:\temp\0508.044.msg';
 %msg_file = 'c:\temp\0949.088.msg';
 %msg_file = 'c:\temp\0571.058.msg';
-
+%msg_file = 'c:\temp\1113.001.msg';
 
 
 % PREDIMENSION OUTPUT STRUCTURE (If no data this is the output)
@@ -139,7 +141,8 @@ hex_conv = [32768 10; ...     % p  these are used to convert to pst
             61440 1000; ...   % t
             61440 1000];      % s
         
-if sum(strcmp('phV', data.lr_hdr)) == 1 % O2, MCOMS, pH
+if sum(strcmp('phV', data.lr_hdr)) == 1 && sum(strcmp('phT', data.lr_hdr)) == 1
+% O2, MCOMS, pH (OLD)    
     pH_flag = 1;
     hex_format  = '%04x%04x%04x%02x%06x%06x%02x%06x%06x%06x%02x%06x%04x%02x';
     hex_char_ct = cumsum(str2double(regexp(hex_format,'\d+','match')));
@@ -149,7 +152,19 @@ if sum(strcmp('phV', data.lr_hdr)) == 1 % O2, MCOMS, pH
     nbin_ind    = [nbin_ind, 14];
     nbin_hdr    = [nbin_hdr; 'nbin pH'];
     hex_conv    = [hex_conv; 61440 1000]; % Add for pH T
-    conv_ind    = [conv_ind, 10]; % add col indice for pH T
+    conv_ind    = [conv_ind, 10]; % add col indice for pH T  
+elseif sum(strcmp('phVrs', data.lr_hdr)) == 1 && sum(strcmp('phVk', data.lr_hdr)) == 1
+% O2, MCOMS, pH  (NEW 10/27/20 NO pHT & different hdr names)    
+    pH_flag = 1;
+    hex_format  = '%04x%04x%04x%02x%06x%06x%02x%06x%06x%06x%02x%06x%02x';
+    hex_char_ct = cumsum(str2double(regexp(hex_format,'\d+','match')));
+    hex_length  = 56;
+    hex_cols    = size(regexp(hex_format,'x'),2);
+    hex_ind     = [hex_ind, 12]; % PTS, O2 Phase&T, MCOMS, pH V
+    nbin_ind    = [nbin_ind, 13];
+    nbin_hdr    = [nbin_hdr; 'nbin pH'];
+    %hex_conv    = [hex_conv; 1000]; % Add for pH T
+    conv_ind    = [conv_ind]; % add col indice for pH T
 else % O2, MCOMS
     pH_flag     = 0;
     hex_format  = '%04x%04x%04x%02x%06x%06x%02x%06x%06x%06x%02x';
@@ -159,8 +174,9 @@ else % O2, MCOMS
 end
 
 % BUILD HIGH RES HEADER (CP DATA HEADER)
-tNO3 = strcmpi('no3', data.lr_hdr); 
-data.hr_hdr = data.lr_hdr(~tNO3); % all but nitrate
+%tNO3 = strcmpi('no3', data.lr_hdr); 
+tKEEP = cellfun(@isempty, regexp(data.lr_hdr,'no3|phVk|phIb|pHIk','once'));
+data.hr_hdr = data.lr_hdr(tKEEP); % all but nitrate
 data.hr_hdr = [data.hr_hdr;nbin_hdr]; % add bin counts to end
 clear lr_hdr pk_hdr i tline fid ans tNO3
 
@@ -396,7 +412,7 @@ if ~isempty(high_res)
 %     tmp(t_low) = 0; % pos values, test matrix = 0
 %     % VALUES NOT CAUGHT BY FLAGS REMAIN AS NAN's
     
-    tmp     = high_res(:,conv_ind); % p, t, s OR p, t, s, pH t
+    tmp     = high_res(:,conv_ind); % p, t, s OR p, t, s, pH t OR p, t, s, pH
     hex_var1 = ones(size(tmp(:,1))) * hex_conv(:,1)'; % matrix 
     hex_var2 = ones(size(tmp(:,1))) * hex_conv(:,2)'; % matrix 
     tNaN = tmp*NaN; % set up NaN flags
