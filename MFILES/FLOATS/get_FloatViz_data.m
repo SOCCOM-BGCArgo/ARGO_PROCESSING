@@ -31,12 +31,22 @@ function floatviz_data = get_FloatViz_data(floatviz_file)
 %   point to the correct directories on sirocco to get them. lines ~57-64
 % 09/19/2018 - TM, lots of mods, enhance functionality across platforms and
 %              for different usage (network, internet...)
+% 10/07/2019 - JP added a close(fid) before some return statement if file exist
+%     but no valid data. around lines 160 & 187
+% 12/13/20 - TM - Forced fopen read to UTF-8, because that is the
+%    new default for Matlab 2020 writes and better cross platform sharing
+%    and all ODV compatible TXT files are  now UTF-8
+%    
+
+% *************************************************************************
+% TESTING
+% floatviz_file = 'C:\Users\jplant\Documents\MATLAB\ARGO\DATA\ADJ\ODV1901467ADJ.TXT';
 
 % *************************************************************************
 % SET PATHS & COPY FILE TO LOCAL & OPEN
 % *************************************************************************
-data_source = 'internet';
-%data_source = 'network'; %MBARI USE ONLY 
+%data_source = 'internet';
+data_source = 'network'; %MBARI USE ONLY 
 
 floatviz_url  = 'http://www3.mbari.org/lobo/Data/FloatVizData/';
 
@@ -137,8 +147,8 @@ switch data_source
         end
 end
 
-fid = fopen(to_str);
-%fid = fopen(to_str,'r','n','UTF-8');
+%fid = fopen(to_str);
+fid = fopen(to_str,'r','n','UTF-8');
 % *************************************************************************
 % BUILD FORMAT STRING AND PARSE DATA
 % *************************************************************************
@@ -151,6 +161,7 @@ while ischar(tline)
 end
 if ~ischar(tline)
     disp('No header line found')
+    fclose(fid);
     return
 end
 
@@ -159,6 +170,7 @@ end
 tline = regexprep(tline,'\t\t', '\t'); % remove extra tab if there
 hdr      = regexp(tline,'\t','split'); % CELL ARRAY OF HEADER VARIABLES 
 hdr_rows = size(hdr,2);
+
 
 d_format = '';
 rm_cols  = [];
@@ -174,6 +186,13 @@ for i = 1: hdr_rows
 end
 hdr(rm_cols) =[];
 d     = textscan(fid,d_format,'Delimiter','\t','CollectOutput',1);
+
+if isempty(d{1,1}) || isempty(d{1,3}) % no data exists only hdr
+    disp(['Header exists but no data found for ',floatviz_file]);
+    fclose(fid); %10/07/19 need to close down 1st
+    return
+end
+
 d_tmp = strcat(d{1,2}(:,1),regexprep(d{1,2}(:,2), '(\d+:\d+)',' $1'));
 
 % some float have too many tabs (eg 5146) on the profile separation line

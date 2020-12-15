@@ -32,6 +32,10 @@ function d = Merge_dura_msgs(MBARI_ID_str, dirs)
 % OUTPUTS:
 %   tf_float =  1 if processing was a success, 0 otherwise
 %
+% REVISONS:
+% 12/13/20 - jp - Forced all fopen writes to UTF-8, because that is the
+%     new default for Matlab 2020 and better cross platform sharing
+%
 plot_flag = 1;
 print_flag = 1;
 d = [];
@@ -86,6 +90,14 @@ else
     disp(['Could not find cal file for ',MBARI_ID_str])
     return
 end
+
+% CHECK FOR pH CAL
+if ~isfield(cal,'pH')
+    disp(['No pH calibration found for ',MBARI_ID_str,': exiting'])
+    return
+end
+    
+
 INFO.UW     = cal.info.UW_ID; % a string
 % use regexp to strip any letters out (Seabird SN sometimes)
 INFO.DF_num = str2double(regexp(cal.pH.SN,'\d+','once','match'));
@@ -177,77 +189,68 @@ for msg_ct = 1:size(msg_list,1)
     % ****************************************************************
     % GET  DATA FROM *.dura FOR DIAGNOSTICS
     dura = parse_pHmsg([dirs.temp,pH_file]);
+    
     if isempty(dura.data)
         disp(['No pH data returned for ',pH_file])
         delete([dirs.temp,pH_file]);
         continue
-    else
-        if msg_ct == 1
-            pH_hdr = dura.hdr;
-            pH_hdr = ['Cast #', pH_hdr, 'pH_tot'];
-        end
-        pH_data = dura.data;
-        
-        % CHECK FOR NAN's IN TIME & REMOVE - INCOMPLETE FILE ISSUE with pH
-        % msg parser. I SHould really fix there eventually
-       tnan = isnan(pH_data(:,1));
-       pH_data(tnan,:) =[];
-              
-        %         {'Date/Time','CTD Pres','CTD Temp','CTD Sal','Internal Temp',
-        %             'Internal Humidity','System Power, V','System Power, I',
-        %             'Backup Batt, V','Vrs','std Vrs','Vk','std Vk','Ik','Ib'}
-        
-  
-            
-%         badVRS = pH_data(:,10) < RCR.PHV(1) & pH_data(:,10) > RCR.PHV(2);
-%         tbad = badS | badVRS;
-%         
-%         if sum(badS) == 0 && sum(badVRS) == 0
-%             [phfree,phtot] = phcalc(pH_data(:,10), pH_data(:,2), ...
-%                 pH_data(:,3), pH_data(:,4), cal.pH.k0, cal.pH.k2, cal.pH.pcoefs); 
-%         else % exclude bad s from calc
-%             [phfree,phtot] = phcalc(pH_data(~tbad,10), pH_data(~tbad,2), ...
-%                 pH_data(~tbad,3), pH_data(~tbad,4), cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
-%             ph_tmp = pH_data(:,1)* NaN;
-%             ph_tmp(~tbad) = phtot;
-%             phtot = ph_tmp;
-%             str = sprintf(['%0.0f bad salinity or VRS points removed from ', ...
-%                 'pH calc - pH set = NaN'], sum(tbad));
-%             disp(str)
-%            
-%         end
-
-        % LOOK FOR REALLY BAD SALINITY VALUES & EXCLUDE FROM PH CALC
-        % otherwise imaginary number land
-        tS = pH_data(:,4) > 0;
-        if sum(~tS) > 0
-            disp(['Negative salinity values detected & excluded from ph ', ...
-                'calculation for cycle ', num2str(cast_num)]);
-        end
-                
-        phtot = ones(size(pH_data,1),1) * NaN;
-        
-        [phfree,phtot_tmp] = phcalc(pH_data(tS,10), pH_data(tS,2), ...
-            pH_data(tS,3), pH_data(tS,4), cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
-        phtot(tS) = phtot_tmp;
-
-        realPH = isreal(phtot);
-        badPH  = phtot < RCR.PH(1) & phtot > RCR.PH(2);
-        if ~realPH
-            phtot = pH_data(:,1)*NaN;
-            disp(['pH calc contains imaginary numbers - sensor failure ', ...
-                'setting ph values = NaN'])
-        end
-        
-        if sum(badPH > 0)
-            phtot = pH_data(:,1)*NaN;
-            disp(['pH out of range - setting =NAN']);
-        end
-               
-        pH_data = [ones(size(pH_data(:,1)))*cast_num,pH_data,phtot];
-  
-        delete([dirs.temp,pH_file]);
     end
+    
+    if msg_ct == 1
+        pH_hdr  = dura.hdr;
+        pH_hdr  = ['Cast #', pH_hdr, 'pH_tot'];
+        MSC_ver = dura.MSC_FW_ver;
+    end
+    pH_data = dura.data;
+    
+    % CHECK FOR NAN's IN TIME & REMOVE - INCOMPLETE FILE ISSUE with pH
+    % msg parser. I SHould really fix there eventually
+    tnan = isnan(pH_data(:,1));
+    pH_data(tnan,:) =[];
+    
+    %         {'Date/Time','CTD Pres','CTD Temp','CTD Sal','Internal Temp',
+    %             'Internal Humidity','System Power, V','System Power, I',
+    %             'Backup Batt, V','Vrs','std Vrs','Vk','std Vk','Ik','Ib'}
+    
+    % FIX GPS TIME STAMP BUG IN 9634
+    if strcmp(MBARI_ID_str,'9634SOOCN') && cast_num > 137
+        fprintf('%s Cycle %0.0f GPS time bug has been corrected\n', ...
+            MBARI_ID_str,  cast_num)
+        pH_data(:,1) = pH_data(:,1) + 1024*7;
+    end
+    
+    
+    % LOOK FOR REALLY BAD SALINITY VALUES & EXCLUDE FROM PH CALC
+    % otherwise imaginary number land
+    tS = pH_data(:,4) > 0;
+    if sum(~tS) > 0
+        disp(['Negative salinity values detected & excluded from ph ', ...
+            'calculation for cycle ', num2str(cast_num)]);
+    end
+    
+    phtot = ones(size(pH_data,1),1) * NaN;
+    
+    [phfree,phtot_tmp] = phcalc(pH_data(tS,10), pH_data(tS,2), ...
+        pH_data(tS,3), pH_data(tS,4), cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
+    phtot(tS) = phtot_tmp;
+    
+    realPH = isreal(phtot);
+    badPH  = phtot < RCR.PH(1) & phtot > RCR.PH(2);
+    if ~realPH
+        phtot = pH_data(:,1)*NaN;
+        disp(['pH calc contains imaginary numbers - sensor failure ', ...
+            'setting ph values = NaN'])
+    end
+    
+    if sum(badPH > 0)
+        phtot = pH_data(:,1)*NaN;
+        disp(['pH out of range - setting =NAN']);
+    end
+    
+    pH_data = [ones(size(pH_data(:,1)))*cast_num,pH_data,phtot];
+    
+    delete([dirs.temp,pH_file]);
+    
     merge_pH = [merge_pH;pH_data];
     clear dura pH_data ph_tmp
     
@@ -582,7 +585,9 @@ if print_flag ==1
     
     %print_hdr = [print_hdr, phdr(6:end)];
     print_hdr = [print_hdr, hdr_tmp];
-    print_hdr = [print_hdr, 'DF_SN' 'QF' 'Stem_version' 'QF' 'K2' 'QF' 'K0' 'QF'];
+    %print_hdr = [print_hdr, 'DF_SN' 'QF' 'Stem_version' 'QF' 'K2' 'QF' 'K0' 'QF'];
+    print_hdr = [print_hdr, 'DF_SN' 'QF' 'Stem_version' 'QF' 'K2' 'QF', ...
+        'K0' 'QF' 'MSC_Version' 'QF'];
     
     % MODIFY HEADER - ADD UNITS TO COLUMNS
     for i = 1:size(print_hdr,2)
@@ -607,7 +612,9 @@ if print_flag ==1
     end
             
     disp(['Printing ph diagnostic data data to: ',dirs.save,out_name]);
-    fid  = fopen([dirs.save,'DATA\', out_name],'W');
+    %fid  = fopen([dirs.save,'DATA\', out_name],'W');
+    fid  = fopen([dirs.save,'DATA\', out_name],'W','n','UTF-8');
+    
     fprintf(fid,'//0\r\n');
     fprintf(fid,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
         '\r\n']);
@@ -649,7 +656,7 @@ if print_flag ==1
     % PRINT HEADER & BUILD FORMAT STRING
     fstr = '';
     for i = 1:size(print_hdr,2)-1
-        if regexp(print_hdr{i},'Station|QF|DF\_SN','once')
+        if regexp(print_hdr{i},'Station|QF|DF\_SN|MSC_Ver','once')
             fstr =[fstr,'%d\t'];
         elseif regexp(print_hdr{i},'Cruise|Type|^mon|^hh','once')
             fstr =[fstr,'%s\t'];
@@ -679,7 +686,9 @@ if print_flag ==1
 %     DF_info = [INFO.DF_ver, INFO.K2, INFO.KO];
 %     DF_info(isnan(DF_info)) = -1e10; % nan's to mvi
 
-DF_info = [INFO.DF_num, 0, INFO.VER, 0, INFO.k2, 0, INFO.k0, 0];
+%DF_info = [INFO.DF_num, 0, INFO.VER, 0, INFO.k2, 0, INFO.k0, 0];
+DF_info = [INFO.DF_num, 0, INFO.VER, 0, INFO.k2, 0, INFO.k0, 0, MSC_ver, 0];
+
 tnan = isnan(DF_info); % check for missing cal info
 if sum(tnan,2)> 0
     %DF_info(tnan) = -1e10;  %MVI % do this later as str replacement
@@ -710,7 +719,10 @@ end
     fclose(fid);
     
     % MAKE CONFIG FILE
-    fid  = fopen([dirs.save,'DATA\', regexprep(out_name,'TXT','CFG')],'W');
+    %fid  = fopen([dirs.save,'DATA\', regexprep(out_name,'TXT','CFG')],'W');
+    fid  = fopen([dirs.save,'DATA\', regexprep(out_name,'TXT','CFG')],...
+        'W','n','UTF-8');
+    
     fprintf(fid,'//%0.0f\r\n',data_rows);
     fclose(fid);
     

@@ -66,7 +66,9 @@ function tf_odv = argo2odv_CANY(MBARI_ID_str, dirs, update_str, HR_flag)
 %   for adjusted data from 'PRES' to 'PRES_ADJUSTED to account for changes
 %   in Process_APEX_float & Process_NAVIS_float
 % 05/11/2020 - TM modification to fix implemented on 01/10/19 (deals with floats with missing position fixes for cycle 1.  Now 2 floats in this category, 12768soocn and 12783eqpac)  Bug fix.
-
+% 08/25/2020 - TM; enhancement to header description (flagging for NPQ data is addressed).
+% 12/13/20 - TM & JP - Forced all fopen writes to UTF-8, because that is the
+%    new default for Matlab 2020 and better cross platform sharing
 
 % TESTING
 %MBARI_ID_str = '8514Hawaii';
@@ -1128,6 +1130,8 @@ CHL_str = ['//NOTE ON Chl_a & Chl_a_corr [mg/m^3] CONCENTRATION:\r\n',...
 'approach to correct for NPQ: the reference depth is the\r\n//',...
 'shallower of the mixed layer depth or the 1 percent light depth (Kd based on ', ...
 '\r\n//Kim et al., 2015, doi:10.5194/bg-12-5119-2015).No spike profile added.',...
+'\r\n//Note that all NPQ-corrected data receives an Argo quality flag of 5 ("value changed")',...
+'\r\n//and an ODV-style quality flag of 4 ("questionable").',...
 '\r\n//South of 30S a slope correction of 6 was used(E. Boss unpublished data).',...
 '\r\n//This correction scheme was decided upon at the 18th Argo Data Management Team ',...
 '\r\n//meeting in Hamburg, Germany (Nov, 2017), and is subject to change as research on optimal ',...
@@ -1315,7 +1319,7 @@ if QC_check == 1
     disp(['Printing adjusted data to: ',dirs.FVlocal, ...
         'CANYON_QC\', info.FloatViz_name, 'QC', '.txt']);
     fid_adj  = fopen([dirs.FVlocal,'CANYON_QC\', info.FloatViz_name, ...
-                      'QC','.TXT'],'W');
+                      'QC','.TXT'],'W','n','UTF-8');
     fprintf(fid_adj,'//0\r\n');
     fprintf(fid_adj,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
         '\r\n']);
@@ -1488,7 +1492,9 @@ if QC_check == 1
     clear fid_adj cast_num sample_ct dummy_out
     
     % MAKE CONFIG FILE
-    fid_adj  = fopen([dirs.FVlocal,'QC\', info.FloatViz_name,'QC', '.CFG'],'w');
+    %fid_adj  = fopen([dirs.FVlocal,'QC\', info.FloatViz_name,'QC', '.CFG'],'w');
+    fid_adj  = fopen([dirs.FVlocal,'QC\', info.FloatViz_name,'QC', '.CFG'],'W','n','UTF-8');
+    
     fprintf(fid_adj,'//%0.0f\r\n',line_ct);
     fclose(fid_adj);
     clear fid_adj line_ct adj_out
@@ -1506,7 +1512,7 @@ if QC_check == 1 && HR_flag == 1
         disp(['Printing HR+LR adjusted data to: ',dirs.FVlocal, ...
             'CANYON_QC\', info.FloatViz_name,'_HRQC', '.txt']);
         fid_adj  = fopen([dirs.FVlocal,'CANYON_QC\', info.FloatViz_name, ...
-            '_HRQC','.TXT'],'W');
+            '_HRQC','.TXT'],'W','n','UTF-8');
         %fid_adj  = fopen([dirs.FVlocal,'HRQC\', info.FloatViz_name,'_HRQC','.TXT'],'w');
         fprintf(fid_adj,'//0\r\n');
         fprintf(fid_adj,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
@@ -1678,7 +1684,9 @@ if QC_check == 1 && HR_flag == 1
         clear fid_raw cast_num sample_ct
         
         % MAKE CONFIG FILE
-        fid_adj  = fopen([dirs.FVlocal,'HRQC\', info.FloatViz_name,'_HRQC', '.CFG'],'w');
+        %fid_adj  = fopen([dirs.FVlocal,'HRQC\', info.FloatViz_name,'_HRQC', '.CFG'],'w');
+        fid_adj  = fopen([dirs.FVlocal,'HRQC\', info.FloatViz_name,'_HRQC', '.CFG'],'W','n','UTF-8');
+        
         fprintf(fid_adj,'//%0.0f\r\n',line_ct);
         fclose(fid_adj);
     end
