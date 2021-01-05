@@ -1,5 +1,5 @@
 function adj_data = apply_QC_corr(data, cast_sdn, QC)
-% PURPOSE: 
+% PURPOSE:
 %   This function applies the quality control adjustments to nitrate, pH,
 %   and other(?) float data. Adjustments are made based on gain, offset
 %   and drift corrections found in FloatQCList.txt file.
@@ -26,7 +26,7 @@ function adj_data = apply_QC_corr(data, cast_sdn, QC)
 %               slight VRS change when the pump turns on continuously for
 %               CP mode. This is incorperated in ALL corrects, just set to
 %               zero when not used
-%           
+%
 % Created 1/11/2016 by jp
 %
 % Updated locally on 9/10/2018 by TM to change correction scheme to better
@@ -35,6 +35,8 @@ function adj_data = apply_QC_corr(data, cast_sdn, QC)
 % complex code, offsets were removed then added back in, so offset showing in the correction matrix was cumulative.  This resulted in
 % essentially same result as current scheme, but math/code was much more confusing....).
 %
+% Updated 07/13/2020 by TM, previously application of pH adjustments assumed reference temperature of 2degC, modified to use temperature at 1500m (if exist)
+
 
 % **** TEST ****
 % cast_sdn  = INFO.sdn;
@@ -68,11 +70,30 @@ if strcmpi(QC.type,'pH') % pH data!!
     T           = data(:,2);
     %S           = data(:,3); % NOT USED FOR NOW
     data        = data(:,4);
-    TCOR        = (2 + 273.15)./(T + 273.15); % drift + offset is f(T) too????
+    % Find temperature at 1500m, otherwise use T = 2C (if shallow)
+    pres_tol = 500; %if shallow, take T up to 1000m depth
+    p1500   = abs(P- 1500);
+    min1500 = min(p1500);
+    if min1500 < pres_tol; % look for 1500m sample first
+        ind = find(p1500 == min1500,1);
+        if ~isempty(ind)
+            disp('Calculating reference temp at 1500m for application of pH correction to k0...')
+            TREF = T(ind);
+            disp(['T = ',num2str(TREF),' degC'])
+            disp(['refdepth = ',num2str(P(ind))])
+            TCOR        = (TREF + 273.15)./(T + 273.15); % drift + offset is f(T) too, brings correction to k0 space
+        else
+            disp('Could not calculate reference temp at 1500m for application of pH correction to k0.  Using default reference temp of 2degC.')
+            TCOR        = (2 + 273.15)./(T + 273.15); % drift + offset is f(T) too????
+        end
+    else
+        disp('Could not calculate reference temp at 1500m for application of pH correction to k0.  Using default reference temp of 2degC.')
+        TCOR        = (2 + 273.15)./(T + 273.15); % drift + offset is f(T) too????
+    end
     clear P T S tP
     
 else % ALL OTHER DATA
-    data = data(:,4); 
+    data = data(:,4);
 end
 t_fv = data == fv.bio; % flag fill values in data
 
@@ -81,10 +102,10 @@ if QC.steps(1,1) > cast_sdn % 1st QC step does not start at profile 1
     %adj_data = data * 0 + fv.QC;
     adj_data = data * 0 + fv.bio; %jp 9/23/19 9634 cycle 138- clock bad cuasing problems
     return
-end  
-      
+end
+
 % REMOVE STEPS NOT NEEDED FOR DATA CORRECTION CALCULATION BECAUSE FLOAT
-% HAS NOT GOT THERE YET    
+% HAS NOT GOT THERE YET
 t1 = QC.steps(:,1) > cast_sdn;
 QC.steps(t1,:) = []; % present cast is before step so remove step (not needed)
 % [sdn cycle gain offset drift]
@@ -96,20 +117,20 @@ G_at_last_step = QC.steps(end,3); %this is the gain at the last step
 D_at_last_step = QC.steps(end,5); %this is the drift, over time since the last step
 O_at_last_step = QC.steps(end,4); %this is the offset at last step
 
-%now find time difference between last step and the current cycle. 
+%now find time difference between last step and the current cycle.
 time_since_last_step = cast_sdn - QC.steps(end,1);
 
 % *************************************************************************
 % OXYGEN: FIRST CALCULATE WHAT GAIN SHOULD BE FOR THE INPUT CYCLE USING THE
 % QC MATRIX PROVIDED.  THEN APPLY GAIN AS SIMPLE MULTIPLIER.
-% [SDN CAST# GAIN OFFSET DRIFT] 
+% [SDN CAST# GAIN OFFSET DRIFT]
 % *************************************************************************
 if strcmpi(QC.type,'Oxygen');
     %now use time difference between last step and the current cycle.  If
     %they are the same, then the gain is simply "G_at_last_step", otherwise
     %it is "G_at_last_step" + "D_at_last_step"*time_since_last_step
     time_since_last_step = cast_sdn - QC.steps(end,1);
-    if time_since_last_step == 0 
+    if time_since_last_step == 0
         usethisG = G_at_last_step;
     else
         usethisG = D_at_last_step.*time_since_last_step./365+G_at_last_step;
@@ -121,7 +142,7 @@ end
 % FOR NO3, PH, APPLY OFFSET AND DRIFT TO DATA AND THEN APPLY GAIN
 % GAIN DOES NOT VARY WITH TIME
 % [SDN CAST# GAIN OFFSET DRIFT]
-% 
+%
 % AS OF 9/2018 WE ARE NOW TREATING EACH SEGMENT INDEPENDENTLY (ADJUSTMENTS
 % ARE NOT CUMULATIVE ACROSS TIME SERIES).  THIS IS MUCH MORE
 % STRAIGHTFORWARD FOR THE USER, AND REMOVES THE COMPLEXITY OF THE
@@ -132,10 +153,10 @@ end
 % NITRATE QC
 % *************************************************************************
 if strcmpi(QC.type,'Nitrate');
-% CALCULATE OFFSET AND DRIFT 
+    % CALCULATE OFFSET AND DRIFT
     dt  = (cast_sdn - QC.steps(end,1)) ./ 365; % elapsed years in QC leg
     cor = O_at_last_step + D_at_last_step .* dt; % TM (as of 9/2018)
-    adj_data       = (data - cor) ./ G_at_last_step; 
+    adj_data       = (data - cor) ./ G_at_last_step;
     adj_data(t_fv) = fv.bio; % Put fill values back in
 end
 
@@ -149,34 +170,34 @@ if strcmpi(QC.type,'pH'); %DO pH QC
     adj_data       = data + (pump_offset - cor) .* TCOR;
     adj_data(t_fv) = fv.bio; % Put fill values back in
 end
-    
+
 % *************************************************************************
-% CHL QC 
+% CHL QC
 % *************************************************************************
 % ONLY ONE LINE OF CORRECTION DATA (GAIN AND OFFSET)
 if strcmpi(QC.type,'CHL')
-    adj_data       = data * QC.steps(1,3) - QC.steps(1,4); 
+    adj_data       = data * QC.steps(1,3) - QC.steps(1,4);
     adj_data(t_fv) = fv.bio; % Put fill values back in
-end  
+end
 
 % *************************************************************************
-% BACKSSCATTER QC 
+% BACKSSCATTER QC
 % *************************************************************************
 % ONLY ONE LINE OF CORRECTION DATA (GAIN AND OFFSET)
 % SO FAR GAIN IS 1 so basically a DC correction after the fact but should
 % the subtraction be done at the cts level not the VSF
 if strcmpi(QC.type,'BB')
-    adj_data       = data * QC.steps(1,3) - QC.steps(1,4); 
+    adj_data       = data * QC.steps(1,3) - QC.steps(1,4);
     adj_data(t_fv) = fv.bio; % Put fill values back in
 end
 
 % *************************************************************************
-% CDOM QC 
+% CDOM QC
 % *************************************************************************
 % ONLY ONE LINE OF CORRECTION DATA (GAIN AND OFFSET)
 if strcmpi(QC.type,'CDOM')
-    adj_data       = data * QC.steps(1,3) - QC.steps(1,4); 
+    adj_data       = data * QC.steps(1,3) - QC.steps(1,4);
     adj_data(t_fv) = fv.bio; % Put fill values back in
 end
-    
-        
+
+
