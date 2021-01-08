@@ -1,1 +1,1 @@
-Run /ARGO_PROCESSING/MFILES/GUIS/SAGE_O2Argo/INSTALL_sageO2Argo.m to populate this directory with WOA2018 o2sat netCDF data files, or download manually from ftp://ftp.nodc.noaa.gov/pub/woa/WOA18/DATA/o2sat/netcdf/all/1.00/.
+Run /ARGO_PROCESSING/MFILES/GUIS/SAGE_O2Argo/INSTALL_sageO2Argo.m to populate this directory with WOA2018 o2sat netCDF data files, or download manually from https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/o2sat/netcdf/all/1.00//.

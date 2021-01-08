@@ -1,1 +1,1 @@
-Download all WOA2018 files for oxygen at ftp://ftp.nodc.noaa.gov/pub/woa/WOA18/DATA/oxygen/netcdf/all/1.00/ prior to launching sage.
+Download all WOA2018 files for oxygen at https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/oxygen/netcdf/all/1.00/ prior to launching sage.
