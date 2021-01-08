@@ -87,8 +87,8 @@ end
 
 % BIO-OPTICS NOT STORED IN QCA, ONLY O, N, and pH
             % no QC CHL line, but CHL exists
-if handles.info.Mprof == 0 && isfield(handles.info.cal,'CHL') 
-    fprintf(fid_new,'%s\r\n', 'CHL, 0.5, 0');
+if handles.info.Mprof == 0 %&& isfield(handles.info.cal,'CHL') %TM 12/10/20; don't populate QClist with CHL anymore.  May change in future?
+%    fprintf(fid_new,'%s\r\n', 'CHL, 0.5, 0'); %TM 12/10/20; don't populate QClist with CHL anymore.  May change in future?
 % MPROF FILE - NO ASSOCIATED CAL FILE TO CHECK    
 elseif handles.info.Mprof == 1 && handles.info.CHL_sensor == 1
     fprintf(fid_new,'%s\r\n', 'CHL, 0.5, 0');

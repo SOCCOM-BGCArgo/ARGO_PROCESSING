@@ -4,11 +4,11 @@ function varargout = sage()
 % ** THIS MFILE AND ASSOCIATED SOFTWARE IS COPYRIGHT UNDER MIT LICENSE.  **
 % **       PLEASE SEE SAGE_MITLicense.txt FOR MORE INFORMATION         **
 %
-% THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-% IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
-% FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
-% AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, 
-% WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR 
+% THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+% IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+% FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+% AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+% WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 % IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 % *************************************************************************
 % *************************************************************************
@@ -17,13 +17,13 @@ function varargout = sage()
 % sage.m
 % SOCCOM Assessment and Graphical Evaluation GUI.
 % ************************************************************************
-% 
+%
 %
 % USE AS:  sage
 %
-% INPUTS:  
+% INPUTS:
 %
-% OUTPUTS: 
+% OUTPUTS:
 %
 %
 % AUTHOR: Josh Plant & Tanya Maurer
@@ -57,7 +57,7 @@ function varargout = sage()
 %   03/22/2017 Re-process now re-sets handles.info.qc_flag = 1 if QC O2
 %              exists ~ line 1630
 %   04/26/2017 Implement LIAR V2.2, LPHR and LINR, add button and code to
-%              display credits / awknowledgements 
+%              display credits / awknowledgements
 %   08/02/2017 - modified code to now use float-specific FloatQCList files, located in DATA\CAL\QC_LISTS\
 %   08/15/2017 Added code for user dialogue box if multiple UW ID choices for
 %               bottle data (ie 8514)
@@ -73,7 +73,7 @@ function varargout = sage()
 %              which occured after switch to new text file format a while back.
 %
 %   11/14/17  MIT license added.
-%   
+%
 %   01/10/18  Updated display, switched from MATLAB's guide, to GUI Layout
 %             Toolbox (old version is archived as sage_version1.m)
 %   10/1/18  Added CANYON_B to reference options.  May remove CANVON
@@ -83,13 +83,13 @@ function varargout = sage()
 %   07/22/19 updated to WOA2018 and GLODAP2019; removed original CANYON
 %            reference options (now only CANYON-B listed)
 
-% NOTES: 
+% NOTES:
 %
 % ************************************************************************
 %
 % ************************************************************************
 
- 
+
 % Declare shared variables
 gui = createInterface();
 handles = [];
@@ -102,7 +102,7 @@ DATA = [];
 inputs = [];
 
 % % Define my colors
-% 
+%
 mycolors(1,:) = [239 90 17] ./ 255; %orange
 mycolors(2,:) = [197 109 39] ./ 255; %burnt orange
 mycolors(3,:) = [213 185 31] ./ 255; %mustard
@@ -122,9 +122,9 @@ handles.info.T_sensor  = 0;
 
 % LOAD FLOAT ID LIST
 %MBARI name, UW_ID, WMO#, type
-handles.float_IDs = MBARI_float_list(dirs); 
+handles.float_IDs = MBARI_float_list(dirs);
 %-------------------------------------------------------------------------%
-function gui = createInterface( ~ )
+    function gui = createInterface( ~ )
         % Create the user interface for the application and return a
         % structure of handles for global use.
         gui = struct();
@@ -159,7 +159,7 @@ function gui = createInterface( ~ )
             'Parent', mainLayout, ...
             'Title', 'View Data: ');
         gui.ViewContainer = uicontainer( ...
-            'Parent', gui.ViewPanel );        
+            'Parent', gui.ViewPanel );
         
         % + Adjust the main layout HBoxFlex widths
         set( mainLayout, 'Widths', [-0.5,-2.5]  );
@@ -167,114 +167,114 @@ function gui = createInterface( ~ )
         
         % + Create the controls
         BGC = [0.5 0.5 0.5]; %overarching background color
-
+        
         controlLayout = uix.VBoxFlex( 'Parent', controlPanel, ...
             'Padding', 3, 'Spacing', 3 );
-            
-            % Control Box 1 (float spec)
-            VB1 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);         
-            VP1 = uix.Panel('Parent',VB1,'Padding',5,'title','Float Data Specs');
-                vb = uix.VBox('Parent',VP1,'Padding',5,'Spacing',3);
-                    gui.Fbutton = uicontrol( 'Parent', vb,'Style','pushbutton',...
-                    'String','Select Float','fontsize',14,'callback',@on_selectfloat);
-                    gui.Mbutton = uicontrol( 'Parent', vb,'Style','pushbutton',...
-                        'Enable','off','String','Show Map','fontsize',14,...
-                        'callback',@on_showmap);
-                    P1 = uix.Panel('Parent',vb,'title','Profile Window');
-                        E1 = uix.HBox( 'Parent', P1,'Padding', 5, 'Spacing', 5);
-                            gui.profmin = uicontrol('Parent',E1,'Style','edit',...
-                                'tag','profmin','callback',@on_profedit);
-                            gui.profmax = uicontrol('Parent',E1,'Style','edit',...
-                                'tag','profmax','callback',@on_profedit);
-                    P2 = uix.Panel('Parent',vb,'title','Pressure Range (dbar)');
-                        E2 = uix.HBox( 'Parent', P2, 'Padding', 5, 'Spacing', 5 );
-                            gui.Pmin = uicontrol('Parent',E2,'Style','edit',...
-                                'tag','Pmin','callback',@on_depthedit);
-                            gui.Pmax = uicontrol('Parent',E2,'Style','edit',...
-                                'tag','Pmax','callback',@on_depthedit);
-                    P3 = uix.Panel('Parent',vb,'title','GLODAP cross-over range (km)');
-                        E3 = uix.HBox( 'Parent', P3, 'Padding', 5, 'Spacing', 5 );
-                            gui.GLDPkm = uicontrol('Parent',E3,'Style','edit',...
-                                'callback',@on_GLODAP);  
-           
-            % Control Box 2 (Plot Type)
-           VB2 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);         
-           VP2 = uix.Panel('Parent',VB2,'Padding',5,'title','Plot Type');        
-                bbox = uix.VButtonBox('Parent',VP2,'Padding',5,...
-                    'ButtonSize',[100,20],'HorizontalAlignment','left');
-                    rb2(1) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','Surface','tag','1','Value',0,'Callback',@plottype_onClicked ); 
-                    rb2(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','Deep','tag','2','Value',1,'Callback',@plottype_onClicked );
-                    rb2(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','Profile','tag','3','Value',0,'Callback',@plottype_onClicked ); 
-                gui.rb2 = rb2;
-                            
-           % Control Box 3 (Reference Data)
-           VB3 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);         
-           VP3 = uix.Panel('Parent',VB3,'Padding',5,'title','Reference Data');        
-                bbox = uix.VButtonBox('Parent',VP3,'Padding',5,...
-                'ButtonSize',[200,20],'HorizontalAlignment','left');
-                rb3(1) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','LIR','tag','LIR','Value',1,'Callback',@ref_onClicked ); 
-                rb3(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','CANYON-B','tag','CANYON_B','Value',0,'Callback',@ref_onClicked );     
-                rb3(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','WOA2018','tag','WOA','Value',0,'Callback',@ref_onClicked ); 
-                rb3(4) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','Williams_50Sto80S','tag','MLR W50to80','Value',0,'Callback',@ref_onClicked ); 
-                rb3(5) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                    'String','Williams_30Sto50S','tag','MLR W30to50','Value',0,'Callback',@ref_onClicked ); 
-                gui.rb3 = rb3;
-                
-            % Control Box 5 (Parameter to plot) - This is really control box 4
-            % as you go down the layout, but added last, so
-            % calling it 5 
-           VB5 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);         
-           VP5 = uix.Panel('Parent',VB5,'Padding',5,'title','Parameter to Plot');        
-                bbox = uix.VButtonBox('Parent',VP5,'Padding',5,...
-                    'ButtonSize',[100,20],'HorizontalAlignment','left');
-                    rb5(1) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','Nitrate','tag','NO3','Value',1,'Callback',@plotparam_onClicked ); 
-                    rb5(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','Oxygen','tag','O2','Value',0,'Enable','on','Callback',@plotparam_onClicked ); 
-                    rb5(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','pH','tag','PH','Value',0,'Enable','on','Callback',@plotparam_onClicked ); 
-                    rb5(4) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','Salinity','tag','S','Value',0,'Enable','on','Callback',@plotparam_onClicked ); 
-                    rb5(5) = uicontrol('Parent',bbox,'Style','radiobutton',...
-                        'String','Temperature','tag','T','Value',0,'Enable','on','Callback',@plotparam_onClicked ); 
-                gui.rb5 = rb5;
-                
-            % Control Box 4 (QC Adjustments)
-            VP4 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);     
-                P4 = uix.BoxPanel('Parent',VP4,'title','Data Adjustments:');
-%                 set( gui.P4{1}, 'DockFcn', {@nDock,1} );
-                    P4v = uix.VBox('Parent',P4,'Padding',3,'Spacing',3);
-                        P4hcalc = uix.HBox('Parent',P4v,'Padding',2,'Spacing',5); 
-                            gui.findchpts = uicontrol('Parent',P4hcalc,'Style','pushbutton','string',...
-                                'FIND CHPTS','Enable','on','backgroundcolor','yellow',...
-                                'fontsize',12,'ToolTipString','Automatically find changepoints using MATLAB "ischange"',...
-                                'Callback',@on_findchpts);
-                            gui.calcadjs = uicontrol('Parent',P4hcalc,'Style','pushbutton','string',...
-                                'CALC ADJS','Enable','on','backgroundcolor','green',...
-                                'fontsize',12,'ToolTipString','Automatically calculate offset and drift adjustments between changepoints',...
-                                'Callback',@on_calcadj);
-                        P4h = uix.HBox('Parent',P4v,'Padding',5,'Spacing',5);
-                            gui.addrow = uicontrol('Parent',P4h,'Style','pushbutton','string',...
-                                'ADD ROW','Enable','on','Callback',@on_addrow);
-                            gui.removerow = uicontrol('Parent',P4h,'Style','pushbutton','string',...
-                                'REMOVE ROW','Enable','on','Callback',@on_removerow);
-                        gui.tbl=uitable('Parent',P4v,'Data',[1 1 0],'Enable','on',...
-                            'CellEditCallback',@on_celledit);
-                        gui.tbl.ColumnName = {'Cycle','Gain','Offset','Drift'};
-                        gui.tbl.ColumnEditable = [true true true true];
-                        gui.tbl.ColumnWidth = {50 50 50 50};
-                        P4b = uicontrol('parent',P4v,'style','pushbutton','string',...
-                            'RELOAD FloatQCList.txt','Callback',@on_reloadQC,'Enable','on');
-                        P4c = uicontrol('parent',P4v,'style','pushbutton','backgroundcolor','red','string',...
-                            'REPROCESS','fontsize',18,'Callback',@on_reprocess,'Enable','on');           
-
+        
+        % Control Box 1 (float spec)
+        VB1 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);
+        VP1 = uix.Panel('Parent',VB1,'Padding',5,'title','Float Data Specs');
+        vb = uix.VBox('Parent',VP1,'Padding',5,'Spacing',3);
+        gui.Fbutton = uicontrol( 'Parent', vb,'Style','pushbutton',...
+            'String','Select Float','fontsize',14,'callback',@on_selectfloat);
+        gui.Mbutton = uicontrol( 'Parent', vb,'Style','pushbutton',...
+            'Enable','off','String','Show Map','fontsize',14,...
+            'callback',@on_showmap);
+        P1 = uix.Panel('Parent',vb,'title','Profile Window');
+        E1 = uix.HBox( 'Parent', P1,'Padding', 5, 'Spacing', 5);
+        gui.profmin = uicontrol('Parent',E1,'Style','edit',...
+            'tag','profmin','callback',@on_profedit);
+        gui.profmax = uicontrol('Parent',E1,'Style','edit',...
+            'tag','profmax','callback',@on_profedit);
+        P2 = uix.Panel('Parent',vb,'title','Pressure Range (dbar)');
+        E2 = uix.HBox( 'Parent', P2, 'Padding', 5, 'Spacing', 5 );
+        gui.Pmin = uicontrol('Parent',E2,'Style','edit',...
+            'tag','Pmin','callback',@on_depthedit);
+        gui.Pmax = uicontrol('Parent',E2,'Style','edit',...
+            'tag','Pmax','callback',@on_depthedit);
+        P3 = uix.Panel('Parent',vb,'title','GLODAP cross-over range (km)');
+        E3 = uix.HBox( 'Parent', P3, 'Padding', 5, 'Spacing', 5 );
+        gui.GLDPkm = uicontrol('Parent',E3,'Style','edit',...
+            'callback',@on_GLODAP);
+        
+        % Control Box 2 (Plot Type)
+        VB2 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);
+        VP2 = uix.Panel('Parent',VB2,'Padding',5,'title','Plot Type');
+        bbox = uix.VButtonBox('Parent',VP2,'Padding',5,...
+            'ButtonSize',[100,20],'HorizontalAlignment','left');
+        rb2(1) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','Surface','tag','1','Value',0,'Callback',@plottype_onClicked );
+        rb2(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','Deep','tag','2','Value',1,'Callback',@plottype_onClicked );
+        rb2(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','Profile','tag','3','Value',0,'Callback',@plottype_onClicked );
+        gui.rb2 = rb2;
+        
+        % Control Box 3 (Reference Data)
+        VB3 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);
+        VP3 = uix.Panel('Parent',VB3,'Padding',5,'title','Reference Data');
+        bbox = uix.VButtonBox('Parent',VP3,'Padding',5,...
+            'ButtonSize',[200,20],'HorizontalAlignment','left');
+        rb3(1) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','LIR','tag','LIR','Value',1,'Callback',@ref_onClicked );
+        rb3(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','CANYON-B','tag','CANYON_B','Value',0,'Callback',@ref_onClicked );
+        rb3(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','WOA2018','tag','WOA','Value',0,'Callback',@ref_onClicked );
+        rb3(4) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','Williams_50Sto80S','tag','MLR W50to80','Value',0,'Callback',@ref_onClicked );
+        rb3(5) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','Williams_30Sto50S','tag','MLR W30to50','Value',0,'Callback',@ref_onClicked );
+        gui.rb3 = rb3;
+        
+        % Control Box 5 (Parameter to plot) - This is really control box 4
+        % as you go down the layout, but added last, so
+        % calling it 5
+        VB5 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);
+        VP5 = uix.Panel('Parent',VB5,'Padding',5,'title','Parameter to Plot');
+        bbox = uix.VButtonBox('Parent',VP5,'Padding',5,...
+            'ButtonSize',[100,20],'HorizontalAlignment','left');
+        rb5(1) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','Nitrate','tag','NO3','Value',1,'Callback',@plotparam_onClicked );
+        rb5(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','Oxygen','tag','O2','Value',0,'Enable','on','Callback',@plotparam_onClicked );
+        rb5(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','pH','tag','PH','Value',0,'Enable','on','Callback',@plotparam_onClicked );
+        rb5(4) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','Salinity','tag','S','Value',0,'Enable','on','Callback',@plotparam_onClicked );
+        rb5(5) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','Temperature','tag','T','Value',0,'Enable','on','Callback',@plotparam_onClicked );
+        gui.rb5 = rb5;
+        
+        % Control Box 4 (QC Adjustments)
+        VP4 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);
+        P4 = uix.BoxPanel('Parent',VP4,'title','Data Adjustments:');
+        %                 set( gui.P4{1}, 'DockFcn', {@nDock,1} );
+        P4v = uix.VBox('Parent',P4,'Padding',3,'Spacing',3);
+        P4hcalc = uix.HBox('Parent',P4v,'Padding',2,'Spacing',5);
+        gui.findchpts = uicontrol('Parent',P4hcalc,'Style','pushbutton','string',...
+            'FIND CHPTS','Enable','on','backgroundcolor','yellow',...
+            'fontsize',12,'ToolTipString','Automatically find changepoints using MATLAB "ischange"',...
+            'Callback',@on_findchpts);
+        gui.calcadjs = uicontrol('Parent',P4hcalc,'Style','pushbutton','string',...
+            'CALC ADJS','Enable','on','backgroundcolor','green',...
+            'fontsize',12,'ToolTipString','Automatically calculate offset and drift adjustments between changepoints',...
+            'Callback',@on_calcadj);
+        P4h = uix.HBox('Parent',P4v,'Padding',5,'Spacing',5);
+        gui.addrow = uicontrol('Parent',P4h,'Style','pushbutton','string',...
+            'ADD ROW','Enable','on','Callback',@on_addrow);
+        gui.removerow = uicontrol('Parent',P4h,'Style','pushbutton','string',...
+            'REMOVE ROW','Enable','on','Callback',@on_removerow);
+        gui.tbl=uitable('Parent',P4v,'Data',[1 1 0],'Enable','on',...
+            'CellEditCallback',@on_celledit);
+        gui.tbl.ColumnName = {'Cycle','Gain','Offset','Drift'};
+        gui.tbl.ColumnEditable = [true true true true];
+        gui.tbl.ColumnWidth = {50 50 50 50};
+        P4b = uicontrol('parent',P4v,'style','pushbutton','string',...
+            'RELOAD FloatQCList.txt','Callback',@on_reloadQC,'Enable','on');
+        P4c = uicontrol('parent',P4v,'style','pushbutton','backgroundcolor','red','string',...
+            'REPROCESS','fontsize',18,'Callback',@on_reprocess,'Enable','on');
+        
         set( controlLayout, 'Heights', [-4 -1.5 -2 -2 -5] ); %Main control vbox heights
         set( vb, 'Heights', [-1 -1 -1.75 -1.75 -1.75] ); %Float spec box heights
         set( P4v, 'Heights', [-1 -1 -3 -.75 -.75] ); %QC adj box heights
@@ -282,42 +282,42 @@ function gui = createInterface( ~ )
         % + Create the view
         p = gui.ViewContainer;
         t = uiextras.TabPanel('Parent',p,'BackgroundColor','w');
-                t1 = uix.VBox('Parent',t,'padding',10,'spacing',0.5);
-                    t1a = uix.HBox('Parent',t1,'padding',0,'spacing',0);
-                        t1a1 = uicontainer('Parent',t1a);
-                            t1axes(1) = axes('Parent',t1a1,'Visible','off');
-                        t1a2 = uicontainer('Parent',t1a);
-                            t1axes(2) = axes('Parent',t1a2,'Visible','off');
-                        set(t1a,'widths',[-0.85 -1])
-                     t1b = uix.HBox('Parent',t1,'padding',0,'spacing',0.5);
-                        t1b1 = uicontainer('Parent',t1b);
-                            t1axes(3) = axes('Parent',t1b1,'Visible','off');
-                        t1b2 = uicontainer('Parent',t1b);
-                            t1axes(4) = axes('Parent',t1b2,'Visible','off');   
-                        set(t1b,'widths',[-0.85 -1])
-
-                t2 = uix.VBox('Parent',t,'padding',10,'spacing',0.5);
-                    t2a = uix.HBox('Parent',t2,'padding',0,'spacing',0);
-                        t2a1 = uicontainer('Parent',t2a);
-                            t2axes(1) = axes('Parent',t2a1,'Visible','off');
-                        t2a2 = uicontainer('Parent',t2a);
-                            t2axes(2) = axes('Parent',t2a2,'Visible','off');
-                            set(t2a,'widths',[-0.85 -1])
-                     t2b = uix.HBox('Parent',t2,'padding',0,'spacing',0.5);
-                        t2b1 = uicontainer('Parent',t2b);
-                            t2axes(3) = axes('Parent',t2b1,'Visible','off');
-                        t2b2 = uicontainer('Parent',t2b);
-                            t2axes(4) = axes('Parent',t2b2,'Visible','off');
-                            set(t2b,'widths',[-0.85 -1])
-            gui.t1=t1;
-            gui.t2=t2;
-            t.TabNames = {'Raw','QC'};
-            t.TabSize = 75;
-            t.FontSize = 16;
-            t.SelectedChild = 1;
-            gui.t = t;
-            gui.t1ax = t1axes;
-            gui.t2ax = t2axes;
+        t1 = uix.VBox('Parent',t,'padding',10,'spacing',0.5);
+        t1a = uix.HBox('Parent',t1,'padding',0,'spacing',0);
+        t1a1 = uicontainer('Parent',t1a);
+        t1axes(1) = axes('Parent',t1a1,'Visible','off');
+        t1a2 = uicontainer('Parent',t1a);
+        t1axes(2) = axes('Parent',t1a2,'Visible','off');
+        set(t1a,'widths',[-0.85 -1])
+        t1b = uix.HBox('Parent',t1,'padding',0,'spacing',0.5);
+        t1b1 = uicontainer('Parent',t1b);
+        t1axes(3) = axes('Parent',t1b1,'Visible','off');
+        t1b2 = uicontainer('Parent',t1b);
+        t1axes(4) = axes('Parent',t1b2,'Visible','off');
+        set(t1b,'widths',[-0.85 -1])
+        
+        t2 = uix.VBox('Parent',t,'padding',10,'spacing',0.5);
+        t2a = uix.HBox('Parent',t2,'padding',0,'spacing',0);
+        t2a1 = uicontainer('Parent',t2a);
+        t2axes(1) = axes('Parent',t2a1,'Visible','off');
+        t2a2 = uicontainer('Parent',t2a);
+        t2axes(2) = axes('Parent',t2a2,'Visible','off');
+        set(t2a,'widths',[-0.85 -1])
+        t2b = uix.HBox('Parent',t2,'padding',0,'spacing',0.5);
+        t2b1 = uicontainer('Parent',t2b);
+        t2axes(3) = axes('Parent',t2b1,'Visible','off');
+        t2b2 = uicontainer('Parent',t2b);
+        t2axes(4) = axes('Parent',t2b2,'Visible','off');
+        set(t2b,'widths',[-0.85 -1])
+        gui.t1=t1;
+        gui.t2=t2;
+        t.TabNames = {'Raw','QC'};
+        t.TabSize = 75;
+        t.FontSize = 16;
+        t.SelectedChild = 1;
+        gui.t = t;
+        gui.t1ax = t1axes;
+        gui.t2ax = t2axes;
         % POSITION AXES, MOVE PLOTS LEFT SO ROOM ON RIGHT FOR STATS
         % RAW DATA TAB POSITIONING: [l b w h]
         pos1 = get(gui.t1ax(1),'Position');
@@ -342,7 +342,7 @@ function gui = createInterface( ~ )
         pos4(2) = 0.91*pos4(2);
         pos4(4) = 0.9*pos4(4);
         set(gui.t1ax(4),'Position',pos4);
-%         % QC DATA TAB POSITIONING
+        %         % QC DATA TAB POSITIONING
         pos1 = get(gui.t2ax(1),'Position');
         pos1(2) = 0.9*pos1(2);
         pos1(4) = 0.9*pos1(4);
@@ -364,54 +364,54 @@ function gui = createInterface( ~ )
         pos4(1) = 0.6*pos4(1);
         pos4(2) = 0.91*pos4(2);
         pos4(4) = 0.9*pos4(4);
-        set(gui.t2ax(4),'Position',pos4);   
+        set(gui.t2ax(4),'Position',pos4);
     end % createInterface
 %-------------------------------------------------------------------------%
     function updateInterface()
         % Update various parts of the interface in response to the inputs
         % being changed.
         
-       if inputs.rorq == 1
-           DATA.datatype =  handles.raw_data; 
+        if inputs.rorq == 1
+            DATA.datatype =  handles.raw_data;
             gui.whichAX = gui.t1ax;
-       elseif inputs.rorq == 2 && isfield(handles,'new_qc_data') == 1
-           DATA.datatype = handles.new_qc_data;
+        elseif inputs.rorq == 2 && isfield(handles,'new_qc_data') == 1
+            DATA.datatype = handles.new_qc_data;
             gui.whichAX = gui.t2ax;
-       elseif inputs.rorq == 2 && isfield(handles,'new_qc_data') == 0
-           DATA.datatype = handles.qc_data;
+        elseif inputs.rorq == 2 && isfield(handles,'new_qc_data') == 0
+            DATA.datatype = handles.qc_data;
             gui.whichAX = gui.t2ax;
-       end
+        end
         
-       
-       %Assign proper depth edits for profile view (depending which
-       %algorithm chosen)
-       if inputs.isprof == 1 
-           if DATA.paramrefnum ==5 || DATA.paramrefnum ==6 %williams
+        
+        %Assign proper depth edits for profile view (depending which
+        %algorithm chosen)
+        if inputs.isprof == 1
+            if DATA.paramrefnum ==5 || DATA.paramrefnum ==6 %williams
                 %inputs.depthedit = [1000 1600];
                 inputs.depthedit = [1000 inputs.Dedit(3,2)];
-           else
+            else
                 %inputs.depthedit = [0 1600];
                 inputs.depthedit = inputs.Dedit(3,:);
-           end
-       end
-            
-       
+            end
+        end
+        
+        
         set(gui.profmin,'String',num2str(inputs.profedit(1)));
         if max(DATA.datatype.data(:,2)) < inputs.profedit(2)
             set(gui.profmax,'String',num2str(max(DATA.datatype.data(:,2))));
         else
             set(gui.profmax,'String',num2str(inputs.profedit(2))); %last cast #
         end
-        set(gui.Pmin,'String',num2str(inputs.depthedit(1))); 
-        set(gui.Pmax,'String',num2str(inputs.depthedit(2))); 
-%         if max(DATA.datatype.data(:,6)) > inputs.depthedit(2);
-%             set(gui.Pmax,'String',num2str(ceil(max(DATA.datatype.data(:,6)))));
-%         end
-%         if max(DATA.datatype.data(:,6)) < inputs.depthedit(1) && inputs.SFLT == 1
-%             hmsg = msgbox({'No Data within assigned depth limits','Expanding lower end of range.'},'Depth Range Adjustment');
-%             set(gui.Pmin,'String',num2str(floor(max(DATA.datatype.data(:,6)))-100));
-%         end
-
+        set(gui.Pmin,'String',num2str(inputs.depthedit(1)));
+        set(gui.Pmax,'String',num2str(inputs.depthedit(2)));
+        %         if max(DATA.datatype.data(:,6)) > inputs.depthedit(2);
+        %             set(gui.Pmax,'String',num2str(ceil(max(DATA.datatype.data(:,6)))));
+        %         end
+        %         if max(DATA.datatype.data(:,6)) < inputs.depthedit(1) && inputs.SFLT == 1
+        %             hmsg = msgbox({'No Data within assigned depth limits','Expanding lower end of range.'},'Depth Range Adjustment');
+        %             set(gui.Pmin,'String',num2str(floor(max(DATA.datatype.data(:,6)))-100));
+        %         end
+        
         set(gui.GLDPkm,'String',num2str(inputs.GLDPkm));
         depthmin = str2double(get(gui.Pmin,'String'));
         depthmax = str2double(get(gui.Pmax,'String'));
@@ -434,21 +434,21 @@ function gui = createInterface( ~ )
         DATA.xticks{2} = DATA.xlims{2}(1):xtckfac{2}:DATA.xlims{2}(2);
         [~,xti,~] = intersect(DATA.track(:,2),DATA.xticks{2});
         DATA.xticks{1} = DATA.track(xti,1);
-
+        
         % GET FLOAT DATA, SET MISSING VALUES TO NaN, GET INDICES
         qc_flag = handles.info.qc_flag;
-% % %         dRAW = handles.raw_data;
+        % % %         dRAW = handles.raw_data;
         DATA.datatype.data(DATA.datatype.data == -1e10) = NaN; % missing values
-
+        
         iP    = find(strcmp('Pressure[dbar]',DATA.datatype.hdr)   == 1);
-
+        
         % CHECK IF QC DATA EXISTS (O,N,PH) IF NOT IT HAS BEEN SET TO RAW
         inputs.data_str  = '';
         if qc_flag == 0
             inputs.data_str = ' !!! NO QC DATA - PLOTTING RAW !!!';
         end
-       
-
+        
+        
         % CACULATE MLR OR GET WOA(USE QC DATA FOR THIS)
         %         tNaN_QCO2 = isnan(handles.qc_data.data(:,iO)); %Any NaN's in QC O2 (for MLR)
         %         tNaN_QCS = isnan(handles.qc_data.data(:,iS)); %Any NaN's in QC Salinity (for MLR)
@@ -538,7 +538,7 @@ function gui = createInterface( ~ )
     function on_selectfloat( ~, ~ )
         % select float data dir from dialog box
         % first set some limits and defaults
-%         handles=[];
+        %         handles=[];
         if isfield(handles,'CGOD')
             handles = rmfield(handles,'CGOD');
         end
@@ -556,16 +556,17 @@ function gui = createInterface( ~ )
         set(gui.rb3(3),'Enable','on')
         set(gui.rb3(4),'Enable','on')
         set(gui.rb3(5),'Enable','on')
-		set(gui.rb2(1),'Value',0)
-		set(gui.rb2(2),'Value',1)
-		set(gui.rb2(3),'Value',0)
+        set(gui.rb2(1),'Value',0)
+        set(gui.rb2(2),'Value',1)
+        set(gui.rb2(3),'Value',0)
         
         set(gui.rb5(1),'Enable','on'); % nitrate -jp
+        set(gui.rb5(2),'Enable','on'); % oxygen too!
         set(gui.rb5(3),'Enable','on'); % pH -jp
         
         % CHOOSE FILE
         [fn,pn] = uigetfile([dirs.FVlocal,'*.TXT'],'SELECT FILE');
-        if ~isequal(fn, 0)  
+        if ~isequal(fn, 0)
             str = [pn,fn];
             set( gui.Fbutton,'String','Loading float data ...');
             wrk_color = gui.Fbutton.BackgroundColor;
@@ -578,15 +579,15 @@ function gui = createInterface( ~ )
                 'match', 'once');
             handles.info.UW_ID  = regexp(handles.info.float_name, ...
                 '^\d{3}\d+(?=\w+)','match', 'once'); %#'s but chars follow
-            handles.info.QCadj_file   = [handles.info.float_name,'_FloatQCList.txt']; 
-
+            handles.info.QCadj_file   = [handles.info.float_name,'_FloatQCList.txt'];
+            
             % Set flag for ODV file created from Mprof netcdf vs msg files
             % based on file name
-            handles.info.Mprof = 0; 
+            handles.info.Mprof = 0;
             if regexp(handles.info.file_name,'^ODV', 'once')
                 handles.info.Mprof = 1;
             end
-
+            
             % DEFINE DATA QUALITY
             if regexpi(handles.info.file_name, 'QC.TXT', 'once')
                 handles.info.data_quality = 'QC';
@@ -595,15 +596,15 @@ function gui = createInterface( ~ )
                 handles.info.data_quality = 'RAW';
                 handles.RAWorQC.String    = 'RAW DATA';
             end
-
+            
             % GET DATA (RAW AND QC)
             % EXCLUDE FLBB & CARBONATE SYSTEM VARIABLES - ONLY CHECKING O, N, pH
-
+            
             % RAW DATA FIRST
             %fv_path = [handles.dirs.FVlocal, handles.info.float_name,'.TXT'];
             fv_path = [pn, handles.info.float_name,'.TXT'];
             d = get_FloatViz_data(fv_path);
-
+            
             % GET SOME RAW INDICES
             DATA.iP    = find(strcmp('Pressure[dbar]', d.hdr)  == 1);
             DATA.iT    = find(strcmp('Temperature[°C]', d.hdr)  == 1);
@@ -619,9 +620,9 @@ function gui = createInterface( ~ )
             inputs.Dedit = [0 30; 1480 1520; 0 1600]; % starting conditions
             if max(d.data(:,DATA.iP)) < inputs.depthedit(1)
                 inputs.depthedit = [980 1020]; %default pressure range (deep)
-                inputs.Dedit = [0 30; 980 1020; 0 1100]; 
+                inputs.Dedit = [0 30; 980 1020; 0 1100];
             end
-
+            
             handles.info.CHL_sensor = 0;
             if ~isempty(DATA.iCHL) % TEST FOR CHL DATA USED WITH MPROF ADJUSTMENT FILE
                 t1 = d.data(:,DATA.iCHL) ~= -1e10 & ~isnan(d.data(:,DATA.iCHL));
@@ -630,14 +631,14 @@ function gui = createInterface( ~ )
                 end
                 clear t1
             end
-
+            
             % CONDENSE THE DATA empty & empty+1 will be ignored
             handles.raw_data.hdr  = d.hdr([1:DATA.iZ+1,DATA.iO:DATA.iOsat+1,DATA.iN,DATA.iN+1,DATA.iPH,DATA.iPH+1]);
             handles.raw_data.data = d.data(:,[1:DATA.iZ+1,DATA.iO:DATA.iOsat+1,DATA.iN,DATA.iN+1,DATA.iPH,DATA.iPH+1]);
             handles.raw_data.data(handles.raw_data.data == -1e10) = NaN;
             r_raw = size(d.data,1);
-            clear d     
-
+            clear d
+            
             % TRY TO GET QC DATA NEXT
             %fv_path = [handles.dirs.FVlocal,'QC\' handles.info.float_name,'QC.TXT'];
             fv_path = [pn,'QC',filesep,handles.info.float_name,'QC.TXT'];
@@ -658,25 +659,25 @@ function gui = createInterface( ~ )
             else
                 handles.info.qc_flag = 0; % NO QC DATA = 0
                 handles.qc_data.hdr  = handles.raw_data.hdr;
-                handles.qc_data.data = handles.raw_data.data;        
+                handles.qc_data.data = handles.raw_data.data;
             end
             clear d
-
+            
             % REDO AFTER SUBSETTING
             DATA.iO    = find(strcmp('Oxygen[µmol/kg]', handles.raw_data.hdr)  == 1);
             DATA.iOsat = find(strcmp('OxygenSat[%]', handles.raw_data.hdr)     == 1);
             DATA.iN    = find(strcmp('Nitrate[µmol/kg]', handles.raw_data.hdr) == 1);
-            DATA.iPH   = find(strcmp('pHinsitu[Total]', handles.raw_data.hdr)  == 1);   
-
+            DATA.iPH   = find(strcmp('pHinsitu[Total]', handles.raw_data.hdr)  == 1);
+            
             % ONLY WANT GOOD DATA FOR QC PURPOSES & SET SENSOR EXIST FLAGS
             if ~isempty(DATA.iS)
                 tbad = handles.raw_data.data(:,DATA.iS+1) == 8; % SET bad S to NaN
                 handles.raw_data.data(tbad,DATA.iS) = NaN;
-
+                
                 tbad = handles.qc_data.data(:,DATA.iS+1) == 8;
                 handles.qc_data.data(tbad,DATA.iS) = NaN;
             end
-
+            
             if ~isempty(DATA.iO)
                 tbad = handles.raw_data.data(:,DATA.iO+1) == 8; % set bad to NaN before testing for NaN - JP 12/18/18
                 handles.raw_data.data(tbad,DATA.iO) = NaN;
@@ -694,10 +695,10 @@ function gui = createInterface( ~ )
             else
                 set(gui.rb5(2),'Enable','off');
             end
-
+            
             if ~isempty(DATA.iN)
                 tbad = handles.raw_data.data(:,DATA.iN+1) == 8; % set bad to NaN before testing for NaN - JP 12/18/18
-                handles.raw_data.data(tbad,DATA.iN) = NaN; 
+                handles.raw_data.data(tbad,DATA.iN) = NaN;
                 tbad = handles.qc_data.data(:,DATA.iN+1) == 8;
                 handles.qc_data.data(tbad,DATA.iN) = NaN;
                 if all(isnan(handles.raw_data.data(:,DATA.iN))) % NO DATA!!
@@ -707,9 +708,9 @@ function gui = createInterface( ~ )
                     handles.info.NO3_sensor = 1;
                 end
             else
-                set(gui.rb5(1),'Enable','off'); 
+                set(gui.rb5(1),'Enable','off');
             end
-
+            
             if ~isempty(DATA.iPH)
                 tbad = handles.raw_data.data(:,DATA.iPH+1) == 8; % set bad to NaN before testing for NaN - JP 12/18/18
                 handles.raw_data.data(tbad,DATA.iPH) = NaN;
@@ -717,46 +718,46 @@ function gui = createInterface( ~ )
                 handles.qc_data.data(tbad,DATA.iPH) = NaN;
                 if all(isnan(handles.raw_data.data(:,DATA.iPH))) % NO DATA!!
                     disp('no pH data')
-                    handles.info.PH_sensor = 0; 
+                    handles.info.PH_sensor = 0;
                     set(gui.rb5(3),'Enable','off'); % This will prevent plotting non existant data & update interface error - jp
                 else
                     handles.info.PH_sensor = 1;
                     disp('ph data')
                 end
             else
-                set(gui.rb5(3),'Enable','off'); 
+                set(gui.rb5(3),'Enable','off');
             end
-
-            clear tbad 
-
+            
+            clear tbad
+            
             % LOAD CALIBRATION DATA - IT WILL BE USED LATER FOR SENSOR CHECKS
             % WHEN UPDATING FloatQCList AND MAYBE MORE STUFF
             if exist([dirs.cal,'cal',handles.info.float_name,'.mat'],'file')
                 handles.info.cal = load([dirs.cal,'cal',handles.info.float_name,'.mat']);
-%                 handles.info.cal = cal;
+                %                 handles.info.cal = cal;
             end
-
+            
             % SAVE FLOAT TRACK & GET WOA 2018 NITRATE DATA FOR TRACK
             d = handles.raw_data.data; % Get raw data
             [~,ia,~] = unique(d(:,2));
             DATA.track = d(ia,1:4); % sdn cycle lon lat
-%             inputs.profedit = [1 DATA.track(end,2)]; 
-            inputs.profedit = [DATA.track(1,2) DATA.track(end,2)]; 
+            %             inputs.profedit = [1 DATA.track(end,2)];
+            inputs.profedit = [DATA.track(1,2) DATA.track(end,2)];
             DATA.iN    = find(strcmp('Nitrate[µmol/kg]',handles.raw_data.hdr) == 1);
-
-%             set(handles.recumpute_text,'Visible','on')
-%             set(handles.recumpute_text, ...
-%                 'String','LOADING WOA 2018 NITRATE DATA ....')
+            
+            %             set(handles.recumpute_text,'Visible','on')
+            %             set(handles.recumpute_text, ...
+            %                 'String','LOADING WOA 2018 NITRATE DATA ....')
             set( gui.Fbutton,'String','Loading WOA data ...');
             drawnow
             try
                 WOA_NO3 = get_WOA_local(dirs.woa,DATA.track(:,[1,4,3]), [0 2000], 'NO3');
                 % NOW MATCH WOA DATA TO RAW PROFILE DATA, sample by sample
-
+                
                 WNO3 = ones(size(handles.raw_data.data(:,1))) * NaN; % predim
                 Z = WOA_NO3.Z; % WOA depth grid
                 N = WOA_NO3.d; % WOA nitrate, µM / L
-
+                
                 for cast_ct = 1:size(DATA.track,1) % step through profiles
                     % INTRPOLATE WOA2013 ON TO FLOAT PRESSURE PROFILE
                     t1  = d(:,2) == DATA.track(cast_ct,2); % get profile
@@ -764,8 +765,8 @@ function gui = createInterface( ~ )
                     tmpZ = handles.raw_data.data(t1,6); % Get float pressure profile for cast
                     WNO3(t1) = interp1(Z, N(:,cast_ct),tmpZ);
                 end
-
-
+                
+                
                 % NOW CONVERT TO µmol/kg
                 potT  = theta(handles.raw_data.data(:,6), ...
                     handles.raw_data.data(:,8),handles.raw_data.data(:,10),0); % P,T,S,P0
@@ -776,14 +777,14 @@ function gui = createInterface( ~ )
                 msgbox({'ERROR: getWOA failed. No WOA reference data will be plotted.'})
                 DATA.WOA_NO3 = [];
             end
-
+            
             % ********************************************************************
             % GET ANY GLODAP DATA THAT IS NEAR ANY FLOAT TRACK POINTS
-%             set(handles.recumpute_text,'Visible','on')
-%             set(handles.recumpute_text, ...
-%                 'String','LOADING GLODAPv2 DATA ....')
-%             drawnow
-%             track = DATA.track;
+            %             set(handles.recumpute_text,'Visible','on')
+            %             set(handles.recumpute_text, ...
+            %                 'String','LOADING GLODAPv2 DATA ....')
+            %             drawnow
+            %             track = DATA.track;
             set( gui.Fbutton,'String','Loading GLODAP data ...');
             drawnow
             d = get_GLODAPv2_local(dirs.glodap,DATA.track (:,[1,2,4,3]), ...
@@ -792,7 +793,7 @@ function gui = createInterface( ~ )
             clear track d cycles i t1
             % GET GLODAPv2 DATA & SET INDICES
             DATA.G = handles.GLODAP; % Could be empty if no crossover data
-
+            
             DATA.iGcyc = find(strcmp('float cycle',  DATA.G.hdr) == 1);
             DATA.iGSDN = find(strcmp('Date',  DATA.G.hdr)        == 1);
             DATA.iGP   = find(strcmp('G2pressure',DATA.G.hdr)    == 1);
@@ -801,11 +802,11 @@ function gui = createInterface( ~ )
             DATA.iGO   = find(strcmp('G2oxygen',DATA.G.hdr)      == 1);
             DATA.iGN   = find(strcmp('G2nitrate',DATA.G.hdr)     == 1);
             DATA.iGPH  = find(strcmp('ph_insitu',DATA.G.hdr)     == 1);
- 
+            
             set( gui.Fbutton,'String','Loading Ref data ...');
             drawnow
             [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA);
-
+            
             % GET CALIBRATION BOTTLE DATA IF IT EXISTS
             % LOOKUP TABLE  HEADER = [MBARI_ID UW_ID  WMO   CRUISE   STN   CAST   Data file]
             % LOAD BOTTLE DATA LOOK UP TABLE & STORE IN handles STRUCTURE
@@ -815,17 +816,17 @@ function gui = createInterface( ~ )
             fclose(fid);
             handles.bottle_lookup = d;
             clear d fid
-
+            
             ind = strcmpi(handles.info.float_name, handles.bottle_lookup{1,1});
-
+            
             if sum(ind) > 0; % float(s) exists in lookup table
                 set( gui.Fbutton,'String','Loading bottle data ...');
                 drawnow
                 bottle_fname = handles.bottle_lookup{1,7}{ind};
                 stn = handles.bottle_lookup{1,5}(ind);
-
+                
                 cst = handles.bottle_lookup{1,6}(ind);
-
+                
                 % data file & data exist for float
                 if ~isempty(bottle_fname) && stn ~= -999 && cst ~= -999
                     d = get_shipboard_data([dirs.bottle,bottle_fname]);
@@ -849,10 +850,10 @@ function gui = createInterface( ~ )
                 handles.bdata.hdr    = '';
                 handles.bdata.data   = [];
             end
-
+            
             b = handles.bdata; % Could be empty if no calibration data
             DATA.b = b;
-
+            
             DATA.ibSDN  = find(strcmp('DATE',  b.hdr) == 1);
             DATA.ibZ    = find(strcmp('DEPTH', b.hdr) == 1);
             DATA.ibP    = find(strcmp('CTDPRS',b.hdr) == 1);
@@ -863,29 +864,29 @@ function gui = createInterface( ~ )
             DATA.ibN    = find(strcmp('NITRAT',b.hdr) == 1);
             DATA.ibPH1  = find(strcmp('PH_TOT_INSITU',b.hdr) == 1);
             DATA.ibPH2  = find(strcmp('PH_TOT_INSITU_ALKDIC',b.hdr) == 1);
-        
-           % MLR ESTIMATES FOR NITRATE AND PH 
-%            DATA.MLR = LoadGuiMLR_GLT;
-
-           % SET SOME MORE DEFAULTS UPON LOADING FLOAT
-           set(gui.rb3(1),'Value',1)
-           set(gui.rb3(gui.rb3~=gui.rb3(1)),'Value',0)
-           set(gui.rb5(1),'Value',1)
-           set(gui.rb5(gui.rb5~=gui.rb5(1)),'Value',0)
-%            DATA.reftemp = DATA.L.data;
-%            DATA.reftag = 'LIR';
-           DATA.paramtag = 'NO3';
-           DATA.IND  = DATA.iN;
-           DATA.bIND = DATA.ibN;
-           DATA.GIND = DATA.iGN;
-           DATA.CIND = DATA.iCN;
-           DATA.CBIND = DATA.iCBN;
-           DATA.LIND = DATA.iLN;
-%                    if max(handles.raw_data.data(:,6)) < inputs.depthedit(1) 
-%             hmsg = msgbox({'No Data within assigned depth limits','Expanding lower end of range.'},'Depth Range Adjustment');
-%             inputs.depthedit(1) = floor(max(DATA.datatype.data(:,6)))-100;
-%         end
-           
+            
+            % MLR ESTIMATES FOR NITRATE AND PH
+            %            DATA.MLR = LoadGuiMLR_GLT;
+            
+            % SET SOME MORE DEFAULTS UPON LOADING FLOAT
+            set(gui.rb3(1),'Value',1)
+            set(gui.rb3(gui.rb3~=gui.rb3(1)),'Value',0)
+            set(gui.rb5(1),'Value',1)
+            set(gui.rb5(gui.rb5~=gui.rb5(1)),'Value',0)
+            %            DATA.reftemp = DATA.L.data;
+            %            DATA.reftag = 'LIR';
+            DATA.paramtag = 'NO3';
+            DATA.IND  = DATA.iN;
+            DATA.bIND = DATA.ibN;
+            DATA.GIND = DATA.iGN;
+            DATA.CIND = DATA.iCN;
+            DATA.CBIND = DATA.iCBN;
+            DATA.LIND = DATA.iLN;
+            %                    if max(handles.raw_data.data(:,6)) < inputs.depthedit(1)
+            %             hmsg = msgbox({'No Data within assigned depth limits','Expanding lower end of range.'},'Depth Range Adjustment');
+            %             inputs.depthedit(1) = floor(max(DATA.datatype.data(:,6)))-100;
+            %         end
+            
             % GET & DISPLAY QC ADJUSTMENTS IN TABLE
             handles.add_row.Enable = 'on'; % Don't activate until data loaded
             handles.remove_row.Enable = 'on';
@@ -898,31 +899,31 @@ function gui = createInterface( ~ )
                 DATA.tableDATA=[1 1 0 0]; % NO QC so add start row
             end
             set(gui.tbl,'Data',DATA.tableDATA)
-
-           inputs.rorq = 1; %start with raw data
-           DATA.paramrefnum = 1; %start with LIR
-           % PLOT THE DATA
-           inputs.SFLT = 1;
-           set( gui.Fbutton,'String',fn);
-           set( gui.Fbutton,'BackgroundColor',wrk_color);
-                   gui.t.SelectedChild = 1; %default to Raw upon float selection
-        gui.t.SelectionChangedFcn = @on_RAWorQC;
-           drawnow
-           updateInterface()
-           inputs.SFLT = 2;
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-           
-           if handles.info.NO3_sensor == 0 && handles.info.PH_sensor == 0
-               msg_str = 'No valid NO3 or pH data to correct';
-               mymsg = msgbox(msg_str,'WARNING!');
-           end
-
-           disp([fn, ' HAS BEEN LOADED INTO SAGE']);
+            
+            inputs.rorq = 1; %start with raw data
+            DATA.paramrefnum = 1; %start with LIR
+            % PLOT THE DATA
+            inputs.SFLT = 1;
+            set( gui.Fbutton,'String',fn);
+            set( gui.Fbutton,'BackgroundColor',wrk_color);
+            gui.t.SelectedChild = 1; %default to Raw upon float selection
+            gui.t.SelectionChangedFcn = @on_RAWorQC;
+            drawnow
+            updateInterface()
+            inputs.SFLT = 2;
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+            
+            if handles.info.NO3_sensor == 0 && handles.info.PH_sensor == 0
+                msg_str = 'No valid NO3 or pH data to correct';
+                mymsg = msgbox(msg_str,'WARNING!');
+            end
+            
+            disp([fn, ' HAS BEEN LOADED INTO SAGE']);
         else
-           disp([fn, ' COULD NOT BE LOADED INTO SAGE']);
+            disp([fn, ' COULD NOT BE LOADED INTO SAGE']);
         end
-% %         set(gui.Window,'PaperPositionMode','auto')
-% %         print(gui.Window,'sageinterface.png','-dpng','-r600')
+        % %         set(gui.Window,'PaperPositionMode','auto')
+        % %         print(gui.Window,'sageinterface.png','-dpng','-r600')
     end %end selectfloat
 %%
 %-------------------------------------------------------------------------%
@@ -965,81 +966,81 @@ function gui = createInterface( ~ )
 
 %-------------------------------------------------------------------------%
     function on_RAWorQC( source,~ )
-       inputs.rorq = get(source,'selectedchild'); %'1' is raw, '2' is QC
-       updateInterface()
-       if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end
-% %         set(gui.Window,'PaperPositionMode','auto')
-% %         print(gui.Window,'sageinterfaceQC.png','-dpng','-r600')
+        inputs.rorq = get(source,'selectedchild'); %'1' is raw, '2' is QC
+        updateInterface()
+        if inputs.isprof == 1 %profile selected?
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
+        % %         set(gui.Window,'PaperPositionMode','auto')
+        % %         print(gui.Window,'sageinterfaceQC.png','-dpng','-r600')
     end
- 
-%-------------------------------------------------------------------------%        
-   function on_profedit( source, ~ ) 
-       PEtag = get(source,'tag');
-       PE = get(source,'String');
-       if (strcmp(PEtag,'profmin')) == 1
- 
-           inputs.profedit(1,1) = str2double(PE);
-       else
-           inputs.profedit(1,2) = str2double(PE);
-       end
-       updateInterface()
-       if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end
-   end
 
-%-------------------------------------------------------------------------%        
-   function on_depthedit( source, ~ ) 
+%-------------------------------------------------------------------------%
+    function on_profedit( source, ~ )
+        PEtag = get(source,'tag');
+        PE = get(source,'String');
+        if (strcmp(PEtag,'profmin')) == 1
+            
+            inputs.profedit(1,1) = str2double(PE);
+        else
+            inputs.profedit(1,2) = str2double(PE);
+        end
+        updateInterface()
+        if inputs.isprof == 1 %profile selected?
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
+    end
+
+%-------------------------------------------------------------------------%
+    function on_depthedit( source, ~ )
         % get plot type
         RB2 = gui.rb2; % plot type radio button handles
-        tf  = logical(cell2mat({RB2.Value})); %find active one, 3x1 array 
+        tf  = logical(cell2mat({RB2.Value})); %find active one, 3x1 array
+        
+        DEtag = get(source,'tag');
+        DE = get(source,'String');
+        if (strcmp(DEtag,'Pmin')) == 1
+            if DATA.paramrefnum == 5  && str2double(DE)<1000 % Williams
+                mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_50to80S.');
+                inputs.depthedit(1,1) = inputs.depthedit(1,1);
+                inputs.Dedit(tf,1) = inputs.depthedit(1,1);
+                updateInterface()
+                return
+            elseif DATA.paramrefnum == 6  && str2double(DE)<1000 % Williams
+                mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_30to80S.');
+                inputs.depthedit(1,1) = inputs.depthedit(1,1);
+                inputs.Dedit(tf,1) = inputs.depthedit(1,1);
+                updateInterface()
+                return
+            end
+            inputs.depthedit(1,1) = str2double(DE);
+            inputs.Dedit(tf,1) = str2double(DE);
+        else
+            inputs.depthedit(1,2) = str2double(DE);
+            inputs.Dedit(tf,2) = str2double(DE);
+        end
+        updateInterface()
+        if inputs.isprof == 1 %profile selected?
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
+    end
 
-       DEtag = get(source,'tag');
-       DE = get(source,'String');
-       if (strcmp(DEtag,'Pmin')) == 1
-           if DATA.paramrefnum == 5  && str2double(DE)<1000 % Williams
-               mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_50to80S.');
-               inputs.depthedit(1,1) = inputs.depthedit(1,1);
-               inputs.Dedit(tf,1) = inputs.depthedit(1,1);
-               updateInterface()
-               return
-           elseif DATA.paramrefnum == 6  && str2double(DE)<1000 % Williams
-               mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_30to80S.');
-               inputs.depthedit(1,1) = inputs.depthedit(1,1);
-               inputs.Dedit(tf,1) = inputs.depthedit(1,1);
-               updateInterface()
-               return
-           end
-           inputs.depthedit(1,1) = str2double(DE);
-           inputs.Dedit(tf,1) = str2double(DE);
-       else
-           inputs.depthedit(1,2) = str2double(DE);
-           inputs.Dedit(tf,2) = str2double(DE);
-       end
-       updateInterface()
-       if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end
-   end
-
-%-------------------------------------------------------------------------%        
-   function on_GLODAP( source, ~ ) 
-       GDkm = get(source,'String');
-       inputs.GLDPkm = str2double(GDkm);
-       d = get_GLODAPv2_local(dirs.glodap,DATA.track (:,[1,2,4,3]), ...
-        inputs.GLDPkm, [0 2000]);
+%-------------------------------------------------------------------------%
+    function on_GLODAP( source, ~ )
+        GDkm = get(source,'String');
+        inputs.GLDPkm = str2double(GDkm);
+        d = get_GLODAPv2_local(dirs.glodap,DATA.track (:,[1,2,4,3]), ...
+            inputs.GLDPkm, [0 2000]);
         handles.GLODAP = d;
         % GET GLODAPv2 DATA & SET INDICES
         DATA.G = handles.GLODAP; % Could be empty if no crossover data
-
+        
         DATA.iGcyc = find(strcmp('float cycle',  DATA.G.hdr) == 1);
         DATA.iGSDN = find(strcmp('Date',  DATA.G.hdr)        == 1);
         DATA.iGP   = find(strcmp('G2pressure',DATA.G.hdr)    == 1);
@@ -1048,26 +1049,26 @@ function gui = createInterface( ~ )
         DATA.iGO   = find(strcmp('G2oxygen',DATA.G.hdr)      == 1);
         DATA.iGN   = find(strcmp('G2nitrate',DATA.G.hdr)     == 1);
         DATA.iGPH  = find(strcmp('ph_insitu',DATA.G.hdr)     == 1);
-       updateInterface()
-       if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end
-   end
+        updateInterface()
+        if inputs.isprof == 1 %profile selected?
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
+    end
 
 %-------------------------------------------------------------------------%
-   function plottype_onClicked( source, ~ ) 
-        source.Value = 1; % select this 
+    function plottype_onClicked( source, ~ )
+        source.Value = 1; % select this
         RB2 = gui.rb2;
-        set( RB2(RB2~=source), 'Value', 0 ); % unselect others 
+        set( RB2(RB2~=source), 'Value', 0 ); % unselect others
         
         % get track data
         reftag = get(source,'tag');
         SC = str2num(reftag);
-%         SC = get(source,'Selection'); %tabs: (1)surf, (2)depth, (3)profile
+        %         SC = get(source,'Selection'); %tabs: (1)surf, (2)depth, (3)profile
         %Dedit = [0 30; 1480 1520; 0 1600]; % commented out, 11/19/18 by jp
-
+        
         inputs.depthedit = inputs.Dedit(SC,:);
         if get(gui.rb2(3),'Value')==1
             inputs.isprof = 1; %profile selected?
@@ -1076,14 +1077,14 @@ function gui = createInterface( ~ )
         else
             inputs.isprof = 0;
             updateInterface()
-            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)  
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
         end
-   end
+    end
 
 %-------------------------------------------------------------------------%
-    function plotparam_onClicked( source, ~ ) 
+    function plotparam_onClicked( source, ~ )
         r5=gui.rb5;
-        source.Value = 1; % select this 
+        source.Value = 1; % select this
         set( r5(r5~=source), 'Value', 0 ) % unselect others
         DATA.paramtag = get(source,'tag');
         % CHECK DATA TYPE
@@ -1105,7 +1106,7 @@ function gui = createInterface( ~ )
                 set(gui.removerow,'Enable','on')
                 set(gui.addrow,'Enable','on')
             case 'PH'
-                DATA.IND  = DATA.iPH; 
+                DATA.IND  = DATA.iPH;
                 DATA.bIND = DATA.ibPH1;
                 DATA.bIND2 = DATA.ibPH2;
                 DATA.GIND = DATA.iGPH;
@@ -1135,7 +1136,7 @@ function gui = createInterface( ~ )
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','off')
                 set(gui.addrow,'Enable','off')
-             case 'S'
+            case 'S'
                 DATA.IND  = DATA.iS;
                 DATA.bIND = DATA.ibS;
                 DATA.GIND = DATA.iGS;
@@ -1178,18 +1179,18 @@ function gui = createInterface( ~ )
         end
         set(gui.tbl,'Data',DATA.tableDATA)
         updateInterface()
-       if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end
+        if inputs.isprof == 1 %profile selected?
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
     end
 
 %-------------------------------------------------------------------------%
-    function ref_onClicked( source, ~ ) 
+    function ref_onClicked( source, ~ )
         r3=gui.rb3;
-        source.Value = 1; % select this 
-        set( r3(r3~=source), 'Value', 0 ) % unselect others 
+        source.Value = 1; % select this
+        set( r3(r3~=source), 'Value', 0 ) % unselect others
         % get track data
         reftag = get(source,'tag');
         if (strcmp(reftag,'MLR W50to80')) == 1
@@ -1230,40 +1231,40 @@ function gui = createInterface( ~ )
         end
         DATA.reftag = reftag;
         updateInterface()
-       if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end
+        if inputs.isprof == 1 %profile selected?
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
     end
-    
+
 %-------------------------------------------------------------------------%
-    function on_addrow( source, ~ ) 
-	%if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
-		if get(gui.rb2(3),'Value')==1
-			msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
-			return
-		end
+    function on_addrow( source, ~ )
+        %if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
+        if get(gui.rb2(3),'Value')==1
+            msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
+            return
+        end
         celldata = gui.tbl.Data;
         newstrt = celldata(end,1)+1;
         newrow = [newstrt 1 0 0];
         if strcmp(DATA.paramtag,'NO3') == 1 % propagate gain for NO3 if not 1
             newrow(2) = celldata(end,2);
         end
-            
+        
         new_celldata = [celldata;newrow];
-%         new_ends = [new_celldata(2:end,1);inputs.cyEND];
+        %         new_ends = [new_celldata(2:end,1);inputs.cyEND];
         DATA.tableDATA=new_celldata;
         set(gui.tbl,'Data',DATA.tableDATA);
-    end 
+    end
 
 %-------------------------------------------------------------------------%
-    function on_removerow( source, ~ ) 
-		%if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
-		if get(gui.rb2(3),'Value')==1
-			msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
-			return
-		end
+    function on_removerow( source, ~ )
+        %if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
+        if get(gui.rb2(3),'Value')==1
+            msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
+            return
+        end
         celldata = gui.tbl.Data;
         if size(celldata,1) == 1 %do not clear entire table
             new_celldata = [1 1 0 0];
@@ -1280,11 +1281,11 @@ function gui = createInterface( ~ )
     end
 
 %-------------------------------------------------------------------------%
-    function on_celledit( source, ~ ) 
-		%if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
-		if get(gui.rb2(3),'Value')==1
-			msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
-			return
+    function on_celledit( source, ~ )
+        %if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
+        if get(gui.rb2(3),'Value')==1
+            msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
+            return
         end
         
         
@@ -1295,7 +1296,7 @@ function gui = createInterface( ~ )
             if sum(tf) > 0
                 new_data(:,2) = new_data(tf,2); % make all gains the same
             end
-        end       
+        end
         %set(gui.tbl,'Data',source.Data)
         set(gui.tbl,'Data',new_data);
         DATA.tableDATA = new_data;
@@ -1304,38 +1305,43 @@ function gui = createInterface( ~ )
         handles.new_qc_data = apply_GUIQC_corr_GLT(handles,DATA);
         if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified
             Omsg = figure('Name','UPDATING O2 AND RECALCULATING REFERENCE FIELDS...','NumberTitle','off','units','pixels','position',[500 500 200 50],'windowstyle','modal');
-            uicontrol('style','text','string','PLEASE WAIT.','units','pixels','position',[75 10 50 30]);  
+            uicontrol('style','text','string','PLEASE WAIT.','units','pixels','position',[75 10 50 30]);
             [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA);
         end
         updateInterface()
         if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified
             close(Omsg)
         end
-       if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end
+        if inputs.isprof == 1 %profile selected?
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
     end
 
 %-------------------------------------------------------------------------%
     function on_calcadj( source, ~)
-		%if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
-		if get(gui.rb2(3),'Value')==1
-			msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
-			return
-		end
+        %if profile view is selected, DO NOT PLAY WITH ADJUSTMENTS!
+        if get(gui.rb2(3),'Value')==1
+            msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
+            return
+        end
         handles.CGOD  = getGUIQC_M_B_GLT(DATA,handles);
         set(gui.tbl,'Data',handles.CGOD)
         handles.QCA.(DATA.paramtag) = handles.CGOD;
         DATA.tableDATA = handles.QCA.(DATA.paramtag);
         handles.new_qc_data = apply_GUIQC_corr_GLT(handles,DATA);
+        handles.new_qc_data
+        [inanx,inany] = find(isnan(DATA.tableDATA));
+        if ~isempty(inanx) %nans exist
+            msgbox('WARNING -- NANS EXIST IN QC MATRIX!')
+        end
         updateInterface()
-       if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end
+        if inputs.isprof == 1 %profile selected?
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
     end
 
 %-------------------------------------------------------------------------%
@@ -1365,7 +1371,7 @@ function gui = createInterface( ~ )
             Y = anoms(~xnan);
             [UA,Aidx,UAix] = unique(X);
             X2 = [UA,accumarray(UAix,Y,[],@mean)];
-          
+            
             anoms(xnan) = interp1(X2(:,1),X2(:,2),anoms_sdn(xnan));
             disp('NaNs detected in record.  Interpolating for auto-chgpt detection...')
             disp('Interpolation complete.')
@@ -1443,25 +1449,30 @@ function gui = createInterface( ~ )
             set(gui.tbl,'Data',tableMAT)
             on_calcadj
             inputs.findchp = 1;
-			%IF A FLOAT HAS A SHALLOW DEPTH FOR FIRST CYCLE, ISCHANGE WILL NOT INCLUDE FIRST CYCLE.  THIS IS A PROBLE!
-			%RESULTS IN EMPTY VALUES PROPAGATED TO QC FILE FOR FIRST CYCLE.  NEED A BETTER FIX, BUT FOR STARTERS, 
-			%WARN USER!
-			if ischng_CHPTS(1) ~=1
-			     msgbox(['WARNING!! QC-MATRIX DOES NOT START AT CYCLE 1!'])
-			end
-
+            %IF A FLOAT HAS A SHALLOW DEPTH FOR FIRST CYCLE, ISCHANGE WILL NOT INCLUDE FIRST CYCLE.  THIS IS A PROBLE!
+            %RESULTS IN EMPTY VALUES PROPAGATED TO QC FILE FOR FIRST CYCLE.  NEED A BETTER FIX, BUT FOR STARTERS,
+            %WARN USER!
+            if ischng_CHPTS(1) ~=1
+                msgbox(['WARNING!! QC-MATRIX DOES NOT START AT CYCLE 1!'])
+            end
+            %check for NaNs
+            [inanx,inany] = find(isnan(DATA.tableDATA));
+            if ~isempty(inanx) %nans exist
+                msgbox('WARNING -- NANS EXIST IN QC MATRIX!')
+            end
+            
         end
         updateInterface()
-       if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end
+        if inputs.isprof == 1 %profile selected?
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
     end
 
 %-------------------------------------------------------------------------%
-    function on_reloadQC( source, ~ ) 
-%         DATA.QCA = get_QCA(inputs.qc_path,DATA.floatNAME);
+    function on_reloadQC( source, ~ )
+        %         DATA.QCA = get_QCA(inputs.qc_path,DATA.floatNAME);
         handles.QCA      = get_QCA(DATA.QCA_path,handles.info.float_name);
         if ~isempty(handles.QCA.(DATA.paramtag))
             DATA.tableDATA=handles.QCA.(DATA.paramtag);
@@ -1473,10 +1484,10 @@ function gui = createInterface( ~ )
         handles.new_qc_data = apply_GUIQC_corr_GLT(handles,DATA);
         updateInterface()
         if inputs.isprof == 1 %profile selected?
-           PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
-       else
-           PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-       end 
+            PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
+        else
+            PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
+        end
     end
 
 %-------------------------------------------------------------------------%
@@ -1487,7 +1498,7 @@ function gui = createInterface( ~ )
         title_txt  = ' ';
         user_input = inputdlg('QC adjustment comments',title_txt, ...
             [1, length(title_txt)+150])  ;
-
+        
         %IF NO COMMENT  OR CANCELED DON'T DO ANYTHING
         if isempty(user_input) % Canceled or no info - either way stop process
             msgbox('NO COMMENT ENTERED - PROCESSING UPDATE CANCELED');
@@ -1496,17 +1507,17 @@ function gui = createInterface( ~ )
             wrk_color = gui.Fbutton.BackgroundColor;
             set(gui.Fbutton,'BackgroundColor','y');
             mymsg = figure('Name','UPDATING QC AND REPROCESSING...','NumberTitle','off','units','pixels','position',[500 500 200 50],'windowstyle','modal');
-            uicontrol('style','text','string','PLEASE WAIT.','units','pixels','position',[75 10 50 30]); 
+            uicontrol('style','text','string','PLEASE WAIT.','units','pixels','position',[75 10 50 30]);
             drawnow
             %             mymsg = msgbox('UPDATING QC AND REPROCESSING....');
             handles.info.QCadj_log    = 'FloatQCList_log.txt';
             fid = fopen([dirs.cal, handles.info.QCadj_log],'a');
             fprintf(fid,'%s\t%s\t%s\t%s\r\n',handles.info.UW_ID,sdn,USER, ...
-            user_input{1});
+                user_input{1});
             fclose(fid);
             clear USER sdn title_txt user_input fid
             
-        % MAKE NEW QC ADJUSTMENT LIST
+            % MAKE NEW QC ADJUSTMENT LIST
             tf = NewFloatQCList_GLT(handles,dirs); % Make New QC list
             
             % IF QCA.O2 empty this means no QClist file existed, but one now
@@ -1520,22 +1531,22 @@ function gui = createInterface( ~ )
                 end
             end
             
-        % REPROCESS FLOATVIZ QC DATAFILE
+            % REPROCESS FLOATVIZ QC DATAFILE
             if handles.info.Mprof == 0
-				if exist(dirs.msg) && exist(dirs.alt) && exist(dirs.msg_comb)
-					tf = Process_GUI_float_GLT(handles,dirs);
-				else
-				%9/19/2018 NOTE: CURRENTLY Process_GUI_float_GLT ACCESSES MBARI FLOAT MSG FILES FOR FULL REPROCESS WITH UPDATED QC.  
-				%                THIS CAN BE MODIFIED TO POTENTIALLY JUST REPROCESS THE MBARI TXT FILE FOR EXTERNAL USERS.
-				%				 COULD PROBABLY DO THIS WITH A SEPARATE CALL TO Make_Mprof_ODVQC, BUT WILL NEED TESTING, AND CHANGES
-				%				 TO QC FILE NAME AND HEADERS (TO INDICATE QC UPDATE TESTING WAS DONE BY EXTERNAL USER.)  
-				%				 SCHEDULED FOR A POTENTIAL FUTURE UPDATE.  -TMAURER
-					msgbox('NO ACCESS TO MSG FILES.  CANNOT REPROCESS.')
-				end
+                if exist(dirs.msg) && exist(dirs.alt) && exist(dirs.msg_comb)
+                    tf = Process_GUI_float_GLT(handles,dirs);
+                else
+                    %9/19/2018 NOTE: CURRENTLY Process_GUI_float_GLT ACCESSES MBARI FLOAT MSG FILES FOR FULL REPROCESS WITH UPDATED QC.
+                    %                THIS CAN BE MODIFIED TO POTENTIALLY JUST REPROCESS THE MBARI TXT FILE FOR EXTERNAL USERS.
+                    %				 COULD PROBABLY DO THIS WITH A SEPARATE CALL TO Make_Mprof_ODVQC, BUT WILL NEED TESTING, AND CHANGES
+                    %				 TO QC FILE NAME AND HEADERS (TO INDICATE QC UPDATE TESTING WAS DONE BY EXTERNAL USER.)
+                    %				 SCHEDULED FOR A POTENTIAL FUTURE UPDATE.  -TMAURER
+                    msgbox('NO ACCESS TO MSG FILES.  CANNOT REPROCESS.')
+                end
             elseif handles.info.Mprof == 1
-               tf = Make_Sprof_ODVQC(handles);     
+                tf = Make_Sprof_ODVQC(handles);
             end
-        
+            
         end
         set( gui.Fbutton,'String',handles.info.file_name);
         set(gui.Fbutton,'BackgroundColor',wrk_color);
@@ -1550,7 +1561,7 @@ function gui = createInterface( ~ )
 % %             newfig = get( gui.P4{whichpanel}, 'Parent' );
 % %             set( gui.P4{whichpanel}, 'Parent', vbox );
 % %             delete( newfig );
-% %         else 
+% %         else
 % %             % Take it out of the layout
 % %             pos = getpixelposition( gui.P4{whichpanel} );
 % %             newfig = figure( ...
@@ -1564,7 +1575,7 @@ function gui = createInterface( ~ )
 % %             set( gui.P4{whichpanel}, 'Parent', newfig, ...
 % %                 'Units', 'Normalized', ...
 % %                 'Position', [0 0 1 1] );
-% %         end 
+% %         end
 % %     end % nDock
 %-------------------------------------------------------------------------%
 
