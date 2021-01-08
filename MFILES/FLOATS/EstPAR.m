@@ -1,10 +1,10 @@
-function [PAR,ZPAR20] =  EstPAR(lon, lat, sdn, chl, Depth, dirs)
-% This function returns  the Par profile & the depth at PAR = 20 given the
-% inputs. sdn is matlab serial date number in GMT, chla is raw float chlorophyll
+function PAR =  EstPAR(lon, lat, sdn, chl, Depth, dirs)
+% This function returns  the Par profile given the inputs. sdn is the 
+% matlab serial date number in GMT, chla is raw float chlorophyll
 % depth can be Depth or pressure it doesn't matter that much for the
-% sueface waters
+% surface waters
 
-% TESTING[PAR, ZPAR20] = EstPAR(gps(2), gps(3), gps(1), CHLAm, P);
+% TESTING PAR = EstPAR(gps(2), gps(3), gps(1), CHLAm, P);
 % lon = gps(2);
 % lat = gps(3);
 % sdn = gps(1);
@@ -13,6 +13,7 @@ function [PAR,ZPAR20] =  EstPAR(lon, lat, sdn, chl, Depth, dirs)
 
 % ************************************************************************
 % SET SOME DIRS / CONSTANTS
+dirs = []; % testing
 if isempty(dirs)
     user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
     user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
@@ -22,10 +23,11 @@ if isempty(dirs)
 end
 
 PAR_range  =  [400 700];
+%PAR_range  =  [450 570]; % blue-green range
 %MM01_dir   = 'C:\Users\jplant\Documents\MATLAB\Xing\';
 %MM01_dir   = 'E:\Documents\MATLAB\Xing\';
 
-planck     = 6.6260755e-34; % 10e-34 kg m^2 s^-1
+planck     = 6.626070040e-34; % 10e-34 kg m^2 s^-1
 lightspeed = 299792458;  % m s^-1
 Avogadro   = 6.02214086*10^23;
 
@@ -66,8 +68,13 @@ Avogadro   = 6.02214086*10^23;
 
 
 P = Depth;
-CHL = chl * 0.5; % GLOBAL AVERAGE CALIBRATION GAIN CORRECTION
-CHL(CHL<0) = 0; %QUICK FIX SO MMO1 doesn't produce imaginary #'s
+% GLOBAL AVERAGE CALIBRATION GAIN CORRECTION. Due to NPQ this will be a
+% minimum in attenuation
+
+%CHL = chl * 0.5; % GLOBAL AVERAGE CALIBRATION GAIN CORRECTION
+
+CHL = chl; % GLOBAL AVERAGE CALIBRATION GAIN CORRECTION
+CHL(CHL<0) = 0;  % QUICK FIX SO MM01 doesn't produce imaginary #'s
 
 
 % % CREATE A SURFACE VALUE FOR INTEGRATION & SAMPLES WITH MISSING SURFACE
@@ -141,75 +148,46 @@ INT_Kd = cumsum(Kd .* ([P(1); diff(P)] * fill_R),1); % m/m unit-less
 % BIRD & RIORDAN SPECTRAL IRRADIANCE MODEL
 
 % SETTING METEOROLOGICAL VALUES TO SOME AVERAGE VALUES
-met.psp     = 100;     % NOT USED! pyranometer readings (W m-2) 
-met.slvp    = 1013.25; % sea-level pressure (mb)
-met.dryt    = 0;       % dryt = dry air temperature (deg C)
-met.relhum  = 80;      % relhum = relative humidity (%)
-met.windspd = 7;       % windspd = wind speed (m s-1)
-met.windavg = 5;       % windavg = 24hr mean wind speed (m s-1)
 
-[wave dectime zenang IT ID IS] = radmod_jp(sdn, lat, lon, met);
+met.vis  = 15; % visibility, km
+met.am   = 1;  % atmospher factor, 1 for marine
+met.wsm  = 4;  % windavg = 24hr mean wind speed (m s-1)
+met.ws   = 6;  % windspd = wind speed (m s-1)
+met.pres = 1013.25; % sea-level pressure (mb)
+met.rh   = 80; % relhum = relative humidity (%)
+met.wv   = 1.5; % water vapor , cm
 
-% IT ID & IS ARE IN UNITS OF (J/(m^2 s um) = W / (m^2 µm))
-% CONVERT TO OCEAN OPTICS COMMUNITY PREFERED UNITS (uW m-2 nm-1) (* 100)
+% GreggCarder returns W /m^2/ nm
+[lam, ID, IS, IT] = GreggCarder(sdn, lon, lat, PAR_range, met);
+
+% CONVERT FROM W/m^2/nm to umol photons / m^2 / s-1  nm-1
+% Used following website as a guide:
+% https://www.berthold-bio.com/service-support/support-portal/ ...
+% knowledge-base/how-do-i-convert-irradiance-into-photon-flux.html
+%1E-9: nm => m in E = h*c/lambda; 1E6: moles => umoles
+ID = ID * 1E-9 /(planck * lightspeed) / Avogadro *1E6;
+IT = IT * 1E-9 /(planck * lightspeed) / Avogadro *1E6;
+IS = IS * 1E-9 /(planck * lightspeed) / Avogadro *1E6;
+
 % ALSO SLIGHT CORRECTION FOR HOW MUCH SURFACE SUNLIGHT PENETRATES AIR/SEA
 % INTERFACE (* 0.98)
-% wave * 1000 for um to nm
-
 % Downwelling energy at surface for each PAR wavelength
 % Interpolated to Kd MMO1 wave lengths
-Ed0 = interp1(wave* 1000, IT*0.98*100, lambda); %(W m^-2 um^-1) Downwelling
-% Ed0 = interp1(wave* 1000, IT, lambda); %(W m^-2 um^-1) at each nm Downwelling
-% Ed0 = Ed0 * 0.98 / 1000; %(W m^-2 nm^-1)
-% Ed0 = Ed0 * 10000; %(W cm^-2 nm^-1)
+%Ed0 = interp1(lam, IT*0.98, lambda); % umol photons / m^2 / s-1  nm-1
+% Removed 0.98 because reflectance is now included
+Ed0 = interp1(lam, IT, lambda); % umol photons / m^2 / s-1  nm-1
 
-% PAR profiles for each wavelength
-PAR = (fill_C * Ed0) .* exp(-INT_Kd); %(W m^-2 nm^-1)
-
+% PAR profiles for each wavelength (Attenuate Ed0)
+PAR = (fill_C * Ed0) .* exp(-INT_Kd); %umol photons / m^2 /s-1  nm-1
 
 
-% NOW INTEGRATE ACROSS WAVE LENGTHS
-WL = fill_C * lambda;
-PARxWL = PAR .* WL; %(W m^-2) at each lambda 
+% NOW INTEGRATE ACROSS WAVE LENGTHS TO GET AVERAGE PAR PROFILE
+WL      = fill_C * lambda;
+PARxWL  = PAR .* WL; %(umol photons / m^2 / s-1) at each lambda 
+INT_PAR = sum((PARxWL(:,1:end-1) + PARxWL(:,2:end))./2, 2) * dWL;
 
-%INT_PAR = sum((PAR(:,1:end-1) + PAR(:,2:end)) ./ 2,2) * dWL;
-INT_PAR = sum((PARxWL(:,1:end-1) + PARxWL(:,2:end)) ./ 2,2) * dWL/1000;
-
-INT_PAR = INT_PAR / planck/ lightspeed/ 10^5 /Avogadro;
-%INT_PAR = INT_PAR / planck/ lightspeed /10^4/Avogadro;
-
-ind = find(INT_PAR > 20, 1, 'last');
-if isempty(ind) % night time
-    PAR20 = NaN;
-else
-%      PAR20 = P(ind);
-    tnan = isnan(INT_PAR);
-    t_diff = diff(INT_PAR) == 0; % duplicate value
-    t_diff = logical([0; t_diff]);
-    PAR20 = interp1(INT_PAR(~tnan & ~t_diff),P(~tnan & ~t_diff), 20);
-end
+%pause
 
 P      = P(IXO);
 CHL    = CHL(IXO);
 PAR    = INT_PAR(IXO);
-ZPAR20 = PAR20;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

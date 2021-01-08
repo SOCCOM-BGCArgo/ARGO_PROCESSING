@@ -582,6 +582,7 @@ disp(['Processing ARGO float ' cal.info.name, '.........'])
 for msg_ct = 1:size(msg_list,1)
     clear LR HR INFO
     msg_file = strtrim(msg_list(msg_ct,:));
+    disp(['PROCESSING MSG FILE ', msg_file])
     NO3_file = regexprep(msg_file,'msg','isus');
     pH_file  = regexprep(msg_file,'msg','dura');
     % find block of numbers then look ahead to see if '.msg' follows
@@ -695,7 +696,7 @@ for msg_ct = 1:size(msg_list,1)
     % ****************************************************************
     % DEAL WITH LOW RESOLUTION DATA FIRST
     % ****************************************************************
-    if isempty(d.lr_d) % CHECK FOR DATA
+    if isempty(d.lr_d) || size(d.lr_d,1)<=3 % CHECK FOR DATA; sometimes incomplete msg files will come through with minimal LR data (ie 12633.127.msg). 
         disp(['No low res data in message file for ', ...
             strtrim(msg_list(msg_ct,:))])
         continue
@@ -999,7 +1000,7 @@ for msg_ct = 1:size(msg_list,1)
         % ****************************************************************
     % CALCULATE CHLOROPHYLL CONCENTRATION (µg/L or mg/m^3)
     % ****************************************************************
-    if (~isempty(iChl) && master_FLBB ~= 0) || (~isempty(iChl) && (strcmp(MBARI_ID_str,'12542SOOCN')==1))
+    if (~isempty(iChl) && master_FLBB ~= 0) || (~isempty(iChl) && (strcmp(MBARI_ID_str,'12542SOOCN')==1)) || (~isempty(iChl) && (strcmp(MBARI_ID_str,'18169SOOCN')==1))
         % 5/11/20, add exception for 12542, flbb dying and sampling turned
         % off by Dana Swift on cycle 117.  But, still need to create BR file
         % fields as this float has an flbb sensor so these variables should
@@ -1126,7 +1127,7 @@ for msg_ct = 1:size(msg_list,1)
     % SCATTERING FUNCTION (VSF) (m^-1)
     % APEX FLBB
     % ****************************************************************
-    if (~isempty(iBb) && master_FLBB ~= 0) || (~isempty(iBb) && (strcmp(MBARI_ID_str,'12542SOOCN')==1))
+    if (~isempty(iBb) && master_FLBB ~= 0) || (~isempty(iBb) && (strcmp(MBARI_ID_str,'12542SOOCN')==1)) || (~isempty(iChl) && (strcmp(MBARI_ID_str,'18169SOOCN')==1))
         %     if ~isempty(iBb) && master_FLBB ~= 0
         VSF                          = fill0 + fv.bio;
         BETA_SW                      = fill0 + fv.bio;
@@ -1450,7 +1451,18 @@ for msg_ct = 1:size(msg_list,1)
         % 04/07/2020 JP - Now that the BSL flag can be 3 or 4 it has the
         % potential to overwrite a 4 with a 3 so don't let this happen
         t_bio = LR.PH_IN_SITU_TOTAL ~= fv.bio;
-        t_diag = LR.IB_PH ~= fv.bio.*1e9; % need this incase no diagnostic data, 0 if no data.  %6/11/20 TM - added the ".*1e9" to this line.  It was lacking in Josh's update from 4/7/20 and causing erroneous flagging for certain cases, ie float 9634 surface samples of cycles 67 and 97.
+        
+        %6/11/20 TM need this incase no diagnostic data, 0 if no data.  
+        % added the ".*1e9" to this line.  It was lacking in Josh's update 
+        % from 4/7/20 and causing erroneous flagging for certain cases, ie 
+        % float 9634 surface samples of cycles 67 and 97.
+        %t_diag = LR.IB_PH ~= fv.bio.*1e9; 
+        
+        % JP 12/17/20 slight modification to TM's fix. If the dura file is
+        % too small no Ib & Ik tests happen & LR.IB_PH, LR.IK_PH is never
+        % reassigned so you need to check for fv.bio*1e9 & fv.bio as fill
+        % values
+        t_diag = ~(LR.IB_PH == fv.bio.*1e9 | LR.IB_PH == fv.bio); % JP 12/17/20
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
         tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
         tSTP  = (LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4)*4; % Bad STP will affect nitrate
@@ -1462,7 +1474,7 @@ for msg_ct = 1:size(msg_list,1)
         tIK4  = (IK < RCR.IK(1)*25 | IK > RCR.IK(2)*25).*t_diag*4; % DIAGNOSTIC
 		
 		% 09/30/20 TM - EXCLUSION BLOCK FOR NEWER EQPAC FLOATS EXHIBITING THE ERRONEOUS RAILED DIAG VALUES
-		if strcmp(MBARI_ID_str,'17534EqPacE') == 1 || strcmp(MBARI_ID_str,'18601EqPacE')==1 || strcmp(MBARI_ID_str,'18114EqPacE')==1
+		if strcmp(MBARI_ID_str,'17534EqPacE') == 1 || strcmp(MBARI_ID_str,'18601EqPacE')==1 || strcmp(MBARI_ID_str,'18114EqPacE')==1 || strcmp(MBARI_ID_str,'17350EqPacE')==1
 		%keep syntax the same to ensure proper function!  Set flags in this block to 0 (always good)
 			disp('Excluding float from pH sensor diagnostic checks (erroneous railed values!)!')
 		    tIB3  = (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2)).*t_diag*0; % DIAGNOSTIC

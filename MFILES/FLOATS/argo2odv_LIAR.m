@@ -70,6 +70,7 @@ function tf_odv = argo2odv_LIAR(MBARI_ID_str, dirs, update_str, HR_flag)
 % 08/25/2020 - TM; enhancement to header description (flagging for NPQ data is addressed).
 % 12/13/20 - TM & JP - Forced all fopen writes to UTF-8, because that is the
 %    new default for Matlab 2020 and better cross platform sharing
+% 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
 
 % TESTING
 
@@ -1374,6 +1375,8 @@ disp(['Printing raw data to: ',dirs.FVlocal, info.FloatViz_name, '.txt']);
 fid_raw  = fopen([dirs.FVlocal, info.FloatViz_name,'.TXT'],'W','n','UTF-8');  
 
 fprintf(fid_raw,'//0\r\n');
+fprintf(fid_raw,'//<Encoding>UTF-8</Encoding>\r\n');
+
 fprintf(fid_raw,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
        '\r\n']);
 fprintf(fid_raw,['//WMO ID: ',info.WMO,'\r\n']);
@@ -1525,6 +1528,7 @@ if QC_check == 1
         info.FloatViz_name,'QC', '.txt']);
     fid_adj  = fopen([dirs.FVlocal,'QC\', info.FloatViz_name,'QC','.TXT'],'W','n','UTF-8');
     fprintf(fid_adj,'//0\r\n');
+    fprintf(fid_adj,'//<Encoding>UTF-8</Encoding>\r\n');
     fprintf(fid_adj,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
         '\r\n']);
     fprintf(fid_adj,'//!! ADJUSTED DATA FILE !!\r\n');
@@ -1718,6 +1722,7 @@ if strcmp(info.float_type, 'APEX') && HR_flag == 1
 %     fid_raw  = fopen([dirs.FVlocal,'HR\' info.FloatViz_name,'_HR.TXT'],'W');
     fid_raw  = fopen([dirs.FVlocal,'HR\' info.FloatViz_name,'_HR.TXT'],'W','n','UTF-8');
     fprintf(fid_raw,'//0\r\n');
+    fprintf(fid_raw,'//<Encoding>UTF-8</Encoding>\r\n');
     fprintf(fid_raw,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
         '\r\n']);
     fprintf(fid_raw,['//WMO ID: ',info.WMO,'\r\n']);
@@ -1866,6 +1871,7 @@ if QC_check == 1 && HR_flag == 1
             '_HRQC','.TXT'],'W','n','UTF-8');
 
         fprintf(fid_adj,'//0\r\n');
+        fprintf(fid_adj,'//<Encoding>UTF-8</Encoding>\r\n');
         fprintf(fid_adj,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
             '\r\n']);
         fprintf(fid_adj,'//!! ADJUSTED DATA FILE !!\r\n');

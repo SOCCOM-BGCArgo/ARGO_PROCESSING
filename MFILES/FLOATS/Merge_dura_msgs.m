@@ -35,6 +35,7 @@ function d = Merge_dura_msgs(MBARI_ID_str, dirs)
 % REVISONS:
 % 12/13/20 - jp - Forced all fopen writes to UTF-8, because that is the
 %     new default for Matlab 2020 and better cross platform sharing
+% 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
 %
 plot_flag = 1;
 print_flag = 1;
@@ -616,6 +617,7 @@ if print_flag ==1
     fid  = fopen([dirs.save,'DATA\', out_name],'W','n','UTF-8');
     
     fprintf(fid,'//0\r\n');
+    fprintf(fid,'//<Encoding>UTF-8</Encoding>\r\n');
     fprintf(fid,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
         '\r\n']);
     fprintf(fid,['//MBARI ID: ',MBARI_ID_str,'\r\n//\r\n']);

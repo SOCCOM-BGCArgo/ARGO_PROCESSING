@@ -21,7 +21,9 @@ function list = MBARI_float_list(dirs)
 % 01/09/2017 - if UW site down function won't break now
 % 01/09/2020 - JP, Complete over haul, removed obsolete tasks, condensed &
 %              cleaned up
-% 06/09/20 JP fixed  bugs in message string if no connection was made to UW
+% 06/09/20 JP fixed bugs in message string if no connection was made to UW
+% 11/04/20 JP changed source URL and handling for UW WMO listing &
+%             added new exception bolocks for 1117SOOCN, 0948STNP & 0948STNP2
 
 % TESTING
 %dirs =[];
@@ -45,16 +47,19 @@ elseif ~isstruct(dirs)
 end
 
 dirs.FV_List = '\\sirocco\wwwroot\lobo\Data\FloatVizData\'; % MBRI master list
-dirs.UW_html = ['http://runt.ocean.washington.edu/argo/', ...
-    'heterographs/rollcall.html']; % UW list for WMO #'s
+% dirs.UW_html = ['http://runt.ocean.washington.edu/argo/', ...
+%     'heterographs/rollcall.html']; % UW list for WMO #'s
+dirs.UW_URL = 'http://runt.ocean.washington.edu/swift/WmoIdMap'; % UW list for WMO #'s
 
 % FILTERS
 float_exp    = '^\d{3}\d+\D+'; % 3#'s, at least one more, then non #'s             
 exclude_expr = 'MTY|cor|\d{6}\d+'; % % Ignore these on Fv master list
+
+% NOTE: At "dirs.UW_URL" 0948 has an associated WMO#, but no data at the GDAC
 no_wmo       = '6966|0948|0412'; % WMO's were never assigned
 
 % *************************************************************************
-% CHECK NETWORK CONNECTIONS IF NO GOOD EXIT
+% CHECK LOCAL NETWORK CONNECTIONS IF NO GOOD EXIT
 % *************************************************************************
 if ~isdir(dirs.FV_List)
     disp(['Could not access float list at: \\sirocco\wwwroot\lobo\', ...
@@ -86,7 +91,7 @@ d = textscan(fid,'%s%s','CollectOutput',1,'Delimiter','.');
 d = d{1,1}(:,1); % only want MBARI float names, not file extension
 fclose(fid);
 
-% LOGICAL TESTS TO SUBSET FLOAt LIST
+% LOGICAL TESTS TO SUBSET FLOAT LIST
 t1 = ~cellfun(@isempty,regexp(d(:,1),float_exp,'once')); %(desired floats)
 t2 =  cellfun(@isempty,regexpi(d(:,1),exclude_expr,'once')); %exluded floats
 
@@ -108,73 +113,56 @@ clear ans fid d t1 t2 float_exp exclude_exp FloatViz_names IX UW_ID_num
 % *************************************************************************
 % GET WMO #'s & APEX (UW) ID's FROM UW ROLL CALL LIST
 % Save roll call html page locally and then parse
+% 11/4/2020 Pointing to new page on runt for WMO's - more timely
 % *************************************************************************
-hdr_chk = 0;
-ct      = 0;
-[~,status] = urlwrite(dirs.UW_html,[dirs.temp,'UW_rollcall.txt']);
-
-if ~status
-    disp(['Could not access: ',dirs.UW_html,'. LIST WAS NOT UPDATED!!'])
+fn = websave([dirs.temp,'UW_WMO_list.txt'], dirs.UW_URL);
+if isempty(ls(fn))
+    disp(['Could not access UW WMO listing : ', target])
+    disp('EXITUNG!')
     list = {};
     return
-else
-    fid = fopen([dirs.temp,'UW_rollcall.txt']);
-    tline = '';
-    
-    % GET HEADER LINE & FLOAT LINES
-    while ischar(tline) 
-        % *** LOOK FOR HEADER ***
-        if hdr_chk == 0 &&  ~isempty(regexp(tline,'^\s+Float', 'once'))
-            hdr_chk = 1;
-            rc_hdr = regexp(tline,'\s+','split');
-            if isempty(rc_hdr{1,1})
-                rc_hdr = rc_hdr(2:end);
-            end
-            % using space as splitting delimiter need to modify header a
-            % bit
-            I1       = find(strcmp(rc_hdr,'Date'));
-            I2       = find(strcmp(rc_hdr,'Due-Date'));
-            
-            rc_hdr    = [rc_hdr(1:I1-1),'Month' 'Day' 'Year', ...
-                         rc_hdr(I1+1:I2-1),'Due-Mon' 'Due-Day' 'Due-Yr', ...
-                         rc_hdr(I2+1:end)];
-            roll_call = cell(4000, size(rc_hdr, 2));
-        % *** LOOK FOR FLOAT LINES ***   
-        elseif regexp(tline,'index/\d+\.shtml','once','match') % float line
-            ct = ct+1;
-            tline = regexprep(tline,'\s+<.+index/',''); % remove some html encoding
-            tline = regexprep(tline,'.shtml>\d+</a>',''); % remove some more                 
-            tline = regexprep(tline,'*','NaN'); % replace
-            dcell = regexp(tline,'\s+','split');
-            roll_call(ct,1:size(dcell,2)) = dcell;
-        end
-        tline = fgetl(fid);
-    end
 end
-roll_call = roll_call(1:ct,:);
-fclose(fid);
-if exist([dirs.temp,'UW_rollcall.txt'], 'file') == 2
-    delete([dirs.temp,'UW_rollcall.txt']);
-end
-% For now just want UW_ID & WMO#. Later might want to utilize more info?
-iUW       = find(strcmp(rc_hdr,'Float'));
-iWMO      = find(strcmp(rc_hdr,'WmoId'));
-roll_call = roll_call(:,[iUW,iWMO]);
-rc_hdr    = rc_hdr([iUW,iWMO]); 
 
-clear fid iUW iWMO I1 I2 str_fmt dcell tline hdr_chk status ct
+%roll_call = ones(1e4,2)*NaN; % UW_ID WMO_ID
+roll_call = cell(1e4,2); % UW_ID WMO_ID
+rc_hdr    = {'WmoId' 'Float'};
+tline     = ' ';
+fid       = fopen(fn);
+line_ct   = 1;
+while ischar(tline)
+  % WMO at begining followed by another number block (UW ID)
+    str = regexp(tline,'^\s+\d{7}\s+\d+','once','match');
+    if ~isempty(str)
+%         tmp = sscanf(tline,'%f',2); % Get 1st 2 #'s WMO;UW_ID, 2 x 1
+%         roll_call(line_ct,:) = tmp';
+        
+        roll_call(line_ct,:) = regexp(str,'\d+','match');
+        line_ct = line_ct + 1;
+    end
+    tline = fgetl(fid);
+end
+fclose(fid);
+roll_call = roll_call(1:line_ct-1,:);
+clear fid  line_ct str tline
+
     
 % STEP THROUGH MBARI FLOAT NAMES & FILL IN WMO #'s
+iUW       = find(strcmp(rc_hdr,'Float'));
+iWMO      = find(strcmp(rc_hdr,'WmoId'));
 for i = 1:r
     fname = float_names{i};
-    tUW = strcmp(roll_call(:,1), UW_ID{i});
+    tUW = strcmp(roll_call(:,iUW), UW_ID{i});
     
-    if strcmp(fname,'8514HAWAII') % SPECIAL CASE - deployed twice & dif WMO's
+    if strcmp(fname,'1117SOOCN') % 2 UW ID listings, first is old non mbari float
+        WMO_ID{i} = '5906309';  
+    elseif strncmp(fname,'0948STNP',8) % WMO identified on UW LIST but not at DAV
+        WMO_ID{i} = ['NO_WMO_',float_names{i}];
+    elseif strcmp(fname,'8514HAWAII') % SPECIAL CASE - deployed twice & dif WMO's
         WMO_ID{i} = '5904172';
     elseif strcmp(fname,'8501CALCURRENT') % SPECIAL CASE - deployed twice & dif WMO's
         WMO_ID{i} = '5904680';        
     elseif sum(tUW) == 1 % ALL GOOD -ONLY ONE MATCH
-        WMO_ID{i} = roll_call{tUW,2};
+        WMO_ID{i} = roll_call{tUW,iWMO};
     elseif sum(tUW) == 0 % NO MATCH, NOT NOTIFIED YET or WMO NEVER ASSIGNED
         WMO_ID{i} = ['NO_WMO_',float_names{i}];
         if regexp(UW_ID{i},no_wmo,'once')
@@ -186,6 +174,7 @@ for i = 1:r
         disp(['Multiple WMO IDs found for ',UW_ID{i},' - check records'])
     end
 end
+
   
 % *************************************************************************
 % DETERMINE FLOAT TYPE AND ADD TO LIST BY CHECKING MSG DIR NAME
@@ -222,6 +211,7 @@ for i = 1 : size(float_names,1)
     end
     clear flt_name msg_files file_path d type_test tf nrows j
 end
+
 
 % *************************************************************************
 % BUILD FLOAT LIST CELL ARRAY

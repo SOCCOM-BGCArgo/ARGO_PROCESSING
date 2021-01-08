@@ -68,6 +68,7 @@ function tf_odv = argo2odv_MLR(MBARI_ID_str, dirs, update_str, HR_flag)
 % 08/25/2020 - TM; enhancement to header description (flagging for NPQ data is addressed).
 % 12/13/20 - TM & JP - Forced all fopen writes to UTF-8, because that is the
 %    new default for Matlab 2020 and better cross platform sharing
+% 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
 
 
 % TESTING
@@ -1400,6 +1401,7 @@ if QC_check == 1
     fid_adj  = fopen([dirs.FVlocal,'MLR_QC\', info.FloatViz_name,'QC','.TXT'],'W','n','UTF-8');
     %fid_adj  = fopen([dirs.FVlocal,'QC\', info.FloatViz_name,'QC','.TXT'],'w');
     fprintf(fid_adj,'//0\r\n');
+    fprintf(fid_adj,'//<Encoding>UTF-8</Encoding>\r\n');
     fprintf(fid_adj,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
         '\r\n']);
     fprintf(fid_adj,'//!! ADJUSTED DATA FILE !!\r\n');
@@ -1592,6 +1594,7 @@ if QC_check == 1 && HR_flag == 1
             info.FloatViz_name,'_HRQC', '.txt']);
         fid_adj  = fopen([dirs.FVlocal,'MLR_QC\', info.FloatViz_name,'_HRQC','.TXT'],'W','n','UTF-8');
         fprintf(fid_adj,'//0\r\n');
+        fprintf(fid_adj,'//<Encoding>UTF-8</Encoding>\r\n');
         fprintf(fid_adj,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
             '\r\n']);
         fprintf(fid_adj,'//!! ADJUSTED DATA FILE !!\r\n');

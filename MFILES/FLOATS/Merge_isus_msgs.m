@@ -25,12 +25,13 @@ function d = Merge_isus_msgs(MBARI_ID_str, dirs)
 % REVISONS:
 % 12/13/20 - jp - Forced all fopen writes to UTF-8, because that is the
 %     new default for Matlab 2020 and better cross platform sharing
+% 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
 
 print_flag = 1;
 d = [];
 % ************************************************************************
 % FOR TESTING
- 
+
 %MBARI_ID_str  = '18864SOOCN';
 %MBARI_ID_str  = '12744SOOCN';
 % MBARI_ID_str  = '6400STNP';
@@ -58,23 +59,23 @@ if isempty(dirs)
     dirs.msg   = '\\atlas\ChemWebData\floats\';
     %dirs.cal   = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\';
     %dirs.cal   = '\\atlas\chem\ARGO_PROCESSING\DATA\CAL';
-	dirs.cal   = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\';
+    dirs.cal   = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\';
     
     dirs.temp  = 'C:\temp\';
-%     dirs.FV    = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
-%                   'DATA\FLOATVIZ\'];
+    %     dirs.FV    = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
+    %                   'DATA\FLOATVIZ\'];
     dirs.FV    = '\\atlas\chem\ARGO_PROCESSING\DATA\FLOATVIZ\';
-                             
-%    dirs.save = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
-%                  'DATA\SENSOR_STATS\NO3 DIAGNOSTICS\'];
-	dirs.save = ['C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\', ...
-                  'DATA\PH_DIAGNOSTICS\'];
+    
+    %    dirs.save = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
+    %                  'DATA\SENSOR_STATS\NO3 DIAGNOSTICS\'];
+    dirs.save = ['C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\', ...
+        'DATA\PH_DIAGNOSTICS\'];
 elseif ~isstruct(dirs)
     disp('Check "dirs" input. Must be an empty variable or a structure')
     return
 end
 
-     
+
 % ************************************************************************
 %LOAD CAL FILE TO CALC NO3 with later
 if exist([dirs.cal,'cal',MBARI_ID_str,'.mat'],'file')
@@ -92,11 +93,11 @@ end
 INFO.UW         = cal.info.UW_ID; % a string
 UW              = str2double(INFO.UW);
 % INFO.float_type = cal.info.float_type; % a string
-% 
+%
 % if regexp(MBARI_ID_str,'0037|0276','once') % cal file info getting set to "APEX"???
 %     INFO.float_type = 'NAVIS';
 % end
-    
+
 ncal            = cal.N;
 
 % ************************************************************************
@@ -136,7 +137,7 @@ else
     end
     
     disp(['Copying isus message files to ', dirs.temp, '  .......'])
-
+    
     % COPY *.isus files
     if ~isempty(ls([dirs.temp,'*.isus']))
         delete([dirs.temp,'*.isus']) % Clear any message files in temp dir
@@ -191,10 +192,16 @@ for msg_ct = 1:size(msg_list,1)
             if size(spec.pix_fit_win,2) == 2
                 iINT = spec.pix_fit_win(2) - spec.spectra_pix_range(1); % intensity index ~240
             else
-                disp([MBARI_ID_str,' is an APEX float but no pix_fit_win field!!'])
-                pfit_low = find(cal.N.WL >= spec.WL_fit_win(1),1,'first');
-                pfit_hi  = find(cal.N.WL <= spec.WL_fit_win(2),1,'last');
-                spec.pix_fit_win = [pfit_low pfit_hi];
+                str = sprintf(['%s is an APEX float but no pix_fit_win ', ...
+                    'field!! Setting pix_fit_win to [217 240]'],MBARI_ID_str);
+                disp(str)
+                spec.pix_fit_win    = [NaN NaN];
+                spec.pix_fit_win(1) = find(ncal.WL >= 217,1,'first');
+                spec.pix_fit_win(2) = find(ncal.WL <= 240 ,1,'last');
+                
+                %                 pfit_low = find(cal.N.WL >= spec.WL_fit_win(1),1,'first');
+                %                 pfit_hi  = find(cal.N.WL <= spec.WL_fit_win(2),1,'last');
+                %                 spec.pix_fit_win = [pfit_low pfit_hi];
                 iINT = spec.pix_fit_win(2) - spec.spectra_pix_range(1); % intensity index ~240
                 clear pfit_low pfit_hi
             end
@@ -243,7 +250,7 @@ if print_flag == 1
     
     tQF = strcmp(Nhdr,'QF');
     pvars = Nhdr(~tQF);
-
+    
     clear rr cc
     
     % GET INDICES
@@ -256,11 +263,11 @@ if print_flag == 1
     iA240 = find(strcmp(Nhdr,'ABS_240') == 1);
     iFIT  = find(strcmp(Nhdr,'RMS_ERROR') == 1);
     iDC   = find(strcmp(Nhdr,'Dark_Current') == 1);
-
-% merge_NO3_hdr = {'UW ID' 'Cycle' 'SDN' 'Dark_Current' 'Pres' 'Temp', ...
-%     'Sal' 'NO3' 'BL_intercept' 'BL_slope' 'RMS_ERROR' 'WL240', ...
-%     'ABS_240' 'INTENSITY_240'};
-   
+    
+    % merge_NO3_hdr = {'UW ID' 'Cycle' 'SDN' 'Dark_Current' 'Pres' 'Temp', ...
+    %     'Sal' 'NO3' 'BL_intercept' 'BL_slope' 'RMS_ERROR' 'WL240', ...
+    %     'ABS_240' 'INTENSITY_240'};
+    
     % SET SAME QUALITY FLAGS
     for i = 1:size(pvars,2)
         X  = pvars{1,i};
@@ -270,20 +277,20 @@ if print_flag == 1
             %pdata(tnan,iX) = -1e10; % will put fill value in later as str
             pdata(tnan,iX+1) = 1;
         end
-            
+        
         if strcmp(X,'QF')
             continue
         elseif strcmp(X,'Temp')
             t8 = pdata(:,iX) < RC.T8(1) | pdata(:,iX) > RC.T8(2);
-            pdata(t8&~tnan,iX+1) = 8;      
+            pdata(t8&~tnan,iX+1) = 8;
         elseif strcmp(X,'Sal')
             t8 = pdata(:,iX) < RC.S8(1) | pdata(:,iX) > RC.S8(2);
-            pdata(t8&~tnan,iX+1) = 8;  
+            pdata(t8&~tnan,iX+1) = 8;
         elseif strcmp(X,'NO3')
             %t4 = pdata(:,iA240) > RC.ABS4;
             t8 = pdata(:,iX) < RC.N8(1) | pdata(:,iX) > RC.N8(2) | ...
-                 pdata(:,iS+1) == 4 | pdata(:,iA240) > RC.ABS8 | ...
-                 pdata(:,iFIT) > RC.FIT8;
+                pdata(:,iS+1) == 4 | pdata(:,iA240) > RC.ABS8 | ...
+                pdata(:,iFIT) > RC.FIT8;
             pdata(~tnan,iX+1) = 4; % set all NO3 as questionable
             pdata(t8&~tnan,iX+1) = 8;
         elseif strcmp(X,'ABS_240')
@@ -293,7 +300,7 @@ if print_flag == 1
             pdata(t8&~tnan,iX+1) = 8;
         elseif strcmp(X,'RMS_ERROR')
             t8 = pdata(:,iX) > RC.FIT8;
-            pdata(t8&~tnan,iX+1) = 8;            
+            pdata(t8&~tnan,iX+1) = 8;
         end
     end
     
@@ -324,9 +331,9 @@ if print_flag == 1
     end
     
     % merge_NO3_hdr = {'UW ID' 'Cycle' 'SDN' 'Dark_Current' 'Pres' 'Temp', ...
-%     'Sal' 'NO3' 'BL_intercept' 'BL_slope' 'RMS_ERROR' 'WL240', ...
-%     'ABS_240' 'INTENSITY_240'};
-
+    %     'Sal' 'NO3' 'BL_intercept' 'BL_slope' 'RMS_ERROR' 'WL240', ...
+    %     'ABS_240' 'INTENSITY_240'};
+    
     % PRINT HEADER FIRST
     out_name = [MBARI_ID_str,'_NO3.TXT'];
     
@@ -342,19 +349,20 @@ if print_flag == 1
     % MODIFY HEADER - ADD UNITS TO COLUMNS
     for i = 1:size(print_hdr,2)
         X  = print_hdr{i};
-        if strcmp(X,'QF') 
+        if strcmp(X,'QF')
             continue
         elseif regexp(X,'NO3','once')
             print_hdr{i} = regexprep(X,'NO3','Nitrate[µmol/L]');
         end
     end
     
-            
+    
     disp(['Printing nitrate diagnostic data data to: ',dirs.save,out_name]);
     %fid  = fopen([dirs.save,'DATA\', out_name],'W');
     fid  = fopen([dirs.save,'DATA\', out_name],'W','n','UTF-8');
     
     fprintf(fid,'//0\r\n');
+    fprintf(fid,'//<Encoding>UTF-8</Encoding>\r\n');
     fprintf(fid,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
         '\r\n']);
     fprintf(fid,['//MBARI ID: ',MBARI_ID_str,'\r\n//\r\n']);
@@ -371,9 +379,9 @@ if print_flag == 1
     fprintf(fid,['//  Nitrate QF=8: [%0.0f< NO3 >%0.0f] | SALINITY QF = 8 | ', ...
         'ABS240 >%0.1f | Fit error >%0.3f  \r\n'],RC.N8, RC.ABS8,RC.FIT8);
     fprintf(fid,['//  ABS240 QF=4: [%0.1f< ABS240 >%0.1f], ABS240 QF=8: ', ...
-       '[ABS240 >%0.1f]\r\n'],RC.ABS4, RC.ABS8,RC.ABS8); 
+        '[ABS240 >%0.1f]\r\n'],RC.ABS4, RC.ABS8,RC.ABS8);
     fprintf(fid,'//  RMS Fit error QF=8: RMS ERROR >%0.3f\r\n', RC.FIT8);
-   
+    
     fprintf(fid,['//Data quality flags: 0=Good, 4=Questionable, ', ...
         '8=Bad, 1=Missing value\r\n']);
     fprintf(fid,['//Missing data value = ',MVI_str,'\r\n//\r\n']);
@@ -391,9 +399,9 @@ if print_flag == 1
         elseif regexp(print_hdr{i},'^Lon|^Lat|','once')
             fstr =[fstr,'%0.4f\t'];
         elseif regexp(print_hdr{i},'^Pressure|^Nitrate','once')
-            fstr =[fstr,'%0.2f\t'];  
+            fstr =[fstr,'%0.2f\t'];
         elseif regexp(print_hdr{i},'^Dark','once')
-            fstr =[fstr,'%0.0f\t'];   
+            fstr =[fstr,'%0.0f\t'];
         else
             fstr =[fstr,'%0.4g\t'];
         end
@@ -409,7 +417,7 @@ if print_flag == 1
     fstr_num = fstr(ifstr+1:end);
     
     % PRINT DATA LINES
-    for ct = 1 : data_rows  
+    for ct = 1 : data_rows
         pos_fix = LL(ct,:);
         tnan = isnan(pos_fix); % check for missing Lat Lon
         if sum(tnan,2) > 0

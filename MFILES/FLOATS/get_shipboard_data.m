@@ -257,8 +257,8 @@ iALK  = find(strcmp('ALKALI',hdr)  == 1);
 iPH   = find(strcmp('PH_TOT',hdr)  == 1);
 iPHSW = find(strcmp('PH_SWS',hdr)  == 1);
 iPHT  = find(strcmp('PH_TMP',hdr)  == 1);
-iSI   = find(strcmp('SILCAT',hdr)  == 1);
-iPO4  = find(strcmp('PHSPHT',hdr)  == 1);
+iSI   = find(strcmp('SILCAT',hdr)  == 1)
+iPO4  = find(strcmp('PHSPHT',hdr)  == 1)
 iNO3  = find(strcmp('NITRAT',hdr)  == 1);
 
 
@@ -380,7 +380,6 @@ clear nan_SI nan_PO4
 end
 clear nan_SI nan_PO4
 % ***********************
-
 if ~isempty(iALK) && ~isempty(iPH) % check first: Alkalinity & pH exist
     PAR1 = data(:,iALK);
     PAR1(PAR1 < 0) = NaN;

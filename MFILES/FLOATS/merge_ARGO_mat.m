@@ -223,7 +223,7 @@ for file_ct = 1 : r_list
         gps = INFO.gps(1,:);
     end
         
-    if gps(1) < 0, gps(1) = gps(1) + 360; end
+    if gps(2) < 0, gps(2) = gps(2) + 360; end %index changed from 1 to 2 after addition of sdn to gps vector (TM 10/2020)
     
     % RECENT ADDITION OF PRES, PRES_QC, PRES_ADJUSTED & PRES_ADJUSTED_QC
     % TO FLOAT PROCESSING (3/3/2020 JP). OLDER MAT FILES MAY NOT HAVE THEM
@@ -343,8 +343,8 @@ for file_ct = 1 : r_list
     
     % BUILD MATRIX OF CAST SDN LON and LAT
     
-    tmp =[fill_0+INFO.cast, fill_0+INFO.sdn, fill_0+gps(1), ...
-          fill_0+gps(2)];
+    tmp =[fill_0+INFO.cast, fill_0+INFO.sdn, fill_0+gps(2), ...
+          fill_0+gps(3)]; %gps indexing changed after addition of sdn to gps vector (TM, 10/2020)
       
     rdata = [rdata; tmp,rtmp];
     adata = [adata; tmp,atmp];
@@ -380,7 +380,7 @@ for file_ct = 1 : r_list
         hrrtmp(:,t_nan) = []; % remove cols after p,t,s
         
         tmp =[hr_fill_0+INFO.cast, hr_fill_0+INFO.sdn, ...
-            hr_fill_0+gps(1), hr_fill_0+gps(2)];
+            hr_fill_0+gps(2), hr_fill_0+gps(3)]; %gps indexing changed after addition of sdn to gps vector (TM, 10/2020)
         
         hrrdata = [hrrdata; tmp,hrrtmp];  
     end

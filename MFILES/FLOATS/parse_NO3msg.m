@@ -43,6 +43,10 @@ function spec = parse_NO3msg(isus_file)
 % REVISONS:
 % 02/28/17 Added code to look for null data values in Salinity and remove
 % all rows from the pertinent data fields
+% 08/11/2020 - JP - added code to determine MSC firmware versions and save
+%                   it as a field in the ouput structure. Also delt with
+%                   bogus time stamp issue (18110). If time stamp bogus
+%                   subsitute EOP date
 
 % isus_file ='\\atlas\chemwebdata\floats\f5143\5143.005.isus'; % for testing
 % isus_file ='\\atlas\Chem\ISUS\Argo\8497Hawaii\8497.042.isus';
@@ -81,6 +85,10 @@ spec.float             = '';
 spec.cast              = '';
 spec.EOT               = 0; % complete data file flag
 
+spec.MSC_FW_ver = 0;
+spec.EOP_sdn    = NaN; 
+spec.bogus_time = 0;
+
 % check for valid target
 if exist(isus_file,'file')
     fid   = fopen(isus_file);
@@ -105,7 +113,38 @@ data_ct = 0;
 hdr_ct  = 0;
 hdr_chk  = 0;
 hex_len = [];
-while ischar(tline) 
+MSC_FW_ver = 0;
+
+% % MSC firmware version App build dates as of  08/12/2020
+msc_fw_versions(1,:)  = {'Jun 11 2007', 0};
+msc_fw_versions(2,:)  = {'May 28 2008', 0};
+msc_fw_versions(3,:)  = {'Feb  6 2009', 0};
+msc_fw_versions(4,:)  = {'May  9 2011', 0};
+msc_fw_versions(5,:)  = {'Aug 24 2011', 0};
+msc_fw_versions(6,:)  = {'Feb 24 2012', 0};
+msc_fw_versions(7,:)  = {'Aug 23 2012', 0};
+msc_fw_versions(8,:)  = {'Apr  7 2015', 1};
+msc_fw_versions(9,:)  = {'Sep 30 2015', 2};
+msc_fw_versions(10,:) = {'Apr 30 2019', 4};
+
+
+while ischar(tline)
+    if regexp(tline,'App Build','once') % msc build version here
+        dstr = regexp(tline,'\w{3}\s+\d+\s+\d{4}','match', 'once');
+        t1   = strcmp(msc_fw_versions(:,1), dstr);
+        if sum(t1) == 1
+            MSC_FW_ver = msc_fw_versions{t1,2};
+        end
+    end
+    
+    % get end profile time incase dura file has bad time stamp, i.e. 18110
+    if regexp(tline,'^<EOP>', 'once')
+        dstr = regexp(tline,'\w{3}\s+\d+\s+.+\d{4}','match', 'once');
+        if ~isempty(dstr)
+            spec.EOP_sdn = datenum(dstr,'mmm dd HH:MM:SS yyyy');
+        end
+    end
+    
     if  regexp(tline,'^0x','once') % DATA LINES
         hdr_chk =1;
         data_ct = data_ct + 1;
@@ -122,6 +161,12 @@ while ischar(tline)
     end
     tline = fgetl(fid); % get 1st line
 end
+
+if isnan(spec.EOP_sdn)
+    disp(['Could not find EOP line in ', isus_file,'. file is ', ...
+            'probably incomplete'])
+end
+
 
 % Check for header lines
 if hdr_ct ==  0
@@ -166,6 +211,8 @@ frewind(fid);
 tline = fgetl(fid); % prime the engine - get 1st line 
 line_ct = 0;
 hdr_chk = 0;
+bogus_time = 0;
+
 while ischar(tline)
     % GET HEADER LINE INFO
     if  hdr_chk == 0 && ~isempty(regexp(tline,'^H','once'))
@@ -195,7 +242,7 @@ while ischar(tline)
 
 
     % PARSE DATA LINES
-    if  ~isempty(regexp(tline,'^0x','once')) ; % data line
+    if  ~isempty(regexp(tline,'^0x','once')) % data line
         dline = textscan(tline,d_format,'Delimiter',',');
         if ~isempty(dline{1,25})
             % CHECK SIZE OF HEX STRING, IF PARTIAL SPECTRA MOVE TO NEXT LINE
@@ -203,7 +250,17 @@ while ischar(tline)
             if length(dline{1,25}{1}) == hex_length %&& dline{1,7} ~= -1
                 line_ct = line_ct +1;
                 
-                spec.SDN(line_ct)  = datenum(dline{1,3},'mm/dd/yyyy HH:MM:SS');
+                %spec.SDN(line_ct)  = datenum(dline{1,3},'mm/dd/yyyy HH:MM:SS');
+                
+                % GET TIME STAMP
+                if regexp(dline{1,3}{1}, '01/01/2000','once')
+                    bogus_time = 1;
+                    spec.SDN(line_ct) = spec.EOP_sdn;
+                else
+                    spec.SDN(line_ct) = datenum(dline{1,3},'mm/dd/yyyy HH:MM:SS');
+                end
+                
+                
                 spec.P(line_ct)    = dline{1,5};
                 spec.T(line_ct)    = dline{1,6};
                 spec.S(line_ct)    = dline{1,7};
@@ -238,6 +295,11 @@ while ischar(tline)
 end
 fclose(fid);
 
+if bogus_time == 1
+    disp([isus_file,' has bogus time stamps - subsituting EOP ',...
+        'date from APF11'])
+end
+
 % CHECK FOR NULL SALINITY VALUES (-1) - MEANS BAD CTD DATA
 % IF THERE, REMOVE LINES FROM ALL PERTINENT FILEDS
 t1 = spec.S == -1; % could return 0's, 1's, or empty
@@ -250,6 +312,10 @@ if sum(t1) > 0
         end
     end
 end
+
+spec.MSC_FW_ver = MSC_FW_ver;
+%spec.EOP_sdn    = EOP_sdn;
+spec.bogus_time = bogus_time;
             
 clearvars -except spec
 

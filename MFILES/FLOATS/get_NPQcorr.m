@@ -1,14 +1,4 @@
 function CHL = get_NPQcorr(gps, data, dirs)
-% data = indata; %Testing
-% gps =gps;
-
-% gps  = [INFO.sdn, nanmean(INFO.gps,1)];
-% %data = [lr_d(:,[iP,iT,iS]),LR.CHLA_ADJUSTED]; % APEX
-% data = [hr_d(:,[iP,iT,iS]),HR.CHLA_ADJUSTED]; % NAVIS
-% dirs = [];
-
-% data = [tmp(:,[iP,iT,iS]),CHL_EXP];
-% gps = tmp(1,[iSDN,iLON,iLAT]);
 % ************************************************************************
 % PURPOSE: 
 %   This function corrects a chlorophyll fluorescence profile for the
@@ -41,6 +31,33 @@ function CHL = get_NPQcorr(gps, data, dirs)
 %
 % REQUIRED FUNCTIONS:
 %   SolarAzElq.m    a function to derive the sun angle
+%
+% CHNAGE HISTORY:
+%  06/12/2019 - improved MLD calculation code to better deal with missing 
+%     refrence depth samples or missing data below the MLD. -jp
+%  03/02/2020 - JP - added a shallow profile check to account for 0889 surf
+%  only measurements
+
+% ************************************************************************
+% TESTING:
+% data = indata; %Testing
+% gps =gps;
+
+% gps  = [INFO.sdn, nanmean(INFO.gps,1)];
+% % %data = [lr_d(:,[iP,iT,iS]),LR.CHLA_ADJUSTED]; % APEX
+% data = [hr_d(:,[iP,iT,iS]),HR.CHLA_ADJUSTED]; % NAVIS
+% dirs = [];
+
+% data = [tmp(:,[iP,iT,iS]),CHL_EXP];
+% gps = tmp(1,[iSDN,iLON,iLAT]);
+% dirs = [];
+
+% d = parse_NAVISmsg4ARGO('\\atlas\ChemWebData\floats\n0889\0889.031.msg');
+% gps  = [d.sdn, nanmean(d.gps,1)];
+% data = d.lr_d(:,[1:3,7]); % NAVIS
+% dirs =[];
+
+% ************************************************************************
 
 % ************************************************************************
 % DO SOME PREP WORK
@@ -72,6 +89,8 @@ CHL.ZPAR20  = [];
 CHL.sun   = [];
 CHL.slope = []; % CHL:BBP slope test diagnostics
 CHL.XMLDZ = [];
+CHL.CHLAm = [];
+CHL.exit_msg = '';
 
 if max(size(gps)) ~= 3 && min(size(gps)) ~= 1
     disp('GPS data is not valid - maybe no position fix')
@@ -84,16 +103,39 @@ end
 % DEFINE indata column indices
 iP = 1; iT = 2; iS = 3; iC = 4; iB = 5;
 
+% CHECK FOR ANY NaN's IN PRESS TEMP OR PSAL & REMOVE TEMPORARILY
+orig_data = data;
+%P_nan     = isnan(orig_data(:,iP));
+P_nan     = isnan(orig_data(:,iP)) | isnan(orig_data(:,iT)) | ...
+            isnan(orig_data(:,iS));
+        
+if sum(P_nan > 0)
+    disp(' ');
+    disp(['NaNs in P, T or S for cycle date ',datestr(gps(1)), ...
+        ' temporarily removed for data processing purposes']);
+    data = data(~P_nan,:);
+end
+
 if all(isnan(data(:,iC)))
     CHL.data = [];
-    disp('All chl data = NaN, exiting')
+    CHL.exit_msg = 'All chl data = NaN, exiting';
+    disp(CHL.exit_msg)
     return
 end
 
 if min(data(:,iP)) > 25
     CHL.data = [];
-    fprintf('No surface data found for MLD reference point: Zmin = %0.1f\r\n',...
-        min(data(:,iP)))
+    CHL.exit_msg = sprintf(['No surface data found for MLD reference ',...
+        'point: Zmin = %0.1f\r\n'], min(data(:,iP)));
+    disp(CHL.exit_msg)
+    return
+end
+
+if max(data(:,iP))< 75
+    CHL.data = [];
+    CHL.exit_msg = sprintf(['Shallow profile! MLD calculation ',...
+        'questionable: Zmax = %0.1f meters\r\n'], max(data(:,iP)));
+    disp(CHL.exit_msg)
     return
 end
 
@@ -110,13 +152,34 @@ end
 % FIND DENSITY MLD
 mld_den_threshold = 0.03; % Dong et al 2008
 den      = density(data(:,iS),data(:,iT));
-tDMLD    = den - nanmean(den(1:2)) <= mld_den_threshold; % mixed layer
+
+% There will be at least one data point <=25m
+% data has already been set to shallow to deep
+ref_ind  = find(data(:,iP)<=25, 2, 'first'); % find ref points for mld calc
+if isempty(ref_ind) % redundant but just to be safe
+    CHL.data = [];
+    CHL.exit_msg = sprintf(['No reference indices found for MLD reference ',...
+        'point: Zmin = %0.1f\r\n'], min(data(:,iP)));
+    disp(CHL.exit_msg)
+    return
+end
+
+tDMLD    = den - nanmean(den(ref_ind)) <= mld_den_threshold; % mixed layer
+if all(tDMLD ==1)  % no data below mld
+    CHL.exit_msg = sprintf(['MLD reference exists but no data found ', ...
+        'below MLD. MLD could not be determined Zmax = %0.1f\r\n'], ...
+        max(data(:,iP)));
+    disp(CHL.exit_msg)
+    return
+end
+
+
 CHL.Dmld = max(data(tDMLD,iP)); % depth of mixed layer
 clear tDMLD mld_den_threshold den
 
 % FIND ISOTHERMAL MLD
 mld_temp_threshold = 0.2; % Dong et al 2008
-tTMLD    = abs(data(:,iT) - nanmean(data(1:2,iT))) <= mld_temp_threshold; 
+tTMLD    = abs(data(:,iT) - nanmean(data(ref_ind,iT))) <= mld_temp_threshold; 
 CHL.Tmld = max(data(tTMLD,iP)); % depth of mixed layer
 clear tTMLD mld_temp_threshold
 
@@ -154,13 +217,22 @@ end
 % NOTE: I believe nanmedian has a bug. If more 0 vlues than non zero values
 % nanmedian will return a NaN. Using the updated matlab functionm which now
 % has a nan flag 12/28/17
-CHLAm  = median(tmpC,2,'omitnan');
+CHLAm     = median(tmpC,2,'omitnan');
 
-clear tmpB tmpC win i
+% ADD CHLAm to output structure for dark data returns
+Ctmp = CHLAm;
+if pressure_dir == 1
+    Ctmp = flip(CHLAm,1);
+end
+CHL.CHLAm = ones(size(orig_data(:,1)))*NaN;
+CHL.CHLAm(~P_nan) = Ctmp;
+
+clear tmpB tmpC win i Ctmp
 
 if all(isnan(CHLAm))
     CHL.data = [];
-    disp('Median filterd Chl is all NaN - check raw data')
+    CHL.exit_msg = 'Median filtered Chl is all NaN - check raw data';
+    disp(CHL.exit_msg)
     return
 end
 
@@ -180,7 +252,8 @@ tnan  = isnan(CHLAm);
 KdCHL = CHLAm(~tnan);
 PX    = P(~tnan);
 if isempty(PX)
-    disp('NO data left after Nan removal')
+    CHL.exit_msg = 'NO data left after NaN removal';
+    disp(CHL.exit_msg)
     return
 end
     
@@ -224,7 +297,8 @@ Zmin   = nanmin([CHL.Dmld, CHL.Zeu]);
 %chl_chk = ~isnan(data(:,iC)) & data(:,iP) <= Zmin2;
 chl_chk = ~isnan(data(:,iC)) & data(:,iP) <= Zmin;
 if all(~chl_chk) 
-    disp('No surface chl data in selected range - exiting')
+    CHL.exit_msg = 'No surface chl data in selected range - exiting';
+    disp(CHL.exit_msg)
     CHL.data =[];
     return
 end
@@ -235,7 +309,8 @@ chl_tmp  = CHLAm;
 chl_tmp(~tZchl) = NaN; % Set values below MLD to NaN
 Cmax = find(chl_tmp == max(chl_tmp),1, 'last'); % find shallow chl max index
 if isempty(Cmax)
-    disp('No surface chl max found in selected range - exiting')
+    CHL.exit_msg = 'No surface chl max found in selected range - exiting';
+    disp(CHL.exit_msg)
     CHL.Zchl = NaN; % depth of base of shallow chl max
     return
 else
@@ -261,6 +336,9 @@ CHL.sun  = El;
 %if El >= 0 % temporary - find dark samples only
 if El < 0
     CHL.data =[];
+    CHL.exit_msg = ['Sun elevation < 0 degress (',num2str(El), ...
+        ') - No NPQ correction'];
+    disp(CHL.exit_msg)
     return
 end
 
@@ -368,7 +446,14 @@ if pressure_dir == 1
     out = flip(out,1);
 end
 
-CHL.data = out;
+final_data = ones(size(orig_data,1), size(out,2))* NaN;
+final_data(~P_nan,:) = out; % put nan's back in
+
+    
+
+
+CHL.data = final_data;
+
 
 
 

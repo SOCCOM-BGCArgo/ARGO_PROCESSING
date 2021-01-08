@@ -8,6 +8,8 @@ function out = parse_bad_sensor_list(file_path)
 % TEST
 % file_path  = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
 %     'DATA\CAL\bad_sensor_list.txt'];
+% file_path  = ['C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\', ...
+%     'DATA\CAL\bad_sensor_list.txt'];
 
 % DO SOME PREP WORK
 out.hdr    = []; % Output if function fails
@@ -20,7 +22,7 @@ max_cycles = 1000; % # way greater than the max # of cycles a float can do
 
 % PARSE BAD SENSOR LIST
 if exist(file_path, 'file') ~= 2
-    disp(['Bad sensor list nat found at: ',file_path])
+    disp(['Bad sensor list not found at: ',file_path])
     return
 end
 fid   = fopen(file_path);
