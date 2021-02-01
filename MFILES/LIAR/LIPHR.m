@@ -1,15 +1,28 @@
-function [pHEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
+function [pHEstimates,UncertaintyEstimates,MinUncertaintyEquation, ...
+    EstimateCsDate]= ...
     LIPHR(Coordinates,Measurements,MeasIDVec, ...         % Required inputs
             varargin)                                     % Optional inputs
-%  Version 2.0 (first LINR version, released alongside LIARv2.0)
-%
+% Version 2.0.2 
+% *************************************************************************
+% Version 2.0 version at manuscript submission
+% Version 2.0.1 (2017.10.17) version at manuscript acceptance
+%       -"Molality" changed to "PerKgSw," 
+%       -retrained with updated cruise flags
+%       -retrained with linear adjustments, and changed pHCalcTF to match
+%       -enabled user-defined OARates
+% Version 2.0.2 (2018.10.10) Fixed a bug in the training routines.
+%        New errors should be closer to estimated errors in the 2nd
+%        citation. Older errors were averaged 0.002 higher than estimated.
+%        See Readme for details.
+% *************************************************************************
 %  Locally Interpolated pH Regression (LIPHR): Estimates pH
 %  and pH estimate uncertainty from combinations of other parameter
 %  measurements.
 %
 %  Citations:
 %  LIARv1: Carter et al., 2016, doi: 10.1002/lom3.10087
-%  LIARv2, LIPHR, LINR citation: Carter et al. (submitted 2017)
+%  LIARv2, LIPHR, LINR citation: Carter et al. 2018, 
+%         https://doi.org/10.1002/lom3.10232
 %
 %  This function needs the CSIRO seawater package to run if measurements
 %  are povided in molar units or if potential temperature or AOU are
@@ -38,8 +51,8 @@ function [pHEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     % Parameter measurements that will be used to estimate pH.  The column
     % order (y columns) is arbitrary, but specified by MeasIDVec.
     % Concentrations (including AOU) should be expressed as micromol per kg
-    % unless MolalityTF is set to false in which case they should be
-    % expressed as micromol per L, temperature should be expressed as
+    % seawater unless PerKgSwTF is set to false in which case they should
+    % be expressed as micromol per L, temperature should be expressed as
     % degrees C, and salinity should be specified with the unitless
     % convention.  NaN inputs are acceptable, but will lead to NaN
     % estimates for any equations that depend on that parameter.
@@ -70,8 +83,8 @@ function [pHEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
 % routine to skip this adjustment.
 % *************************************************************************
 % Optional inputs:  All remaining inputs must be specified as sequential
-% input argument pairs (e.g. "...,'Equations',[1:16],'OAAdjustTF',false,
-% etc...")
+% input argument pairs with the argument specifying the input type in
+% single quotes (e.g. "...,'Equations',[1:16],'OAAdjustTF',false, etc...")
 %
 % Equations (optional 1 by e vector, default []): 
     % Vector indicating which equations will be used to estimate pH. This
@@ -106,12 +119,22 @@ function [pHEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     % rates, making LIPHR estimates increasingly inappropriate as time
     % passes.  A true value for this boolean applies an adjustment to the
     % pH estimate to make it more appropriate for the user provided date of
-    % the pH estimate.  This adjustment is density dependent only and will
-    % therefore be regionally too large or too small. See the paper for
-    % details.  If this boolean is set to true, then an estimate date or
-    % dates must also be provided as EstDates.  This input or OAAdjustTF
-    % must be supplied.
+    % the pH estimate.  The default adjustment is density dependent only
+    % and will therefore be regionally too large or too small. See the
+    % paper for details.  Alternately, the user may provide her/his own OA
+    % rates for this adjustments as the 'OARate' optional input.  If the
+    % OAAdjustTF boolean is set to true, then an estimate date or dates
+    % must also be provided as EstDates.  This input or OAAdjustTF must be
+    % supplied.  If you wish to use your own OA rate estimates, see line
+    % 585 below for instructions for how to output the mean date of the
+    % training data.
     %   
+% OARate (Optional n by 1 vector, default determined by interpolation
+% against potential density):
+    % Users who prefer to provide their own OA rate estimates may do so
+    % with this optional input.  Units are pH unit change per year, and
+    % should in most cases be negative.
+    %  
 % EstDates (Semi-optional n by 1 array or 1 by 1 value, no default, but
 % required if OAAdjustTF is true): 
     % A vector of decimal dates for the estimates (e.g. July 1 2020 would
@@ -132,9 +155,9 @@ function [pHEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     % y array is provided then the uncertainty estimates are assumed to
     % apply uniformly to all input parameter measurements.
     % 
-% MolalityTF (Optional boolean, default true): 
+% PerKgSwTF (Optional boolean, default true): 
     % Many sensors provide measurements in micromol per L (molarity)
-    % instead of micromol per kg (molality). Indicate false if provided
+    % instead of micromol per kg seawater. Indicate false if provided
     % measurements are expressed in molar units (concentrations must be
     % micromol per L if so).  Outputs will remain in molal units
     % regardless.
@@ -221,12 +244,12 @@ else
     if VerboseTF==true & SpecifiedEqn==false; disp('By Default, all equations with enough input variables will be used, but only the estimate with the lowest uncertainty will be returned.  If outputs from multiple equations are desired, specify the desired equations with the Equations input and include the input argument pair setting MinUncEstTF to false.');end;
 end
 
-% Checking for MolalityTF input and setting default if not given
-a=strcmpi(varargin,'MolalityTF');
+% Checking for PerKgSwTF input and setting default if not given
+a=strcmpi(varargin,'PerKgSwTF');
 if any(a)
-    MolalityTF=varargin{1,logical([0 a(1:end-1)])};
+    PerKgSwTF=varargin{1,logical([0 a(1:end-1)])};
 else
-    MolalityTF=true;
+    PerKgSwTF=true;
 end
 
 
@@ -236,6 +259,16 @@ if any(a)
     OAAdjustTF=varargin{1,logical([0 a(1:end-1)])};
 else
     OAAdjustTF=1;
+end
+
+% Checking whether OARate is provided, if not, default will be determined
+% below
+a=strcmpi(varargin,'OARate');
+if any(a)
+    Gamma=varargin{1,logical([0 a(1:end-1)])};
+    CustomOA=true;
+else
+    CustomOA=false;
 end
 
 % Checking for MeasUncerts input and setting default if not given
@@ -282,12 +315,12 @@ end
 
 % Making sure all provided predictors are identified.
 if ~(size(MeasIDVec,2)==size(Measurements,2));
-    error('The MeasIDVec input does not have the same number of columns as the Measurements input.  This means it is unclear which measurement is in which column.');
+    error('The MeasIDVec input does not have the same number of columns as the Measurements input.  It is unclear to the routine which measurement is in which column.');
 end
 
 % Requriring date vector if OAAdjust is used.
 if OAAdjustTF==true & EstDates==-99999;
-    error('OAAdjustTF is set to true (by default), but no dates are supplied.  Dates are a required input for the OA adjust.  Either specify them as EstDates as a single year date (e.g. 2010.5 for July 1 2010) as a vector of year dates for each measurement, or include the input argument pair to turn off the OA adjustment.')
+    error('OAAdjustTF is set to true (by default) enabling an adjustment for OA, but the measurement dates needed for the adjustment are currently supplied by the user.  Either specify measurement dates as EstDates as a single year date (e.g. 2010.55 for July 1 2010) or as a vector of year dates for each measurement. Alternately, set OAAdjustTF to false to diable the adjustment.')
 end
 
 % Reshaping EstDates to have the same length as Coordinates if only a
@@ -296,7 +329,7 @@ if ~EstDates==-99999 & size(EstDates,1)==1;
     EstDates=EstDates*ones(size(Coordinates,1),1);
 end
 
-% Making sure you downloaded the needed file and put it somewhere it
+% Making sure the user downloaded the needed file and put it somewhere it
 % can be found
 if exist('LIPHR_files.mat','file')<2; error('LIPHR could not find the LIPHR_files file needed to run.  This mandatory file should be distributed from the same website as LIPHR.  Contact the corresponding author if you cannot find it there.  If you do have it then make sure it is on the MATLAB path or in the active directory.'); end
  
@@ -313,7 +346,7 @@ e=size(Equations,2);
 
 
 % Checking for common missing data indicator flags and warning if any are
-% found.  Consider adding your common ones here
+% found.  Consider adding other common ones here separated by spaces.
 if max(ismember([-999 -9 -1*10^20],Measurements))==1
     warning('LIPHR: A common non-NaN missing data indicator (e.g. -999, -9, -1e20) was detected in the input measurements provided.  Missing data should be replaced with NaNs.  Otherwise, LIPHR will interpret your inputs at face value and give terrible estimates.')
 end
@@ -353,9 +386,9 @@ end
 
 % Temperature or potential temperature is required if
 % measurements are provided in molar units
-if MolalityTF==false; NeedVars(1,2)=1; end 
+if PerKgSwTF==false; NeedVars(1,2)=1; end 
 
-% Eliminating equations.  Earlier we used all equations if "Equations" was
+% Eliminating equations.  LIARv1 used all equations if "Equations" was
 % unspecified.  Here we limit this input to the equations for which all
 % needed inputs are supplied.
 if MinUncEst==true & SpecifiedEqn==false;
@@ -392,7 +425,7 @@ if ismember(4,MeasIDVec)==0 && NeedVars(1,4);
     U(:,4)=U(:,6);
 end
 % Converting units to molality if they are provided as molarity.
-if MolalityTF==false;
+if PerKgSwTF==false;
     densities=sw_dens(M(:,1),sw_temp(M(:,1),M(:,2), ...
         sw_pres(C(:,3),C(:,2)),0),sw_pres(C(:,3),C(:,2)))/1000;
     M(:,3)=M(:,3)./densities;
@@ -569,13 +602,15 @@ if OAAdjustTF==true;
         C(AAIndsM,3));
     EstimateCsDate(~AAIndsM,1)=InterpolantElse(C(~AAIndsM,1), ...
         C(~AAIndsM,2),C(~AAIndsM,3));
-    % Estimating the rate of OA.  Consider over-writing this with your own
-    % estimate of OA rate if the density-dependent global estimate is
-    % inappropriate for your region.
-    Gamma=interp1(L.OAEstMat(:,1),L.OAEstMat(:,2:end),EstimateDensity);
+    if CustomOA==false;
+        % Estimating default rate of OA by density if none is provided.
+        Gamma=interp1(L.OAEstMat(:,1),L.OAEstMat(:,2:end),EstimateDensity);
+    else
+        Gamma=Gamma(~NaNCoords,1);
+    end
     % Multiplying rate by time between measurement of data used for
     % estimating Cs and the estimate.
-    OAAdjust=(EstDates-EstimateCsDate)*ones(1,(size(pHEst,2))).*Gamma(:,Equations);
+    OAAdjust=(EstDates-EstimateCsDate)*ones(1,(size(pHEst,2))).*repmat(Gamma(:,1),1,size(pHEst,2));
     pHEst=pHEst+OAAdjust;
 end
 % Determines which regression has the lowest uncertainty estimate.  If
@@ -590,16 +625,13 @@ if MinUncEst==true & SpecifiedEqn==false;
     UncertEst=UncertEst(sub2ind(size(UncertEst),[1:1:size(MinUncertaintyEquation,1)]',MinUncertaintyEquation));
 end
 % Recalculating pH values to be appropriate for pH calculated from TA and
-% DIC if requested by the user.
+% DIC if requested by the user.  See paper for coefficient sets.
 if pHCalcTF==true
     if VerboseTF==true;
         disp('Recalculating the pH to be appropriate for pH values calculated from TA and DIC.')
     end
-    % From equation 2 in the paper and the quadratic formula.
-    a=0.0116;
-    b=0.0424+1;
-    c=-0.0004-pHEst+7.8797;
-    pHEst=7.8797+(-b+(b.^2-4*a*c).^(1/2))/(2*a);
+    % Solving equation 1 in the paper to counter adjustment.
+    pHEst=(pHEst+0.3168)/1.0404;
 end
 % Filling the outputs with the estimates at viable locations.
 pHEstimates(~NaNCoords,:)=pHEst;

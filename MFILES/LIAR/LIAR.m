@@ -1,7 +1,10 @@
 function [AlkalinityEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     LIAR(Coordinates,Measurements,MeasIDVec, ...          % Required inputs
             varargin)                                     % Optional inputs
-%  Version 2.0
+%  Version 2.0 
+%  Updated 2017.10.12: 
+%       -"Molality" changed to "PerKgSw,"
+%       -Changed to 2-d uncertainty interpolation vs. depth and salinity
 %
 %  Locally Interpolated Alkalinity Regression (LIAR): Estimates alkalinity
 %  and alkalinity estimate uncertainty from combinations of other parameter
@@ -38,8 +41,8 @@ function [AlkalinityEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     % Parameter measurements that will be used to estimate alkalinity.  The
     % column order (y columns) is arbitrary, but specified by MeasIDVec.
     % Concentrations (including AOU) should be expressed as micromol per kg
-    % unless MolalityTF is set to false in which case they should be
-    % expressed as micromol per L, temperature should be expressed as
+    % seawater unless PerKgSwTF is set to false in which case they should
+    % be expressed as micromol per L, temperature should be expressed as
     % degrees C, and salinity should be specified with the unitless
     % convention.  NaN inputs are acceptable, but will lead to NaN
     % estimates for any equations that depend on that parameter.
@@ -113,9 +116,9 @@ function [AlkalinityEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     % y array is provided then the uncertainty estimates are assumed to
     % apply uniformly to all input parameter measurements.
     % 
-% MolalityTF (Optional boolean, default true): 
+% PerKgSwTF (Optional boolean, default true): 
     % Many sensors provide measurements in micromol per L (molarity)
-    % instead of micromol per kg (molality). Indicate false if provided
+    % instead of micromol per kg seawater. Indicate false if provided
     % measurements are expressed in molar units (concentrations must be
     % micromol per L if so).  Outputs will remain in molal units
     % regardless.
@@ -129,7 +132,7 @@ function [AlkalinityEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
 % AlkalinityEstimates: 
     % A n by e array of LIAR estimates specific to the coordinates and
     % parameter measurements provided as inputs.  Units are micromoles per
-    % kg (equivalent to the deprecated microeq per kg).
+    % kg (equivalent to the deprecated microeq per kg seawater).
 	%
 % UncertaintyEstimates: 
     % A n by e array of LIAR uncertainty estimates specific to the
@@ -196,12 +199,12 @@ else
     if VerboseTF==true && SpecifiedEqn==false; disp('By Default, all equations with enough input variables will be used, but only the estimate with the lowest uncertainty will be returned.  If outputs from multiple equations are desired, specify the desired equations with the Equations input and include the input argument pair setting MinUncEstTF to false.');end;
 end
 
-% Checking for MolalityTF input and setting default if not given
-a=strcmpi(varargin,'MolalityTF');
+% Checking for PerKgSwTF input and setting default if not given
+a=strcmpi(varargin,'PerKgSwTF');
 if any(a)
-    MolalityTF=varargin{1,logical([0 a(1:end-1)])};
+    PerKgSwTF=varargin{1,logical([0 a(1:end-1)])};
 else
-    MolalityTF=true;
+    PerKgSwTF=true;
 end
 
 % Checking for MeasUncerts input and setting default if not given
@@ -288,7 +291,7 @@ end
 
 % Temperature or potential temperature is required if
 % measurements are provided in molar units
-if MolalityTF==false; NeedVars(1,2)=1; end 
+if PerKgSwTF==false; NeedVars(1,2)=1; end 
 
 % Eliminating equations.  Earlier we used all equations if "Equations" was
 % unspecified.  Here we limit this input to the equations for which all
@@ -324,7 +327,7 @@ if ismember(4,MeasIDVec)==0 && NeedVars(1,4);
     U(:,4)=U(:,6);
 end
 % Converting units to molality if they are provided as molarity.
-if MolalityTF==false;
+if PerKgSwTF==false;
     densities=sw_dens(M(:,1),sw_temp(M(:,1),M(:,2), ...
         sw_pres(C(:,3),C(:,2)),0),sw_pres(C(:,3),C(:,2)))/1000;
     M(:,3)=M(:,3)./densities;
@@ -464,8 +467,8 @@ for Eq=1:e;
         LCs(~AAIndsM,Var)=InterpolantElse(C(~AAIndsM,1), ...
             C(~AAIndsM,2),C(~AAIndsM,3));
     end
-    % Estimating methodological error from salinity
-    EMLR=interp1(L.EMLRrec(:,1),L.EMLRrec(:,1+Equation),M(:,1));
+    % Estimating methodological error from depth and salinity
+    EMLR=interp2(L.EMLRrec(:,:,2),L.EMLRrec(:,:,1),L.EMLRrec(:,:,2+Equation),C(:,3),M(:,1));
     %  Estimating alkalinity and alkalinity estimate uncertainty from LCs.
     AlkalinityEst(:,Eq)=real(sum(LCs.*horzcat(ones(n,1),M(:,UseVars)),2));
     % Estimating uncertainty

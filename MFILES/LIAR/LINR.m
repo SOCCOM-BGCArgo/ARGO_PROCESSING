@@ -1,7 +1,13 @@
 function [NitrateEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     LINR(Coordinates,Measurements,MeasIDVec, ...          % Required inputs
             varargin)                                     % Optional inputs
-%  Version 2.0 (first LINR version, released alongside LIARv2.0)
+%  Version 2.0.1 (first LINR version, released alongside LIARv2.0)
+%  Updated 2017.10.12: 
+%       -"Molality" changed to "PerKgSw," 
+%  Updated LINR_files 2018.10.10: Fixed a bug in the training routines.
+%        New errors should be closer to estimated errors in the 2nd
+%        citation. Older errors were averaged 0.01 umol/kg higher than
+%        estimated. See Readme for details.
 %
 %  Locally Interpolated nitrate Regression (LINR): Estimates nitrate
 %  and nitrate estimate uncertainty from combinations of other parameter
@@ -9,7 +15,8 @@ function [NitrateEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
 %
 %  Citations:
 %  LIARv1: Carter et al., 2016, doi: 10.1002/lom3.10087
-%  LIARv2, LIPHR, LINR citation: Carter et al. (submitted 2017)
+%  LIARv2, LIPHR, LINR citation: Carter et al. 2018, 
+%         https://doi.org/10.1002/lom3.10232
 %
 %  This function needs the CSIRO seawater package to run if measurements
 %  are povided in molar units or if potential temperature or AOU are
@@ -38,8 +45,8 @@ function [NitrateEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     % Parameter measurements that will be used to estimate nitrate.  The
     % column order (y columns) is arbitrary, but specified by MeasIDVec.
     % Concentrations (including AOU) should be expressed as micromol per kg
-    % unless MolalityTF is set to false in which case they should be
-    % expressed as micromol per L, temperature should be expressed as
+    % seawater unless PerKgSwTF is set to false in which case they should
+    % be expressed as micromol per L, temperature should be expressed as
     % degrees C, and salinity should be specified with the unitless
     % convention.  NaN inputs are acceptable, but will lead to NaN
     % estimates for any equations that depend on that parameter.
@@ -89,7 +96,7 @@ function [NitrateEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     % 5.  S, Theta or T, P, AOU or O2
     % 6.  S, Theta or T, P
     % 7.  S, Theta or T, AOU or O2
-    % 8.  S, Theta
+    % 8.  S, Theta or T
     % 9.  S, P, AOU or O2, Si
     % 10. S, P, Si
     % 11. S, AOU or O2, Si
@@ -113,9 +120,9 @@ function [NitrateEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
     % y array is provided then the uncertainty estimates are assumed to
     % apply uniformly to all input parameter measurements.
     % 
-% MolalityTF (Optional boolean, default true): 
+% PerKgSwTF (Optional boolean, default true): 
     % Many sensors provide measurements in micromol per L (molarity)
-    % instead of micromol per kg (molality). Indicate false if provided
+    % instead of micromol per kg seawater. Indicate false if provided
     % measurements are expressed in molar units (concentrations must be
     % micromol per L if so).  Outputs will remain in molal units
     % regardless.
@@ -128,7 +135,8 @@ function [NitrateEstimates,UncertaintyEstimates,MinUncertaintyEquation]= ...
 % 
 % NitrateEstimates: 
     % A n by e array of LINR estimates specific to the coordinates and
-    % parameter measurements provided.  Units are micromoles per kg.
+    % parameter measurements provided.  Units are micromoles per kg
+    % seawater.
 	%
 % UncertaintyEstimates: 
     % A n by e array of LINR uncertainty estimates specific to the
@@ -195,12 +203,12 @@ else
     if VerboseTF==true && SpecifiedEqn==false; disp('By Default, all equations with enough input variables will be used, but only the estimate with the lowest uncertainty will be returned.  If outputs from multiple equations are desired, specify the desired equations with the Equations input and include the input argument pair setting MinUncEstTF to false.');end;
 end
 
-% Checking for MolalityTF input and setting default if not given
-a=strcmpi(varargin,'MolalityTF');
+% Checking for PerKgSwTF input and setting default if not given
+a=strcmpi(varargin,'PerKgSwTF');
 if any(a)
-    MolalityTF=varargin{1,logical([0 a(1:end-1)])};
+    PerKgSwTF=varargin{1,logical([0 a(1:end-1)])};
 else
-    MolalityTF=true;
+    PerKgSwTF=true;
 end
 
 % Checking for MeasUncerts input and setting default if not given
@@ -287,7 +295,7 @@ end
 
 % Temperature or potential temperature is required if
 % measurements are provided in molar units
-if MolalityTF==false; NeedVars(1,2)=1; end 
+if PerKgSwTF==false; NeedVars(1,2)=1; end 
 
 % Eliminating equations.  Earlier we used all equations if "Equations" was
 % unspecified.  Here we limit this input to the equations for which all
@@ -326,7 +334,7 @@ if ismember(4,MeasIDVec)==0 && NeedVars(1,4);
     U(:,4)=U(:,6);
 end
 % Converting units to molality if they are provided as molarity.
-if MolalityTF==false;
+if PerKgSwTF==false;
     densities=sw_dens(M(:,1),sw_temp(M(:,1),M(:,2), ...
         sw_pres(C(:,3),C(:,2)),0),sw_pres(C(:,3),C(:,2)))/1000;
     M(:,3)=M(:,3)./densities;
