@@ -4,6 +4,7 @@ function tf = Make_Sprof_ODVQC(handles)
 % CORRECTIONS FILE. THIS IS DESIGNED ONLY FOR MPROF FILES WHERE NO MESSAGE
 % FILES EXIST & NO ARGO FILES.
 % 4/15/2019: changed name from Make_Mprof_ODVQC to Make_Sprof_ODVQC (moving toward use of Sprof files).
+% 2/24/2021: Removal of "last_cor" variable in the correction application scheme; this was an artifact of MBARI's old adjustment system.  Thanks to Kjell Arne for identifying the issue in this piece of code for external users.
 
 fp = filesep; % File separator for current platform
 tf = 0;
@@ -123,7 +124,6 @@ for qc_ct = 1: size(qc_params,2)
                 cor = ones(size(qc_tmp(:,1)))*0; % predim w/ zeros
                 qca = QCA.NO3; % corections
                 rr  = size(qca,1); % # adjustment rows
-                last_cor = 0;
                 for i = 1:rr
                     if i < rr
                         t1 = qc_tmp(:,2) >= qca(i,1) & ...
@@ -133,8 +133,7 @@ for qc_ct = 1: size(qc_params,2)
                     end
                     % elapsed years in block
                     dt = (qc_tmp(t1,1) - min(qc_tmp(t1,1))) ./ 365;
-                    tmp_cor  = last_cor + qca(i,3) + qca(i,4) .* dt; %offset + drift
-                    last_cor = tmp_cor(end);
+                    tmp_cor  = qca(i,3) + qca(i,4) .* dt; %offset + drift
                     cor(t1)  = tmp_cor;
                 end
                 qc_tmp(:,iN)   = (qc_tmp(:,iN) - cor) ./ qca(i,2);
@@ -147,7 +146,7 @@ for qc_ct = 1: size(qc_params,2)
                 qc_tmp((~tRC) | tbad, iN+1) = 8; % BAD!
                 qc_data(tdata,:) = qc_tmp;
             end
-            clear tdata cor qca rr last_cor i t1 dt tmp_cor  tRC tbad qc_tmp
+            clear tdata cor qca rr i t1 dt tmp_cor  tRC tbad qc_tmp
             
             
         case 'pHinsitu[Total]'
@@ -181,7 +180,6 @@ for qc_ct = 1: size(qc_params,2)
                 pump_offset = pump_offset * tP; % array of 0's and offset
                 TCOR        = (2 + 273.15)./(qc_tmp(:,iT) + 273.15); % drift + offset is f(T) too????
                 
-                last_cor = 0;
                 for i = 1:rr
                     if i < rr
                         t1 = qc_tmp(:,2) >= qca(i,1) &  ...
@@ -190,8 +188,7 @@ for qc_ct = 1: size(qc_params,2)
                         t1 = qc_tmp(:,2) >= qca(i,1); %get block
                     end
                     dt = (qc_tmp(t1,1) - min(qc_tmp(t1,1))) ./ 365; % elapsed years in block
-                    tmp_cor  = last_cor + qca(i,3) + qca(i,4) .* dt; %offset + drift
-                    last_cor = tmp_cor(end);
+                    tmp_cor  = qca(i,3) + qca(i,4) .* dt; %offset + drift
                     cor(t1)  = tmp_cor;
                 end
                 qc_tmp(:,iPH) = qc_tmp(:,iPH) +(pump_offset - cor) ...
@@ -205,7 +202,7 @@ for qc_ct = 1: size(qc_params,2)
                 qc_tmp((~tRC) | tbad, iPH+1) = 8; % BAD!
                 qc_data(tdata,:) = qc_tmp;
             end
-            clear tdata cor qca rr last_cor i t1 dt tmp_cor  tRC tbad qc_tmp
+            clear tdata cor qca rr i t1 dt tmp_cor  tRC tbad qc_tmp
             
         case 'Chl_a[mg/m^3]' % GAIN CORRECTION ONLY
             if isempty(iCHL) || ~isfield(QCA,'CHL')
