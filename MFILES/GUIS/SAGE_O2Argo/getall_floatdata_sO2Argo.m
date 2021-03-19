@@ -247,8 +247,10 @@ else
         ti = find(TdoxyQC>3);
         Tdoxy(ti)=nan;
        
-        
-        mscode = ds.data('MEASUREMENT_CODE'); % 1090 or 1099 for air-cal samples NOTE: MC CODES FOR IN-AIR DATA WILL CHANGE IN FUTURE! (ADMT18 ACTION ITEM)
+%%%%% NOTE:: USER TO CHANGE MEASUREMENT-CODE SPECIFICATIONS BASED ON KNOWLEDGE OF THEIR OWN FLOAT PLATFORM'S ACQUISITION OF IN-AIR SAMPLES %%%%%     
+% SEE THE MEASUREMENT CODE SPECIFICATIONS FOR IN-AIR DAT IN SECTION 2.5.2 OF THE ARGO QUALITY CONTROL MANUAL FOR DISSOLVED OXYGEN   
+% Note that prior to ADMT18, the measurement code specifications for in-air oxygen samples were MC = 1090 (1100-10) or 1099 (1100-1) (sequence or single obs with telemetry, respectively)
+        mscode = ds.data('MEASUREMENT_CODE'); %
         pres = ds.data('PRES'); 
         cycnum = ds.data('CYCLE_NUMBER');
 %         jday = ds.data('JULD');
@@ -258,7 +260,7 @@ else
 %         doxy = ds.data('DOXY'); %keep, in case of future need
         % XX = [double(cycnum) jday Lat Lon double(pres) double(Tdoxy) double(rphase) double(tphase) double(surfO)];
         XX = [double(cycnum) double(pres) double(Tdoxy) double(surfO)];
-        X = XX(mscode==1090|mscode==1099,:); % MC = 1090 (1100-10) or 1099 (1100-1) for air-cal samples (sequence or single obs with telemetry)
+        X = XX(mscode==711,:); % MC = 711; X+11 for in-air samples, part of surface sequence(X = 700 (TST))
         T = X(:,3); %temp doxy
         S = zeros(length(T),1);
 %         P = zeros(length(T),1);
