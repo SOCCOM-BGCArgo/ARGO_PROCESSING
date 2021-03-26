@@ -5,6 +5,8 @@ function tf = Make_Sprof_ODVQC(handles)
 % FILES EXIST & NO ARGO FILES.
 % 4/15/2019: changed name from Make_Mprof_ODVQC to Make_Sprof_ODVQC (moving toward use of Sprof files).
 % 2/24/2021: Removal of "last_cor" variable in the correction application scheme; this was an artifact of MBARI's old adjustment system.  Thanks to Kjell Arne for identifying the issue in this piece of code for external users.
+% 3/25/21 - TM - Forced all fopen writes to UTF-8, because that is the
+%    new default for Matlab 2020 and better cross platform sharing
 
 fp = filesep; % File separator for current platform
 tf = 0;
@@ -282,12 +284,13 @@ end
     
 fvqc_path  = [handles.info.file_path, 'QC',fp,handles.info.float_name, ...
               'QC.TXT'];
-fid_qc  = fopen(fvqc_path, 'W');
-fid_raw = fopen(fv_path);
+fid_qc  = fopen(fvqc_path, 'W','n','UTF-8');
+fid_raw = fopen(fv_path,'r','n','UTF-8');
 
 disp(['Printing adjusted data to: ',fvqc_path]);
 
 fprintf(fid_qc,'//0\r\n');
+fprintf(fid_qc,'//<Encoding>UTF-8</Encoding>\r\n');
 fprintf(fid_qc,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
        '\r\n']);
  

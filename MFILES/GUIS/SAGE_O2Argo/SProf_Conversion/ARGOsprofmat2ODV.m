@@ -35,7 +35,8 @@ function tf_odv = ARGOsprofmat2ODV(f_info, outputDIR)
 % users. Also removed calls to MBARI network locations etc...
 % 04/15/2019 - fixed QF flagging bugs, added comment line describing Argo
 %              QF to ODV QF conversion, added missing position interpolation,  Also renamed to "ARGOsprofmat2ODV.m" to distinguish from MBARI internal version.
-
+% 3/25/21 - TM - Forced all fopen writes to UTF-8, because that is the
+%    new default for Matlab 2020 and better cross platform sharing
 % TESTING
 %dirs =[]
 
@@ -396,9 +397,10 @@ raw_var_ct = size(ODV_raw,1);
 
 % PRINT META DATA HEADER LINES FIRST
 disp(['Printing raw data to: ',outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.TXT']);
-fid_raw  = fopen([outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.TXT'],'W');  
+fid_raw  = fopen([outputDIR, 'ODV',strtrim(info.WMO(1,:)),'.TXT'],'W','n','UTF-8');  
 
 fprintf(fid_raw,'//0\r\n');
+fprintf(fid_raw,'//<Encoding>UTF-8</Encoding>\r\n');
 fprintf(fid_raw,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
        '\r\n']);
 fprintf(fid_raw,['//WMO ID: ',info.WMO(1,:),'\r\n']);
