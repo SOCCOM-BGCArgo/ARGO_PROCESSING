@@ -104,7 +104,7 @@ NCEPname(1,:) ={'PRES' ,'pres.sfc.gauss.',NCEPpath1 };   % Surface  pressure, Pa
 %NCEPname(2,:) ={'RH'  ,'rhum.sig995.',    NCEPpath2};    % Relative humidity (pH2O/pH2O sat)
 
 %NCEPname(2,:) ={'PRES2','pres.sfc.',     NCEPpath2};    % Surface  pressure, Pascals
-landmask = [dirs.NCEP,filesep,'land.sfc.gauss.nc'];
+landmask = [dirs.NCEP_TEMP,filesep,'land.sfc.gauss.nc'];
 
 
 [num_vars,~] = size(NCEPname); % get number of variables to extract
