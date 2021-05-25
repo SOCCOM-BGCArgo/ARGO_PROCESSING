@@ -5,13 +5,18 @@ function tf_float =Process_GUI_float_GLT(handles,dirs)
 
 tic;
 % GET SOME INFO
-tf_float     = 0;
-float_IDs    = handles.float_IDs; %MBARI name, UW_ID, WMO#, type
-MBARI_ID_str = handles.info.float_name;
-MFLOATlist = load([dirs.cal,'MBARI_float_list.mat']);
-t1           = strcmpi(MBARI_ID_str,MFLOATlist.list(:,1));
-float_type   = MFLOATlist.list{t1,4};
+% tf_float     = 0;
+% float_IDs    = handles.float_IDs; %MBARI name, UW_ID, WMO#, type
+% MBARI_ID_str = handles.info.float_name;
+% MFLOATlist = load([dirs.cal,'MBARI_float_list.mat']);
+% t1           = strcmpi(MBARI_ID_str,MFLOATlist.list(:,1));
+% float_type   = MFLOATlist.list{t1,4};
 
+% GET SOME INFO - GOBGC CONVENTIONS
+tf_float     = 0;
+MBARI_ID_str = handles.info.float_name;
+float_type   = handles.info.float_type;
+WMO          = handles.info.WMO_ID;
 
 % ************************************************************************
 % dirs  = A structure with directory strings where files are
@@ -57,7 +62,7 @@ iM   = find(strcmp('MBARI ID STR',bad_sensor_list.hdr) == 1);
 
 % CHECK IF SPECIFC FLOAT HAS BAD SENSOR ISSUES
 if ~isempty(bad_sensor_list.list)
-    tSENSOR = strcmpi(MBARI_ID_str,bad_sensor_list.list(:,iM));
+    tSENSOR = strcmpi(MBARI_ID_str, bad_sensor_list.list(:,iM));
     if sum(tSENSOR) > 0
         disp([MBARI_ID_str,' found on the bad sensor list!'])
         BSL = bad_sensor_list;
@@ -74,10 +79,12 @@ end
 % ************************************************************************
 % PROCESS MESSAGE FILES
 if strcmp(float_type,'APEX')
-    tf_float = Process_APEX_float(MBARI_ID_str, dirs,update_str);
-    
+    tf_float = Process_APEX_float(MBARI_ID_str, dirs,update_str); 
 elseif strcmp(float_type,'NAVIS')
     tf_float = Process_NAVIS_float(MBARI_ID_str, dirs,update_str);
+elseif strcmp(float_type,'SOLO')
+    disp('ADD SOLO PROCESSING FUNCTION CALL HERE!')
+    return
 else
     disp(['Unknown float type for ',MBARI_ID_str, ...
         '! processing next float'])
@@ -91,7 +98,7 @@ end
 %     [MBARI_ID_str, '(',float_type,') ...']})
 % drawnow
 
-ODV_tf = argo2odv_LIAR(MBARI_ID_str, dirs, update_str,0);
+ODV_tf = argo2odv_LIAR(WMO, dirs, update_str,0);
 
 if ODV_tf == 0
     disp(['A LIAR ODV FILE WAS NOT CREATED OR UPDATED FOR ',MBARI_ID_str])

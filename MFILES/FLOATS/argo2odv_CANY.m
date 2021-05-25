@@ -1,17 +1,17 @@
-function tf_odv = argo2odv_CANY(MBARI_ID_str, dirs, update_str, HR_flag)
+function tf_odv = argo2odv_CANY(WMO_ID, dirs, update_str, HR_flag)
 
 % ************************************************************************
-% PURPOSE: 
+% PURPOSE:
 %    This function ONLY creates the QC ODV compaitble text files used in
 %    FloatViz and SOCCOMViz using the *.mat profile files.  If pH data
 %    exists the CANYON neural network approach will be used to estimate
 %    alkalinity.
 %
 % USAGE:
-%	tf_odv = argo2odv10(UW_ID_str, dirs, update_str)
+%	tf_odv = argo2odv10(WMO_ID, dirs, update_str)
 %
 % INPUTS:
-%   MBARI_ID_str  = MBARI Float ID as a string
+%   WMO_ID  = WMO ID, as a string
 %   update_str = "all" or "update"
 %                 all    - to process all available msg files
 %                 update - only process new msg files
@@ -36,13 +36,13 @@ function tf_odv = argo2odv_CANY(MBARI_ID_str, dirs, update_str, HR_flag)
 % CHANGE HISTORY
 % 4/21/2017 - added code to include S & T ADJUSTED & QC variables for LR
 % 	and HR data
-% 6/29/2017 - added code to change O2 values > 99990 to 99990, since such values were getting 
+% 6/29/2017 - added code to change O2 values > 99990 to 99990, since such values were getting
 %	reassigned to "fill-value" with erroneous QC flags, and thus getting rejected by the GDAC.
-%   (See associated email correspondence with Annie Wong on 6/27) 
+%   (See associated email correspondence with Annie Wong on 6/27)
 % 07/19/17 added code to print comments from cal file if the exist
 % 08/28/17 added code to re-assign dirs.msg directory for special case
 %   floats which include duplicate UW ID floats and floats with NO WMO
-% 10/09/2017, %add check for bad ALK values, bogging CO2SYS down 
+% 10/09/2017, %add check for bad ALK values, bogging CO2SYS down
 % 11/06/2017 made change to bias pH calculation - set Pres for any bad pH
 %   equal to NaN during calculation so bias depth would not coincide with
 %   a bad pH value - jp
@@ -62,7 +62,7 @@ function tf_odv = argo2odv_CANY(MBARI_ID_str, dirs, update_str, HR_flag)
 % 11/05/19 - JP added code to fix minor BIAS pH calc bug. I previously assumed
 %   if pressure value existed so would pH. Now check for valid pH value
 %   too. This is a fix for spotty pH data in floats like 12888.
-% 02/26/20 - JP Changed index searches (iP & look up tables)  argo2ODV* 
+% 02/26/20 - JP Changed index searches (iP & look up tables)  argo2ODV*
 %   for adjusted data from 'PRES' to 'PRES_ADJUSTED to account for changes
 %   in Process_APEX_float & Process_NAVIS_float
 % 05/11/2020 - TM modification to fix implemented on 01/10/19 (deals with floats with missing position fixes for cycle 1.  Now 2 floats in this category, 12768soocn and 12783eqpac)  Bug fix.
@@ -70,21 +70,9 @@ function tf_odv = argo2odv_CANY(MBARI_ID_str, dirs, update_str, HR_flag)
 % 12/13/20 - TM & JP - Forced all fopen writes to UTF-8, because that is the
 %    new default for Matlab 2020 and better cross platform sharing
 % 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
+% 3/5/21 - TM, Code modifications to switch to WMO-based filename.
 
 % TESTING
-%MBARI_ID_str = '8514Hawaii';
-% MBARI_ID_str = '8501CalCurrent';
-% MBARI_ID_str = '0948STNP2';
-% dirs =[];
-% update_str = 'all';
-% HR_flag = 1;
-%  MBARI_ID_str = '12888SOOCN';
-% % %MBARI_ID_str = '17898SOOCN';
-%   MBARI_ID_str = '17267HOT';
-% dirs =[];
-% % update_str = 'all';
-% HR_flag = 1;
-% update_str = 'update';
 
 % ************************************************************************
 % SET UP DIRECTORIES AND PATHS
@@ -111,29 +99,37 @@ elseif ~isstruct(dirs)
     return
 end
 
-% ************************************************************************
-% SET MSG DIRECTORIES FOR SPECIAL CASE FLOATS. SO FAR THIS INCLUDES FLOATS
-% WITH NO WMO #'s OR FLOATS WITH DUPLICATE UW ID #'s. THE MBARI ID IS THE
-% ONLY ID THAT UNIQUELY IDENTIFIES ALL FLOATS
-if strcmpi(MBARI_ID_str,'6966HAWAII') 
-    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\';
-    disp(['Setting msg dir to: ', dirs.msg]);
+% LOAD MBARI FLOAT LIST
+list_path  = [dirs.cal, 'MBARI_float_list.mat']; % file path
+if exist(list_path, 'file') % load list variables
+    load(list_path);
+    FLOAT_LIST = d.list;
+else
+    disp('BUILDING FLOAT ID LIST ...')
+    %[float_name, UW_ID, WMO_ID, float type]
+    d = MBARI_float_list(dirs);
+    FLOAT_LIST = d.list;
 end
-if strcmpi(MBARI_ID_str,'8501CalCurrent')
-    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\';
-    disp(['Setting msg dir to: ', dirs.msg]);
-end
-if strcmpi(MBARI_ID_str,'8514HAWAII')
-    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\f8514_2\';
-    disp(['Setting msg dir to: ', dirs.msg]);
-end
-if strcmpi(MBARI_ID_str,'0412HAWAII')
-    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\';
-    disp(['Setting msg dir to: ', dirs.msg]);
-end
-% ************************************************************************
 
-optics_ftp   = 'misclab.umeoce.maine.edu'; % corrected CHL from U Maine
+%Get Some indices:
+iMSG =find(strcmp('msg dir', d.hdr)  == 1);
+iWMO = find(strcmp('WMO',d.hdr) == 1);
+iMB  = find(strcmp('MBARI ID',d.hdr) == 1);
+iFLT = find(strcmp('float type',d.hdr) == 1);
+iPRJ = find(strcmp('Program',d.hdr) == 1);
+iREG = find(strcmp('Region',d.hdr) == 1);
+clear d
+
+% get index of float in master list
+i_tmp = strfind(FLOAT_LIST(:,3),WMO_ID);
+iTHISFLT = find(not(cellfun('isempty',i_tmp)));
+
+% Set some definitions
+dirs.msg = FLOAT_LIST{iTHISFLT,iMSG};
+MBARI_ID_str = FLOAT_LIST{iTHISFLT,iMB};
+FLT_type = FLOAT_LIST{iTHISFLT,iFLT};
+PROJ_Name = FLOAT_LIST{iTHISFLT,iPRJ};
+REGION = FLOAT_LIST{iTHISFLT,iREG};
 
 tf_odv = 0;
 % ************************************************************************
@@ -141,33 +137,23 @@ tf_odv = 0;
 % ************************************************************************
 if strcmp(update_str, 'update')
     % GET WMO# TO BUILD PATH TO *.MAT FILES FOR FLOAT
-    WMO_path  = [dirs.cal, 'MBARI_float_list.mat']; % WMO file path
-    if exist(WMO_path, 'file') % load list variables
-        load(WMO_path);
-    else
-        disp('BUILDING FLOAT ID LIST ...')
-        %[float_name, UW_ID, WMO_ID, float type]
-        list = MBARI_float_list(dirs); 
-    end
-    float_names = list(:,1);
-    WMO_ID      = list(:,3);
-    
-    ind = strcmpi(MBARI_ID_str, float_names);
-    data_dir   = [dirs.mat, WMO_ID{ind},'\'];
-    mat_files  = dir([data_dir,WMO_ID{ind},'*.mat']);
+    data_dir   = [dirs.mat, WMO_ID,'\'];
+    mat_files  = dir([data_dir,WMO_ID,'*.mat']);
     mat_cycles = regexp({mat_files.name},'(?<=\.)\d+(?=\.)','match');
-    max_mat    = max(cellfun(@str2double, mat_cycles, 'UniformOutput', 1));
-
-    clear WMO_path list float_names  WMO_ID ind ind data_dir
+    N_mat = length(mat_cycles);
+    
+    clear list float_names  ind ind data_dir
     clear mat_files mat_cycles
     
     % NOW CHECK FLOATVIZ FILE
-    fv_name = [MBARI_ID_str, 'QC.TXT'];
+    fv_name = [WMO_ID, 'QC.TXT'];
     if exist([dirs.FVlocal,'CANYON_QC\', fv_name],'file')
         old_d = get_FloatViz_data([dirs.FVlocal,'CANYON_QC\', fv_name]);
+        all_FV = unique(old_d.data(:,2));
         max_FV = max(old_d.data(:,2));
         
-        if max_mat <= max_FV
+        %         if max_mat <= max_FV
+        if N_mat == length(all_FV)
             fprintf(['CANYON FloatViz file %s is current ',...
                 '(last cycle #: %03.0f)\r\n'], fv_name, max_FV);
             return
@@ -186,9 +172,9 @@ RC.P    = [0 12000]; % from argo parameter list
 % MERGE INDIVIDUAL MAT FILES FOR GIVEN BIO-ARGO FLOAT
 % returns a structure: INFO, hdr, data
 % ************************************************************************
-d = merge_ARGO_mat(MBARI_ID_str, dirs);
+d = merge_ARGO_mat(WMO_ID, dirs);
 if isempty(d)
-    disp(['Could not merge data for ',MBARI_ID_str,'. Probably no data '...
+    disp(['Could not merge data for ',WMO_ID,'. Probably no data '...
         'to merge - Process float data first.'])
     return
 end
@@ -209,7 +195,7 @@ adata   = d.adata;
 [dr,dc] = size(rdata); % raw and adjusted are the same size
 
 hrrdata     = d.hrrdata; % if not an APEX float this will be empty
-[hrdr,hrdc] = size(hrrdata); 
+[hrdr,hrdc] = size(hrrdata);
 
 % ************************************************************************
 % ADD LAT QF COL AND INTERPOLATE MISSING POSITIIONS IF POSSIBLE
@@ -226,8 +212,8 @@ rdata   = [rdata(:,1:4),fill_0+1 , rdata(:,5:dc)]; % ARGO QF's, START GOOD
 ahdr    = [ahdr(1:4),'Lat_QC', ahdr(5:dc)]; % adjusted data
 adata   = [adata(:,1:4),fill_0+1 , adata(:,5:dc)]; % ARGO QF's
 
-if strcmp(info.float_type, 'APEX') 
-    hrrdata   = [hrrdata(:,1:4),hr_fill_0+1 , hrrdata(:,5:hrdc)]; 
+if strcmp(info.float_type, 'APEX')
+    hrrdata   = [hrrdata(:,1:4),hr_fill_0+1 , hrrdata(:,5:hrdc)];
 end
 
 [~,ia,~] = unique(rdata(:,1)); % unique casts
@@ -255,31 +241,34 @@ clear i t1 missing_profiles
 
 missing_pos_str = '';
 interp_pos_str  = '';
-%t_nan = isnan(pos_fix(:,4)); % any nan's in LAT? 
+%t_nan = isnan(pos_fix(:,4)); % any nan's in LAT?
 cy1 = pos_fix(pos_fix(:,1)==1,:);
 t_nan = isnan(cy1(:,4)); % any nans in first cycle LAT?
 if ~isempty(cy1)
-if sum(t_nan,1)==length(cy1(:,4))  %first cycle missing position fix
-    disp('POSITION INFO MISSING AT CYCLE 1...ATTEMPTING TO GRAB LAT/LON FROM 000.msg file...')
-    %Try to retrieve the position info from cycle 000 if available.  Use
-    %this as an estimate of the first cycle.
-    B = regexp(MBARI_ID_str,'\d*','Match');
-    fnum = B{1};
-    if str2num(fnum)>1000 %APEX float
-        forn = 'f';
-    else
-        forn = 'n';
+    if sum(t_nan,1)==length(cy1(:,4))  %first cycle missing position fix
+        disp('POSITION INFO MISSING AT CYCLE 1...ATTEMPTING TO GRAB LAT/LON FROM 000.msg file...')
+        %Try to retrieve the position info from cycle 000 if available.  Use
+        %this as an estimate of the first cycle.
+        %load cal info:
+        load([dirs.cal,'cal',MBARI_ID_str,'.mat']);
+        msglisting = get_msg_list(cal.info, 'msg');
+        ilistMSG = find(strcmp('msg file', msglisting.hdr)  == 1);
+        i_000 = strfind(msglisting.list(:,ilistMSG),'000.msg');
+        itmp2 = find(not(cellfun('isempty',i_000)));
+        if ~isempty(itmp2)
+            msg000 = msglisting.list{itmp2,ilistMSG};
+            %         if ~isempty(msg000)
+            [LON,LAT] = get000msg_position([cal.info.msg_dir,msg000]);
+            if ~isempty(LON) && ~isempty(LAT) %successful position grab
+                pos_fix(1,3) = LON;
+                pos_fix(1,4) = LAT;
+                rdata(rdata(:,1)==1,3) = LON;
+                rdata(rdata(:,1)==1,4) = LAT;
+                rdata(rdata(:,1)==1,5) = 3; %if using 000.msg position info, mark lat/lon QF as "questionable"
+                disp('Lat/Lon successfully extracted from 000.msg file for cycle 1.')
+            end
+        end
     end
-    [LON,LAT] = get000msg_position([dirs.msg,filesep,forn,fnum,filesep,fnum,'.000.msg']);
-    if ~isempty(LON) && ~isempty(LAT) %successful position grab
-        pos_fix(1,3) = LON;
-        pos_fix(1,4) = LAT;
-        rdata(rdata(:,1)==1,3) = LON;
-        rdata(rdata(:,1)==1,4) = LAT;
-        rdata(rdata(:,1)==1,5) = 3; %if using 000.msg position info, mark lat/lon QF as "questionable"
-		disp('Lat/Lon successfully extracted from 000.msg file for cycle 1.')
-    end
-end
 end
 
 
@@ -306,18 +295,18 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never
             break
         end
         
-        % all good now, nan's bounded at this point, procede to interp  
-        if size(nan_start,1) == size(nan_end,1) 
+        % all good now, nan's bounded at this point, procede to interp
+        if size(nan_start,1) == size(nan_end,1)
             bnds = pos_fix([nan_start(i)-1,nan_end(i)+1],:); % bounds
             bait = pos_fix(nan_start(i):nan_end(i),:); % data to interp
             % Meridian crossing - float unlikely to move more than 180 deg
-            if abs(bnds(2,3) - bnds(1,3)) > 180 
+            if abs(bnds(2,3) - bnds(1,3)) > 180
                 t1 = bnds(:,3) < 180;
                 bnds(t1,3) = bnds(t1,3) + 360; % temp add 360 to small side
             end
             missing_pos = [bait(:,1:2), ...
-                           interp1(bnds(:,2),bnds(:,3:4),bait(:,2))];
-            % bring meridian crossing back to reality if need be           
+                interp1(bnds(:,2),bnds(:,3:4),bait(:,2))];
+            % bring meridian crossing back to reality if need be
             t1 = missing_pos(:,3) > 360;
             missing_pos(t1,3) = missing_pos(t1,3) - 360;
             pos_fix(nan_start(i):nan_end(i),3:4) = missing_pos(:,3:4);
@@ -331,7 +320,7 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never
                     hrrdata(t1,5)  = 3; %set QF to 3, ODV coversion takes it to 4
                 end
                 
-            end          
+            end
         end
     end
     clear diff_nan nan_start nan_end bnds bait i j t1
@@ -344,7 +333,7 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never
             'station(s): ', sprintf('%0.0f ',pos_fix(t_nan3,1))];
         interp_pos_str = [interp_pos_str,'\r\n//Latitude quality flag = 4',...
             ' for interpolated float positions'];
-        disp(interp_pos_str)      
+        disp(interp_pos_str)
     end
     if sum(t_nan2 > 0) % Could not interpolate these casts
         missing_pos_str = ['No position for station(s): ', ...
@@ -355,18 +344,18 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never
             hrrdata(isnan(hrrdata(:,4)),5) = 99;
         end
         
-    end  
-    adata(:,3:5) = rdata(:,3:5); % ADJUSTED POSITIONS EQUAL RAW 
-    clear t_nan t_nan2 t_nan3 
+    end
+    adata(:,3:5) = rdata(:,3:5); % ADJUSTED POSITIONS EQUAL RAW
+    clear t_nan t_nan2 t_nan3
 end
 [dr,dc]     = size(rdata); % raw and adjusted are the same size
-[hrdr,hrdc] = size(hrrdata); 
+[hrdr,hrdc] = size(hrrdata);
 
 % ************************************************************************
 % LOOK FOR BIO ARGO MISSING VALUES & REPLACE WITH NaN
 % ************************************************************************
 t_99999 = rdata == 99999; % BIO ARGO MISSING DATA VALUE
-rdata(t_99999) = NaN; 
+rdata(t_99999) = NaN;
 
 t_99999 = adata == 99999;
 adata(t_99999) = NaN;
@@ -379,13 +368,13 @@ clear t_99999 t_99999_sum tmp;
 % ************************************************************************
 % ************************************************************************
 % NOW ADD SOME DATA COLUMNS AND HEADERS NEEDED FOR THE ODV FILE
-% PRES QC, TEMP QC, PSAL QC, density,  O2sat, pH25 
+% PRES QC, TEMP QC, PSAL QC, density,  O2sat, pH25
 % ************************************************************************
 % ************************************************************************
 % GET SOME INDICES (will be the same for raw and adjusted data)
-iL  = find(strncmp('Lat [',rhdr,5) == 1); % set order =lat, lat QF, p, t, s  
-iP  = find(strcmp('PRES',rhdr)     == 1); 
-iT  = find(strcmp('TEMP',rhdr)     == 1); 
+iL  = find(strncmp('Lat [',rhdr,5) == 1); % set order =lat, lat QF, p, t, s
+iP  = find(strcmp('PRES',rhdr)     == 1);
+iT  = find(strcmp('TEMP',rhdr)     == 1);
 iS  = find(strcmp('PSAL',rhdr)     == 1);
 
 % 02/11/20 CHECK FOR PRESS_QC FIELD - IT MAY NOT EXIST IN OLDER MAT FILES
@@ -413,11 +402,11 @@ float_z  = ones(size(rdata(:,iP)))*NaN;
 nan_lat  = isnan(rdata(:,iL));
 mean_lat = nanmean(rdata(:,iL));
 % If pos fix available
-float_z(~nan_lat) = sw_dpth(rdata(~nan_lat,iP),rdata(~nan_lat,iL)); 
+float_z(~nan_lat) = sw_dpth(rdata(~nan_lat,iP),rdata(~nan_lat,iL));
 % otherwise use average lat
 float_z(nan_lat) = sw_dpth(rdata(nan_lat,iP),rdata(nan_lat,iP)*0+mean_lat);
 
-float_z_QF = fill_0 + 1; 
+float_z_QF = fill_0 + 1;
 float_z_QF(isnan(float_z)) = 99;
 clear nan_lat mean_lat
 
@@ -447,7 +436,7 @@ if strcmp(info.float_type, 'APEX') %
     hrPSAL_QF = hrrdata(:,iS+1);
     hrPSAL_QF(isnan(hrrdata(:,iS))) = 99;
     hrPSAL_QF(hrrdata(:,iS) < RC.S(1) | hrrdata(:,iS) > RC.S(2)) = 4;
-
+    
     hrpotT   = theta(hrrdata(:,iP),hrrdata(:,iT),hrrdata(:,iS),0);
     hrden    = density(hrrdata(:,iS),hrpotT) -1000; % pot den anom (sigma-theta)
     hrden_QF = hr_fill_0 + 1;
@@ -460,11 +449,11 @@ if strcmp(info.float_type, 'APEX') %
     hrfloat_z_QF(isnan(hrfloat_z)) = 99;
     
     hrraw_data = [hrrdata(:,1:iL+1), hrrdata(:,iP), hrPRES_QF, hrrdata(:,iT), ...
-    hrTEMP_QF, hrrdata(:,iS), hrPSAL_QF, hrden, hrden_QF, hrfloat_z, hrfloat_z_QF, ...
-    hrrdata(:,iS+2:hrdc)];
-
+        hrTEMP_QF, hrrdata(:,iS), hrPSAL_QF, hrden, hrden_QF, hrfloat_z, hrfloat_z_QF, ...
+        hrrdata(:,iS+2:hrdc)];
+    
     [hrdr,hrdc] = size(hrraw_data); % get new size
-    clear hrrdata hrPRES_QF hrTEMP_QF hrPSAL_QF hrden_QF hrden 
+    clear hrrdata hrPRES_QF hrTEMP_QF hrPSAL_QF hrden_QF hrden
     clear hrfloat_z_QF
 end
 
@@ -474,8 +463,8 @@ clear t_MVI rhdr rdata ahdr adata den float_z float_z_QF
 clear PRES_QF TEMP_QF PSAL_QF den_QF
 
 % REDO INDICES
-iP  = find(strcmp('PRES',raw_hdr) == 1); 
-iT  = find(strcmp('TEMP',raw_hdr) == 1); 
+iP  = find(strcmp('PRES',raw_hdr) == 1);
+iT  = find(strcmp('TEMP',raw_hdr) == 1);
 iS  = find(strcmp('PSAL',raw_hdr) == 1);
 iO  = find(strcmp('DOXY',raw_hdr) == 1);
 
@@ -483,27 +472,27 @@ iO  = find(strcmp('DOXY',raw_hdr) == 1);
 % ADD O2 % SAT IF O2 exists
 if ~isempty(iO)
     %(umol/kg) / (umol/kg) * 100
-	crazyO = raw_data(:,iO) == 99990; % If "crazy O2" conc value has been set (in Process_APEX/NAVIS_float), make O2 sat 99990 as well
+    crazyO = raw_data(:,iO) == 99990; % If "crazy O2" conc value has been set (in Process_APEX/NAVIS_float), make O2 sat 99990 as well
     O2sat(crazyO,:) = 99990;
     O2sat(~crazyO,:)     = raw_data(~crazyO,iO) ./ oxy_sol(raw_data(~crazyO,iT), ...
-                raw_data(~crazyO,iS),0) *100;
+        raw_data(~crazyO,iS),0) *100;
     O2sat_QF  = raw_data(:,iO+1);  %use oxygen conc QF
     
-	crazyOadj = adj_data(:,iO) == 99990;
+    crazyOadj = adj_data(:,iO) == 99990;
     O2sat_adj(crazyOadj,:) = 99990;
     O2sat_adj(~crazyOadj,:)    = adj_data(~crazyOadj,iO) ./ oxy_sol(adj_data(~crazyOadj,iT), ...
-                   adj_data(~crazyOadj,iS),0) *100;
+        adj_data(~crazyOadj,iS),0) *100;
     O2sat_adj_QF = adj_data(:,iO+1);
     
     raw_hdr = [raw_hdr(1:iO+1),'DOXY_%SAT', 'DOXY_%SAT_QC', ...
-               raw_hdr(iO+2:dc)];
+        raw_hdr(iO+2:dc)];
     raw_data = [raw_data(:,1:iO+1), O2sat, O2sat_QF, raw_data(:,iO+2:dc)];
     
     adj_hdr = [adj_hdr(1:iO+1),'DOXY_%SAT_ADJUSTED', ...
         'DOXY_%SAT_ADJUSTED_QC', adj_hdr(iO+2:dc)];
     adj_data = [adj_data(:,1:iO+1), O2sat_adj, O2sat_adj_QF, ...
-                adj_data(:,iO+2:dc)];    
-
+        adj_data(:,iO+2:dc)];
+    
     [dr,dc] = size(raw_data); % get new size
     clear O2sat O2sat_QF O2sat_adj O2sat_adj_QF
 end
@@ -520,13 +509,13 @@ end
 
 % BUILD SOME INDICES AGAIN
 iP  = find(strcmp('PRES_ADJUSTED',adj_hdr)   == 1); % order always lat, p, t, s
-iT  = find(strcmp('TEMP_ADJUSTED',adj_hdr)   == 1); 
+iT  = find(strcmp('TEMP_ADJUSTED',adj_hdr)   == 1);
 iS  = find(strcmp('PSAL_ADJUSTED',adj_hdr)   == 1);
-iZ  = find(strcmp('DEPTH',adj_hdr)  == 1); 
-iO  = find(strcmp('DOXY_ADJUSTED',adj_hdr)    == 1); 
-iN  = find(strcmp('NITRATE_ADJUSTED',adj_hdr) == 1); 
+iZ  = find(strcmp('DEPTH',adj_hdr)  == 1);
+iO  = find(strcmp('DOXY_ADJUSTED',adj_hdr)    == 1);
+iN  = find(strcmp('NITRATE_ADJUSTED',adj_hdr) == 1);
 iST = find(strcmp('SIGMA_THETA',adj_hdr) == 1);
-iL  = find(strncmp('Lat [',adj_hdr,5)    == 1); 
+iL  = find(strncmp('Lat [',adj_hdr,5)    == 1);
 iPH = find(strcmp('PH_IN_SITU_TOTAL_ADJUSTED',adj_hdr)   == 1); % pH
 
 % LIAR_alk_str   = '';
@@ -537,7 +526,7 @@ CANYON_alk_str = '';
 % CALCULATE LIAR ALKALINITY FOR THE ADJUSTED DATA SET
 % ************************************************************************
 if ~isempty(iPH) % empty will be flase
- 
+    
     % ************************************************************************
     % CALCULATE CANYON ALKALINITY FOR THE ADJUSTED DATA SET
     % ************************************************************************
@@ -583,8 +572,8 @@ if ~isempty(iPH) % pH data exists
     
     % NEED TO ESTIMATE SILICATE AND PHOSPHATE
     % USE REDFILED TO APROXIMATE IF GOOD NITRATE EXISTS, OTHERWISE 0
-%     SI       = ones(size(SAL)) + 0; % set to ) since no data
-%     PO4      = ones(size(SAL)) + 0;
+    %     SI       = ones(size(SAL)) + 0; % set to ) since no data
+    %     PO4      = ones(size(SAL)) + 0;
     SI  = ones(size(adj_data(:,iP))) * 0; % start with zeros
     PO4 = SI;
     if ~isempty(iN) % check for nitrate data
@@ -605,12 +594,12 @@ if ~isempty(iPH) % pH data exists
     if ~isempty(iAC) % CANYON ALKALINITY DIC
         PAR2     = adj_data(:,iAC);
         tQC_PAR2 = adj_data(:,iAC+1) ==4; %add check for bad ALK values, bogging CO2SYS down 10/9/2017
-		PAR2(tQC_PAR2) = nan;
-		
+        PAR2(tQC_PAR2) = nan;
+        
         [OUT] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
-                TEMPIN, 25, PRESIN, 0, SI, PO4, ...
-                pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS); 
-            
+            TEMPIN, 25, PRESIN, 0, SI, PO4, ...
+            pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
+        
         CANYON_PH25C =  OUT(:,18); % Col 19 in OUT is pH out
         
         % MAKE A BIASED PH DATA ARRAY FOR CALCULATING pCO2 IN ACCORDANCE
@@ -622,7 +611,7 @@ if ~isempty(iPH) % pH data exists
         pres_tol = 100; % max lookup offset in meters
         ind      = [];
         disp('Calculating biased pH for CO2 calculation using CO2SYS')
-
+        
         for i = 1:size(cycles,1)
             ind = [];
             tcycle  = adj_data(:,1) == cycles(i); % flag profile
@@ -638,7 +627,7 @@ if ~isempty(iPH) % pH data exists
                 continue
             end
             
-            p1500   = abs(tmp(:,1) - 1500); 
+            p1500   = abs(tmp(:,1) - 1500);
             min1500 = min(p1500);
             if min1500 < pres_tol % look for 1500m sample first
                 ind = find(p1500 == min1500,1);
@@ -671,28 +660,28 @@ if ~isempty(iPH) % pH data exists
         
         clear cycles pres_tol i tcycle tmp p1500 min1500 ind
         clear  p1000 min1000 BIAS_PH
-  
+        
         
         % REDO FOR DIC at INSITU P & T
         [OUT] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
-                TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, ...
-                pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
+            TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, ...
+            pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
         
         CANYON_DIC  = OUT(:,2); % Col 2 in OUT is TCO2, (umol/kgSW)
         
         
         DIC_QF = max([adj_data(:,iS+1) adj_data(:,iO+1) ...
-                      adj_data(:,iAC+1) adj_data(:,iPH+1)],[],2);
+            adj_data(:,iAC+1) adj_data(:,iPH+1)],[],2);
         
         adj_hdr  = [adj_hdr, 'CANYON_PHTOT25C' 'CANY_PHTOT25C_QC', ...
-                   'CANYON_DIC' 'CANYON_DIC_QC' 'CANYON_pCO2' 'CANYON_pCO2_QC'];         
+            'CANYON_DIC' 'CANYON_DIC_QC' 'CANYON_pCO2' 'CANYON_pCO2_QC'];
         adj_data = [adj_data, CANYON_PH25C, DIC_QF, CANYON_DIC, DIC_QF, ...
-                    CANYON_pCO2, DIC_QF];
+            CANYON_pCO2, DIC_QF];
         [adj_r,adj_c] = size(adj_data); % get new size
         
         % DO A LAST CHECK FOR MISSING VALUES
         iPH25   = find(strcmp('CANYON PHTOT25C',adj_hdr)   == 1);
-        iDIC    = find(strcmp('CANYON_DIC',adj_hdr)   == 1); 
+        iDIC    = find(strcmp('CANYON_DIC',adj_hdr)   == 1);
         iPCO2   = find(strcmp('CANYON_pCO2',adj_hdr)   == 1);
         
         adj_data(isnan(adj_data(:,iPH25)), iPH25+1) = 99; % MVI QF VALUE
@@ -701,7 +690,7 @@ if ~isempty(iPH) % pH data exists
     end
     
 end
-    
+
 clear iP iT iS %iO iN
 
 % ************************************************************************
@@ -709,97 +698,97 @@ clear iP iT iS %iO iN
 % DO THIS BEFORE CHECKING FOR BOSS DATA AT U MAINE
 % U MAINE QUALITY FLAGS ALREADY ODV STYLE
 % ************************************************************************
-    for i = 1:raw_c
-        % SETTING ALL QF's TO 1, EXCEPT FOR PTSZ & OBVIOUSLY BAD
-        if regexp(raw_hdr{i},'\_QC', 'once')               
-            tmp1 = raw_data(:,i);
-            tmp1(tmp1 == 5) = 3;
-            tmp1(tmp1 == 4) = 8;
-            tmp1(tmp1 == 3) = 4; % This will catch interp lat 2/9/17 jp
-            tmp1(tmp1 == 0) = 10; % temporary
-            tmp1(tmp1 == 1) = 0; % P T S Z
-            tmp1(tmp1 == 2) = 1; % All others uninspected
-            tmp1(tmp1 == 10 | tmp1 == 99) = 1; % NO QC or Missing value
-            raw_data(:,i) = tmp1;
-        end
+for i = 1:raw_c
+    % SETTING ALL QF's TO 1, EXCEPT FOR PTSZ & OBVIOUSLY BAD
+    if regexp(raw_hdr{i},'\_QC', 'once')
+        tmp1 = raw_data(:,i);
+        tmp1(tmp1 == 5) = 3;
+        tmp1(tmp1 == 4) = 8;
+        tmp1(tmp1 == 3) = 4; % This will catch interp lat 2/9/17 jp
+        tmp1(tmp1 == 0) = 10; % temporary
+        tmp1(tmp1 == 1) = 0; % P T S Z
+        tmp1(tmp1 == 2) = 1; % All others uninspected
+        tmp1(tmp1 == 10 | tmp1 == 99) = 1; % NO QC or Missing value
+        raw_data(:,i) = tmp1;
     end
-    for i = 1:adj_c
-        if regexp(adj_hdr{i},'\_QC', 'once')
-            tmp2 = adj_data(:,i);
+end
+for i = 1:adj_c
+    if regexp(adj_hdr{i},'\_QC', 'once')
+        tmp2 = adj_data(:,i);
+        tmp2(tmp2 == 5) = 3;
+        tmp2(tmp2 == 4) = 8;
+        tmp2(tmp2 == 3) = 4;
+        tmp2(tmp2 == 0) = 10; % temporary
+        tmp2(tmp2 == 2 | tmp2 == 1) = 0;
+        tmp2(tmp2 == 10 | tmp2 == 99) = 1; % NO QC or Missing value
+        adj_data(:,i) = tmp2;
+    end
+end
+
+if strcmp(info.float_type, 'APEX')
+    for i = 1:hrdc
+        if regexp(raw_hdr{i},'\_QC', 'once')
+            tmp2 = hrraw_data(:,i);
             tmp2(tmp2 == 5) = 3;
             tmp2(tmp2 == 4) = 8;
             tmp2(tmp2 == 3) = 4;
             tmp2(tmp2 == 0) = 10; % temporary
             tmp2(tmp2 == 2 | tmp2 == 1) = 0;
             tmp2(tmp2 == 10 | tmp2 == 99) = 1; % NO QC or Missing value
-            adj_data(:,i) = tmp2;
+            hrraw_data(:,i) = tmp2;
         end
     end
-    
-    if strcmp(info.float_type, 'APEX')
-        for i = 1:hrdc
-            if regexp(raw_hdr{i},'\_QC', 'once')
-                tmp2 = hrraw_data(:,i);
-                tmp2(tmp2 == 5) = 3;
-                tmp2(tmp2 == 4) = 8;
-                tmp2(tmp2 == 3) = 4;
-                tmp2(tmp2 == 0) = 10; % temporary
-                tmp2(tmp2 == 2 | tmp2 == 1) = 0;
-                tmp2(tmp2 == 10 | tmp2 == 99) = 1; % NO QC or Missing value
-                hrraw_data(:,i) = tmp2;
-            end
-        end
-    end
-    
-    clear i tmp1 tmp2   
+end
+
+clear i tmp1 tmp2
 
 % ************************************************************************
 % ************************************************************************
 % NOW DEAL WITH CHL AND BACKSCATTER DATA - IF NO ADJUSTED DATA EXISTS
 % FILL WITH RAW FOR TXT FILES
-iChl    = find(strcmp('CHLA_ADJUSTED',adj_hdr)   == 1); 
-iBbp    = find(strcmp('BBP700_ADJUSTED',adj_hdr) == 1); 
-iCdm    = find(strcmp('CDOM_ADJUSTED',adj_hdr)   == 1); 
-iBbp532 = find(strcmp('BBP532_ADJUSTED',adj_hdr) == 1); 
+iChl    = find(strcmp('CHLA_ADJUSTED',adj_hdr)   == 1);
+iBbp    = find(strcmp('BBP700_ADJUSTED',adj_hdr) == 1);
+iCdm    = find(strcmp('CDOM_ADJUSTED',adj_hdr)   == 1);
+iBbp532 = find(strcmp('BBP532_ADJUSTED',adj_hdr) == 1);
 Chl_data_str    = '';
 Bbp_data_str    = '';
 Cdm_data_str    = '';
 Bbp532_data_str = '';
 
- if sum(~isnan(adj_data(:,iChl)),1) == 0 % No adjusted data
-     adj_data(:,iChl) = raw_data(:,iChl);
-     adj_data(:,iChl+1) = raw_data(:,iChl+1);
-     adj_data(adj_data(:,iChl+1)~= 8,iChl+1) = 1; % uninspected
-     %adj_data(:,iChl+1) = 1;
-     Chl_data_str = 'Adjusted Chlorophyll data = raw Chlorophyll data!';
-     disp(Chl_data_str)
- end
- 
- if sum(~isnan(adj_data(:,iBbp)),1) == 0 % No adjusted data
-     adj_data(:,iBbp)   = raw_data(:,iBbp);
-     adj_data(:,iBbp+1) = raw_data(:,iBbp+1);
-     adj_data(adj_data(:,iBbp+1)~= 8,iBbp+1) = 1; % uninspected
-     Bbp_data_str = 'Adjusted backscatter data (700) = raw backscatter data (700)!';
-     disp(Bbp_data_str)
- end
- 
- if sum(~isnan(adj_data(:,iCdm)),1) == 0 % No adjusted data
-     adj_data(:,iCdm) = raw_data(:,iCdm);
-     adj_data(:,iCdm+1) = raw_data(:,iCdm+1);
-     adj_data(adj_data(:,iCdm+1)~= 8,iCdm+1) = 1; % uninspected
-     Cdm_data_str = 'Adjusted FDOM data = raw FDOM data!';
-     disp(Cdm_data_str)
- end
- 
- if sum(~isnan(adj_data(:,iBbp532)),1) == 0 % No adjusted data
-     adj_data(:,iBbp532)   = raw_data(:,iBbp532);
-     adj_data(:,iBbp532+1) = raw_data(:,iBbp532+1);
-     adj_data(adj_data(:,iBbp532+1)~= 8,iBbp532+1) = 1; % uninspected 
-     Bbp532_data_str = 'Adjusted backscatter (532) data = raw backscatter data (532)!';
-     disp(Bbp532_data_str)
- end
-  
- % ************************************************************************
+if sum(~isnan(adj_data(:,iChl)),1) == 0 % No adjusted data
+    adj_data(:,iChl) = raw_data(:,iChl);
+    adj_data(:,iChl+1) = raw_data(:,iChl+1);
+    adj_data(adj_data(:,iChl+1)~= 8,iChl+1) = 1; % uninspected
+    %adj_data(:,iChl+1) = 1;
+    Chl_data_str = 'Adjusted Chlorophyll data = raw Chlorophyll data!';
+    disp(Chl_data_str)
+end
+
+if sum(~isnan(adj_data(:,iBbp)),1) == 0 % No adjusted data
+    adj_data(:,iBbp)   = raw_data(:,iBbp);
+    adj_data(:,iBbp+1) = raw_data(:,iBbp+1);
+    adj_data(adj_data(:,iBbp+1)~= 8,iBbp+1) = 1; % uninspected
+    Bbp_data_str = 'Adjusted backscatter data (700) = raw backscatter data (700)!';
+    disp(Bbp_data_str)
+end
+
+if sum(~isnan(adj_data(:,iCdm)),1) == 0 % No adjusted data
+    adj_data(:,iCdm) = raw_data(:,iCdm);
+    adj_data(:,iCdm+1) = raw_data(:,iCdm+1);
+    adj_data(adj_data(:,iCdm+1)~= 8,iCdm+1) = 1; % uninspected
+    Cdm_data_str = 'Adjusted FDOM data = raw FDOM data!';
+    disp(Cdm_data_str)
+end
+
+if sum(~isnan(adj_data(:,iBbp532)),1) == 0 % No adjusted data
+    adj_data(:,iBbp532)   = raw_data(:,iBbp532);
+    adj_data(:,iBbp532+1) = raw_data(:,iBbp532+1);
+    adj_data(adj_data(:,iBbp532+1)~= 8,iBbp532+1) = 1; % uninspected
+    Bbp532_data_str = 'Adjusted backscatter (532) data = raw backscatter data (532)!';
+    disp(Bbp532_data_str)
+end
+
+% ************************************************************************
 % ADD "VALUE ADDED" BIO-OPTICS PRODUCTS
 global_gain  = 2; % THIS CAN BE MODIFIED OR FUNCTIONIZED LATER
 soocn_gain   = 6; % S of 40S for now
@@ -807,7 +796,7 @@ lat_cutoff   = -30;
 
 iChl_raw = find(strcmp('CHLA',raw_hdr) == 1);
 float_cal_path = [dirs.cal,'cal',MBARI_ID_str,'.mat'];
-if ~isempty(iChl_raw) && exist(float_cal_path,'file')   
+if ~isempty(iChl_raw) && exist(float_cal_path,'file')
     load(float_cal_path);
     if isfield(cal,'CHL') && isfield(cal.CHL, 'SWDC')
         iSDN = find(strcmp('Matlab SDN',raw_hdr) == 1);
@@ -817,7 +806,7 @@ if ~isempty(iChl_raw) && exist(float_cal_path,'file')
         iT   = find(strcmp('TEMP',raw_hdr) == 1);
         iS   = find(strcmp('PSAL',raw_hdr) == 1);
         iSTA = find(strcmp('Station',raw_hdr) == 1);
-    
+        
         CHL_CTS = raw_data(:,iChl_raw) ./ cal.CHL.ChlScale ...
             + cal.CHL.ChlDC; % back to counts
         tLAT = raw_data(:,iLAT) < lat_cutoff;
@@ -835,13 +824,13 @@ if ~isempty(iChl_raw) && exist(float_cal_path,'file')
             else
                 fprintf('%0.0f ',cycle_ct(i))
             end
-                
+            
             t1 = raw_data(:,iSTA) == cycle_ct(i);
             tmp = raw_data(t1,:);
             CHL_EXP = CHL_new(t1);
             
             NPQ = get_NPQcorr(tmp(1,[iSDN,iLON,iLAT]), ...
-                  [tmp(:,[iP,iT,iS]),CHL_EXP],dirs);
+                [tmp(:,[iP,iT,iS]),CHL_EXP],dirs);
             if ~isempty(NPQ.data)
                 iNPQ = find(strcmp('Xing_Zchl',NPQ.hdr) == 1);
                 tNPQ = tmp(:,iP) <= NPQ.XMLDZ;
@@ -866,140 +855,6 @@ end
 [raw_r,raw_c] = size(raw_data); % get new size
 [adj_r,adj_c] = size(adj_data); % get new size
 
-% % ************************************************************************
-% % CHECK FOR ADJUSTED CHL/BSCAT ODV FILE AT U MAINE
-% % MATLAB FTP OBJECT NEEDS TO BE IN PASIVE MODE
-% % Good hacks: 
-% %    http://blogs.mathworks.com/pick/2015/09/04/passive-mode-ftp/
-% %    http://undocumentedmatlab.com/blog/solving-an-mput-ftp-hang-problem
-% % ************************************************************************
-% chl_adj_flag = 0; % 0 = no data from Boss at ftp site
-% ftp_flag = 1;
-% try
-%     f = ftp(optics_ftp); % Connect to FTP server
-% catch
-%     disp(['Could not connect to ftp server at: ',optics_ftp])
-%     disp('NO ADJUSTED OPTICAL DATA WILL BE ADDED -- TRY AGAIN LATER')
-%     ftp_flag = 0;
-% end
-% 
-% if ftp_flag == 1
-%     % Enter passive mode by accessing the java object - this is the tricky part
-%     cd(f);
-%     sf = struct(f);
-%     sf.jobject.enterLocalPassiveMode();
-%     
-%     % Continue normally
-%     Dex = isempty(dir(f,'/floats/ARCHIVE/SOCCOM_20161127/'));
-%     if Dex ~= 1
-%     cd(f,'/floats/ARCHIVE/SOCCOM_20161127/');% SOCCOM FLOAT DIR
-% %     cd(f,'/floats/SOCCOM/');% SOCCOM FLOAT DIR
-%     optic_dir   = dir(f);   % SOCCOM FLOAT DIR
-%     optic_files = {optic_dir.name}; % Cell array of ODV file names
-%     
-%     file_ind = find(strncmpi(regexprep(info.FloatViz_name,'QC',''), ...
-%         optic_files,7) == 1);
-%     if ~isempty(file_ind)
-%         disp(['Looking for corrected optical data at ', optics_ftp, ...
-%             ' for ',optic_files{file_ind},' ....']);
-%         
-%         error_ct = 0;
-%         while error_ct < 3 % try 3 time max
-%             try
-%                 mget(f,optic_files{file_ind},dirs.temp);
-%                 error_ct = 10; % all good, leave while loop
-%             catch
-%                 if error_ct ==3
-%                     disp(['Connected to Univ. of Maine ftp server but ',...
-%                         'file copy failed for ',info.FloatViz_name]);
-%                 end
-%                 error_ct = error_ct + 1;
-%             end
-%         end
-%         clear error_ct
-%         
-%         if exist([dirs.temp,optic_files{file_ind}],'file') == 2
-%             disp('Corrected Optical data found!')
-%             optical_data = get_FloatViz_data([dirs.temp,optic_files{file_ind}]);
-%             if ~isempty(optical_data.data)
-%                 chl_adj_flag = 1;
-%                 Boss_hdr  = optical_data.hdr;
-%                 Boss_data = optical_data.data;
-%                 clear chl_adj
-%                 disp('Corrected Optical data extracted!')
-%             end
-%         end
-%         %delete([dirs.temp,optic_files{file_ind}]);
-%         
-%     end
-%     clear ind2 optic_files optic_dir optical_data
-%     close(f); clear f
-%     else
-%         disp(['WARNING: SOCCOM directory not found on ',optics_ftp,'.'])
-%         close(f); clear f
-%     end
-% end
-% % NOW ADD ADJUSTED DATA TO MASTER FILE IF IT EXISTS
-% if chl_adj_flag == 1
-%     iP    = find(strcmp('p',Boss_hdr) == 1);
-%     iBETA = find(strcmp('beta',Boss_hdr) == 1); % Remove from data set
-%     iCPHY = find(strcmp('cphyto',Boss_hdr) == 1); % Remove from data set
-%     
-%     % REMOVE SOME DATA & ACCOMPANYING QF COLS
-% %     Boss_hdr([iBETA,iCPHY]) =[];    % remove from header
-% %     Boss_data(:,[iBETA,iCPHY]) =[]; % remove from matrix
-%     
-%     Boss_hdr([iBETA,iBETA+1,iCPHY,iCPHY+1]) =[];    % remove from header
-%     Boss_data(:,[iBETA,iBETA+1,iCPHY,iCPHY+1]) =[]; % remove from matrix
-%     clear iBETA iCPHY
-%     
-%     c     = size(Boss_hdr,2); % # header cols
-%     cycles = unique(Boss_data(:,2));
-% 
-%     iPOC  = find(strcmp('poc',Boss_hdr) == 1);
-%     Boss_data(:,iPOC)  = Boss_data(:,iPOC)./ 12; % now mmol/kg
-%     %Boss_data(:,iCPHY) = Boss_data(:,iCPHY)./ 12; % now mmol/kg
-%     
-%     adj_hdr   = [adj_hdr, Boss_hdr(iP+2:c)]; % ADD TO HEADER
-%     Boss_tmp  = ones(dr, size(Boss_hdr(iP+2:c),2))* NaN; %predim  
-%     
-%     % MATCH LINE BY LINE FOR EACH CAST
-%     for i = 1: size(cycles,1) 
-%         td = adj_data(:,1) == cycles(i); % flag a profile
-%         tmp_d = adj_data(td,1:6); % profile subset from "data"
-%         tB = Boss_data(:,2) == cycles(i); 
-%         tmp_B = Boss_data(tB,:); % profile subset from "chl_data" 
-%         
-%         tmp_match = ones(size(tmp_d,1), size(tmp_B,2))* NaN; % fill this
-%         for j = 1:size(tmp_d,1)
-%             t1 = round(tmp_B(:,iP),2) == round(tmp_d(j,6),2);
-%             if sum(t1) == 1
-%                 tmp_match(j,:) = tmp_B(t1,:);
-%             else
-%                 disp(['No match for cast ', sprintf('%0.0f',cycles(i)), ... 
-%                     ' ',sprintf('%0.2f',tmp_d(j,6)), ' meters'])
-%             end
-%         end
-%         Boss_tmp(td,:) = tmp_match(:,iP+2:c); % Add to master tmp
-%         
-%         clear  td tmp_d tc tmp_c t1 j
-%     end
-%     % ANY QF NaN's => 99
-%     tmp_hdr = Boss_hdr(iP+2:c);
-%     for i = 1 : size(tmp_hdr,2)
-%         if regexp(tmp_hdr{i},'QF', 'once')
-%             tmp = Boss_tmp(:,i);
-%             tmp(isnan(tmp)) = 1;
-%             Boss_tmp(:,i) = tmp;      
-%         end
-%     end
-%     clear tmp
-%     
-%     adj_data = [adj_data, Boss_tmp];
-% end
-% [raw_r,raw_c] = size(raw_data); % get new size
-% [adj_r,adj_c] = size(adj_data); % get new size
-% 
 clear NPQ iNPQ tNPQ tLAT CHL_EXP CHL_new i t1 tmp cycle_ct
 
 % ************************************************************************
@@ -1010,7 +865,7 @@ nan_sum =(sum(isnan(raw_data), 2))>0; % cols so I can get casts later
 if sum(nan_sum,1) > 0
     tmp = unique(raw_data(nan_sum,1));
     raw_missing_data_str = ['Missing Float data detected for raw data', ...
-        ' station(s): ', sprintf('%0.0f ',tmp)]; 
+        ' station(s): ', sprintf('%0.0f ',tmp)];
     disp(raw_missing_data_str);
 end
 clear nan_sum tmp
@@ -1020,7 +875,7 @@ nan_sum = sum(isnan(adj_data), 2)>0; % cols so I can get casts later
 if sum(nan_sum,1) > 0
     tmp = unique(adj_data(nan_sum,1));
     adj_missing_data_str = ['Missing Float data detected for adjusted ',...
-        'station(s): ', sprintf('%0.0f ',tmp)]; 
+        'station(s): ', sprintf('%0.0f ',tmp)];
     disp(adj_missing_data_str);
 end
 clear nan_sum tmp
@@ -1053,7 +908,7 @@ if strcmp(info.float_type, 'APEX')
         tmp_raw = tmp_raw(IX,:);
         allraw_data(allraw_ct:allraw_ct + raw_ct + hr_ct-1,:) = tmp_raw;
         allraw_ct = allraw_ct + raw_ct + hr_ct;
-    
+        
         tmp_adj = ones(adj_ct + hr_ct, adj_c)* NaN;
         tmp_adj(1:adj_ct, 1:adj_c) = adj_data(t_adj,:);
         tmp_adj(adj_ct+1: adj_ct+hr_ct, 1:hrdc) = hrraw_data(t_hr,:);
@@ -1084,7 +939,7 @@ end
 
 % ************************************************************************
 % ************************************************************************
-% PRINT DATA TO FILE 
+% PRINT DATA TO FILE
 % http://blogs.mathworks.com/loren/2006/04/19/high-performance-file-io/
 % Change 'w' to 'W' for the file feopens to save time
 % ************************************************************************
@@ -1094,73 +949,75 @@ notes_flag = 0;
 if isfield(cal.info,'notes')
     notes_flag = 1;
     notes = cal.info.notes;
-    clear cal
+    %     clear cal %TM 3/3/21; DON'T CLEAR YET; IT'S USED JUST A BIT FURTHER
+    %     DOWN.
 end
 
 MVI_str = '-1e10'; % MISSING VALUE INDICATOR FOR ODV
 
 Bio_optics_str = ['See: Boss, E.B. and N. Haëntjens, 2016. ', ...
-        'http://soccom.princeton.edu/sites/default/files/files/', ...
-        'SOCCOM_2016-1_Bio-optics-primer.pdf'];
+    'http://soccom.princeton.edu/sites/default/files/files/', ...
+    'SOCCOM_2016-1_Bio-optics-primer.pdf'];
 
 CO2SYS_str = ['//NOTE ON CO2SYS CARBONATE SYSTEM CALCULATIONS:\r\n',...
-'//All carbonate system variables calculated with CO2SYS for Matlab\r\n',...
-'//(van Heuven et al., 2011, doi: 10.3334/CDIAC/otg.CO2SYS_MATLAB_v1.1)\r\n',...
-'//used the following conditions: pH was reported on the total scale.\r\n',...
-'//K1 and K2 dissociation constants were from Lueker et al., 2000, doi:\r\n', ...
-'//10.1016/S0304-4203(00)00022-0. The KSO4 dissociation constant was\r\n',...
-'//from Dickson, 1990, doi: 10.1016/0021-9614(90)90074-Z. The KF dissociation\r\n',...
-'//constant was from Perez and Fraga 1987, doi: 10.1016/0304-4203(87)90036-3.\r\n'....
-'//The borate to salinity ratio was from Lee et al., 2010,\r\n', ...
-'//doi:10.1016/j.gca.2009.12.027. Silicate and Phosphate were not\r\n', ...
-'//measured by the float, but estimates based on Redfieldian ratios improved\r\n',...
-'//the carbonate system estimates. If a nitrate value was considered to\r\n',...
-'//be of good quality silicate = nitrate*2.5 and phosphate = nitrate/16,\r\n',...
-'//otherwise the best estimate for both was considered to be 0. When pCO2\r\n',...
-'//was estimated from TALK_CANY and pHinsitu, a bias was first added to pHinsitu\r\n',...
-'//following Williams et al., 2017, doi: https://doi.org/10.1002/2016GB005541 , section 3.4, equation 3.\r\n'];
+    '//All carbonate system variables calculated with CO2SYS for Matlab\r\n',...
+    '//(van Heuven et al., 2011, doi: 10.3334/CDIAC/otg.CO2SYS_MATLAB_v1.1)\r\n',...
+    '//used the following conditions: pH was reported on the total scale.\r\n',...
+    '//K1 and K2 dissociation constants were from Lueker et al., 2000, doi:\r\n', ...
+    '//10.1016/S0304-4203(00)00022-0. The KSO4 dissociation constant was\r\n',...
+    '//from Dickson, 1990, doi: 10.1016/0021-9614(90)90074-Z. The KF dissociation\r\n',...
+    '//constant was from Perez and Fraga 1987, doi: 10.1016/0304-4203(87)90036-3.\r\n'....
+    '//The borate to salinity ratio was from Lee et al., 2010,\r\n', ...
+    '//doi:10.1016/j.gca.2009.12.027. Silicate and Phosphate were not\r\n', ...
+    '//measured by the float, but estimates based on Redfieldian ratios improved\r\n',...
+    '//the carbonate system estimates. If a nitrate value was considered to\r\n',...
+    '//be of good quality silicate = nitrate*2.5 and phosphate = nitrate/16,\r\n',...
+    '//otherwise the best estimate for both was considered to be 0. When pCO2\r\n',...
+    '//was estimated from TALK_CANY and pHinsitu, a bias was first added to pHinsitu\r\n',...
+    '//following Williams et al., 2017, doi: https://doi.org/10.1002/2016GB005541 , section 3.4, equation 3.\r\n'];
 
 CHL_str = ['//NOTE ON Chl_a & Chl_a_corr [mg/m^3] CONCENTRATION:\r\n',...
-'//There is community-established calibration bias of 2 for the WET Labs 413',...
-' ECO-series fluorometers\r\n//(Roesler et al, 2017, doi: 10.1002/lom3.10185).',...
-'\r\n//Chl_a has been recalculated using in situ measured dark counts. ', ...
-'Chl_a is then divided by the Roesler factor of 2.\r\n//Lastly, profiles ', ...
-'with sun elevaltion > 0 are corrected for NPQ (Xing et al, 2012, doi: ', ...
-'10.4319/lom.2012.10.483)\r\n//with uncorrected spikes (raw-filtered data)', ...
-' added back to the corrected profile.\r\n//Chl_a_corr uses a modified Xing ',...
-'approach to correct for NPQ: the reference depth is the\r\n//',...
-'shallower of the mixed layer depth or the 1 percent light depth (Kd based on ', ...
-'\r\n//Kim et al., 2015, doi:10.5194/bg-12-5119-2015).No spike profile added.',...
-'\r\n//Note that all NPQ-corrected data receives an Argo quality flag of 5 ("value changed")',...
-'\r\n//and an ODV-style quality flag of 4 ("questionable").',...
-'\r\n//South of 30S a slope correction of 6 was used(E. Boss unpublished data).',...
-'\r\n//This correction scheme was decided upon at the 18th Argo Data Management Team ',...
-'\r\n//meeting in Hamburg, Germany (Nov, 2017), and is subject to change as research on optimal ',...
-'\r\n//correction methods for float data from FLBB sensors continues.\r\n//'];
+    '//There is community-established calibration bias of 2 for the WET Labs 413',...
+    ' ECO-series fluorometers\r\n//(Roesler et al, 2017, doi: 10.1002/lom3.10185).',...
+    '\r\n//Chl_a has been recalculated using in situ measured dark counts. ', ...
+    'Chl_a is then divided by the Roesler factor of 2.\r\n//Lastly, profiles ', ...
+    'with sun elevaltion > 0 are corrected for NPQ (Xing et al, 2012, doi: ', ...
+    '10.4319/lom.2012.10.483)\r\n//with uncorrected spikes (raw-filtered data)', ...
+    ' added back to the corrected profile.\r\n//Chl_a_corr uses a modified Xing ',...
+    'approach to correct for NPQ: the reference depth is the\r\n//',...
+    'shallower of the mixed layer depth or the 1 percent light depth (Kd based on ', ...
+    '\r\n//Kim et al., 2015, doi:10.5194/bg-12-5119-2015).No spike profile added.',...
+    '\r\n//Note that all NPQ-corrected data receives an Argo quality flag of 5 ("value changed")',...
+    '\r\n//and an ODV-style quality flag of 4 ("questionable").',...
+    '\r\n//South of 30S a slope correction of 6 was used(E. Boss unpublished data).',...
+    '\r\n//This correction scheme was decided upon at the 18th Argo Data Management Team ',...
+    '\r\n//meeting in Hamburg, Germany (Nov, 2017), and is subject to change as research on optimal ',...
+    '\r\n//correction methods for float data from FLBB sensors continues.\r\n//'];
 
 % LOAD CAL FILE - will use info in meta data headers
-load([dirs.cal,'cal',info.FloatViz_name,'.mat']);
+% % load([dirs.cal,'cal',info.FloatViz_name,'.mat']);  % TM 3/3/21; THE CAL
+% FILE IS LOADED ON LINE ~1020, DOES THIS NEED TO BE LOADED AGAIN??
 % ************************************************************************
 % BUILD LOOK UP CELL ARRAY to match variables and set format string
 % ************************************************************************
 %RAW ODV FILE
 ODV_raw(1,:)  = {'Pressure[dbar]'        '%0.2f' 'PRES' '' '' ''}; % ?
-ODV_raw(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP' '' '' ''};   
-ODV_raw(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL' '' '' ''};   
+ODV_raw(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP' '' '' ''};
+ODV_raw(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL' '' '' ''};
 ODV_raw(4,:)  = {'Sigma_theta[kg/m^3]'   '%0.3f' 'SIGMA_THETA' '' '' ''};
 ODV_raw(5,:)  = {'Depth[m]'              '%0.3f' 'DEPTH' '' '' ''};
-ODV_raw(6,:)  = {'Oxygen[µmol/kg]'       '%0.2f' 'DOXY' '' '' ''};   
+ODV_raw(6,:)  = {'Oxygen[µmol/kg]'       '%0.2f' 'DOXY' '' '' ''};
 ODV_raw(7,:)  = {'OxygenSat[%]'          '%0.1f' 'DOXY_%SAT' '' '' ''};
-ODV_raw(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE' '' '' ''}; 
-ODV_raw(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA' '' '' ''};   
+ODV_raw(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE' '' '' ''};
+ODV_raw(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA' '' '' ''};
 ODV_raw(10,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700' '' '' ''};
 
 % ADD THESE FOR ODV FLAVOR #2
-ODV_raw(11,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};   
+ODV_raw(11,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};
 
 % ADD THESE FOR ODV FLAVOR #3 - NAVIS
 ODV_raw(12,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532' '' '' ''};
-ODV_raw(13,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''}; 
+ODV_raw(13,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''};
 
 % ************************************************************************
 % ADD VARIABLE DESCRIPTORS TO RAW CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
@@ -1169,7 +1026,7 @@ if strcmp(info.float_type,'APEX')
 else
     O2sensor = '';
 end
-    
+
 ODV_raw(1,4:6) = {info.CTDtype info.CTDsn ''}; %P
 ODV_raw(2,4:6) = {info.CTDtype info.CTDsn ''}; %T
 ODV_raw(3,4:6) = {info.CTDtype info.CTDsn ''}; %S
@@ -1178,7 +1035,7 @@ ODV_raw(5,4:6) = {'' '' 'Depth calculated from pressure and latitude'}; %Z
 if sum(strcmp(ODV_raw{6,3},raw_hdr))
     ODV_raw(6,4:6) = {[O2sensor,cal.O.type] cal.O.SN ''}; %O2
     ODV_raw(7,4:6) = {'' '' ['Calculation assumes atmospheric pressure',...
-                      '= 1013.25 mbar']}; % O2 % sat
+        '= 1013.25 mbar']}; % O2 % sat
 end
 if sum(strcmp(ODV_raw{8,3},raw_hdr))
     if isfield(cal,'N')
@@ -1206,22 +1063,22 @@ end
 % ************************************************************************
 % ************************************************************************
 % QC ODV FILE
-ODV_adj(1,:)  = {'Pressure[dbar]'        '%0.2f' 'PRES_ADJUSTED' '' '' ''}; 
-ODV_adj(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP_ADJUSTED' '' '' ''};   
-ODV_adj(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL_ADJUSTED' '' '' ''};   
+ODV_adj(1,:)  = {'Pressure[dbar]'        '%0.2f' 'PRES_ADJUSTED' '' '' ''};
+ODV_adj(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP_ADJUSTED' '' '' ''};
+ODV_adj(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL_ADJUSTED' '' '' ''};
 ODV_adj(4,:)  = {'Sigma_theta[kg/m^3]'   '%0.3f' 'SIGMA_THETA' '' '' ''};
 ODV_adj(5,:)  = {'Depth[m]'              '%0.3f' 'DEPTH' '' '' ''};
-ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.2f' 'DOXY_ADJUSTED' '' '' ''};   
+ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.2f' 'DOXY_ADJUSTED' '' '' ''};
 ODV_adj(7,:)  = {'OxygenSat[%]'          '%0.1f' 'DOXY_%SAT_ADJUSTED' '' '' ''};
-ODV_adj(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE_ADJUSTED' '' '' ''}; 
-ODV_adj(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA_ADJUSTED' '' '' ''};  
+ODV_adj(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE_ADJUSTED' '' '' ''};
+ODV_adj(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA_ADJUSTED' '' '' ''};
 ODV_adj(10,:) = {'Chl_a_corr[mg/m^3]'    '%0.4f' 'Chl_a_corr[mg/m^3]' '' '' ''};
 ODV_adj(11,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700_ADJUSTED' '' '' ''};
 ODV_adj(12,:) = {'b_bp_corr[1/m]'        '%0.6f' 'bbp' '' '' ''};
 ODV_adj(13,:) = {'POC[mmol/m^3]'         '%0.2f' 'POC[mmol/m^3]' '' '' ''};
 
 % ADD THESE FOR ODV FLAVOR #2
-ODV_adj(14,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL_ADJUSTED' '' '' ''};   
+ODV_adj(14,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL_ADJUSTED' '' '' ''};
 ODV_adj(15,:) = {'pH25C[Total]'          '%0.4f' 'CANYON_PHTOT25C' '' '' ''};
 ODV_adj(16,:) = {'TALK_CANY[µmol/kg]'    '%4.0f' 'CANYON_ALK' '' '' ''};
 ODV_adj(17,:) = {'DIC_CANY[µmol/kg]'     '%4.0f' 'CANYON_DIC' '' '' ''};
@@ -1229,7 +1086,7 @@ ODV_adj(18,:) = {'pCO2_CANY[µatm]'       '%4.1f' 'CANYON_pCO2' '' '' ''};
 
 % ADD THESE FOR ODV FLAVOR #3
 ODV_adj(19,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532_ADJUSTED' '' '' ''};
-ODV_adj(20,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM_ADJUSTED' '' '' ''}; 
+ODV_adj(20,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM_ADJUSTED' '' '' ''};
 
 % ************************************************************************
 % ADD VARIABLE DESCRIPTORS TO RAW CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
@@ -1253,10 +1110,10 @@ if sum(strcmp(ODV_adj{14,3},adj_hdr))
 end
 if sum(strcmp(ODV_adj{15,3},adj_hdr))
     str =['estimated with CO2SYS(TALK_CANY,pHinsitu) for Matlab ', ...
-     ' see note below'];    
+        ' see note below'];
     ODV_adj(15,4:6) = {cal.pH.type cal.pH.SN str}; %pH 25C total
-end   
-if sum(strcmp(ODV_adj{16,3},adj_hdr))  
+end
+if sum(strcmp(ODV_adj{16,3},adj_hdr))
     ODV_adj(16,4:6) = {'' '' CANYON_alk_str}; %TALK CANYON
 end
 if sum(strcmp(ODV_adj{17,3},adj_hdr))
@@ -1278,31 +1135,31 @@ if sum(strcmp(ODV_adj{20,3},adj_hdr))
 end
 
 % ************************************************************************
-% FIGURE OUT ODV FILE FORMAT TYPE: [NO pH] ]pH] [NAVIS]
+% FIGURE OUT ODV FILE FORMAT TYPE: [NO pH] [pH] [NAVIS]
 % REMOVE SPECIFC VARIABLES FROM THE LOOKUP CELL ARRAY
 if isempty(iPH)
-    ind1 = find(strcmp('pHinsitu[Total]',ODV_raw(:,1))   == 1); 
+    ind1 = find(strcmp('pHinsitu[Total]',ODV_raw(:,1))   == 1);
     ODV_raw(ind1,:) = [];
     
-    ind1 = find(strcmp('pHinsitu[Total]',ODV_adj(:,1))   == 1); 
+    ind1 = find(strcmp('pHinsitu[Total]',ODV_adj(:,1))   == 1);
     ind2 = find(strcmp('pCO2_LIAR[µatm]',ODV_adj(:,1))   == 1);
     ODV_adj(ind1:ind2,:) = [];
 end
 
 if ~strcmp(info.float_type, 'NAVIS')
     ind1 = find(strcmp('b_bp532[1/m]',ODV_raw(:,1))   == 1);
-    ind2 = find(strcmp('CDOM[ppb]',ODV_raw(:,1))   == 1); 
+    ind2 = find(strcmp('CDOM[ppb]',ODV_raw(:,1))   == 1);
     ODV_raw(ind1:ind2,:) = [];
     
     ind1 = find(strcmp('b_bp532[1/m]',ODV_adj(:,1))   == 1);
-    ind2 = find(strcmp('CDOM[ppb]',ODV_adj(:,1))   == 1); 
-    ODV_adj(ind1:ind2,:) = []; 
+    ind2 = find(strcmp('CDOM[ppb]',ODV_adj(:,1))   == 1);
+    ODV_adj(ind1:ind2,:) = [];
 end
 
 raw_var_ct = size(ODV_raw,1);
 adj_var_ct = size(ODV_adj,1);
 
-% ************************************************************************           
+% ************************************************************************
 % ************************************************************************
 % CREATE ADJUSTED ACII FILE - LOW RES
 % ************************************************************************
@@ -1320,7 +1177,7 @@ if QC_check == 1
     disp(['Printing adjusted data to: ',dirs.FVlocal, ...
         'CANYON_QC\', info.FloatViz_name, 'QC', '.txt']);
     fid_adj  = fopen([dirs.FVlocal,'CANYON_QC\', info.FloatViz_name, ...
-                      'QC','.TXT'],'W','n','UTF-8');
+        'QC','.TXT'],'W','n','UTF-8');
     fprintf(fid_adj,'//0\r\n');
     fprintf(fid_adj,'//<Encoding>UTF-8</Encoding>\r\n');
     fprintf(fid_adj,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
@@ -1328,8 +1185,10 @@ if QC_check == 1
     fprintf(fid_adj,'//!! ADJUSTED DATA FILE !!\r\n');
     
     fprintf(fid_adj,['//WMO ID: ',info.WMO,'\r\n']);
-    fprintf(fid_adj,['//Univ. of Washington ID: ',info.UW_ID_num,'\r\n']);
-    fprintf(fid_adj,['//MBARI ID: ',info.FloatViz_name,'\r\n']);
+    fprintf(fid_adj,['//Institution ID: ',info.INST_ID_num,'\r\n']);
+    fprintf(fid_adj,['//MBARI ID: ',info.MBARI_ID_str,'\r\n']);
+    fprintf(fid_adj,['//Project Name: ',PROJ_Name,'\r\n']);
+    fprintf(fid_adj,['//Region: ',REGION,'\r\n']);
     
     fprintf(fid_adj,['//', missing_profile_str,'\r\n']);
     if ~isempty(interp_pos_str)
@@ -1507,7 +1366,7 @@ end
 % CREATE COMBINED HR+LR ADJUSTED ACII FILE
 % ************************************************************************
 % ************************************************************************
-if QC_check == 1 && HR_flag == 1 
+if QC_check == 1 && HR_flag == 1
     % PRINT HEADER FIRST
     if strcmp(info.float_type, 'APEX')
         [alladj_r,alladj_c] = size(allraw_data);
@@ -1523,8 +1382,10 @@ if QC_check == 1 && HR_flag == 1
         fprintf(fid_adj,'//!! ADJUSTED DATA FILE !!\r\n');
         
         fprintf(fid_adj,['//WMO ID: ',info.WMO,'\r\n']);
-        fprintf(fid_adj,['//Univ. of Washington ID: ',info.UW_ID_num,'\r\n']);
-        fprintf(fid_adj,['//MBARI ID: ',info.FloatViz_name,'\r\n']);
+        fprintf(fid_adj,['//Institution ID: ',info.INST_ID_num,'\r\n']);
+        fprintf(fid_adj,['//MBARI ID: ',info.MBARI_ID_str,'\r\n']);
+        fprintf(fid_adj,['//Project Name: ',PROJ_Name,'\r\n']);
+        fprintf(fid_adj,['//Region: ',REGION,'\r\n']);
         
         fprintf(fid_adj,['//', missing_profile_str,'\r\n']);
         if ~isempty(interp_pos_str)

@@ -1,4 +1,4 @@
-function NCEP = getNCEP(SDN,LON,LAT,dirs)
+function NCEP = getNCEPtest(SDN,LON,LAT,dirs)
 %
 % NCEP = getNCP(SDN,lon,lat)
 %   getNCEP extracts NCEP data along a time track given time, lon & lat
@@ -37,26 +37,11 @@ function NCEP = getNCEP(SDN,LON,LAT,dirs)
 % with esrl representatives who did not have an explanation.  Tested
 % various installations of nctoolbox as well (per Brian Schlining) which
 % was not the issue.
+% 05/01/21 TM Clean-up of original code (interpolation, prime meridion crossing, etc).  
 
 % *************************************************************************
-% TEST
-% d = get_FloatViz_data(['C:\Users\jplant\Documents\MATLAB\', ...
-%     'ARGO_PROCESSING\DATA\FLOATVIZ\9094SOOCN.TXT']);
-% % d = get_FloatViz_data(['C:\Users\jplant\Documents\MATLAB\', ...
-% %     'ARGO_PROCESSING\DATA\FLOATVIZ\5143STNP.TXT']);
-% [~,ia,~] = unique(d.data(:,2));
-% track = d.data(ia,[1,4,3]); % reverse lat lon order for function
-% t1 = track(:,2) == -1e10;
-% track(t1,2:3) = NaN;
-% track(t1,:) = [];
-% load('C:\temp\test_track.mat')
-% track = Wtrack;
-% SDN = track(:,1);
-% LAT = track(:,2);
-% LON = track(:,3);
-% *************************************************************************
 
-
+NPRES = nan(length(SDN),1);
 
 % CHECK INPUTS - Set all to columns of data
 [r,c] = size(SDN); if r < c, SDN = SDN'; end
@@ -78,33 +63,22 @@ else
     LATx = LAT;
 end
 
-%CHECK FOR  NAN's IN LAT OR LON
-% t1 = isnan(LATx) | isnan(LONx);
-% no_pos_sdn = [SDNx, t1];
-% if sum(t1) > 0
-%     disp(['NaN found in Lat or LON. No NCEP data will be returned for ',...
-%         ' these time points. Consider cleaning up input data first!'])
-%     SDNx = SDNx(t1);
-%     LONx = LONx(t1);
-%     LATx = LATx(t1);
-% end
-% clear t1
-
 % ************************************************************************
 % ****************************  PATHS and VARIABLES **********************
 %        NCEPPath can be a URL, network dir (ie CHEM) or a local dir
 % ************************************************************************
-% NCEPpath1 = dirs.NCEP_TEMP;
+%NCEPpath1   = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\DATA\NCEP_TEMPORARY\';
+NCEPpath1 = dirs.NCEP_TEMP;
 NCEPpath1   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface_gauss/';
-NCEPpath2   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface/';
-
+% NCEPpath1   = 'https://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis2/gaussian_grid/';
+%NCEPpath2   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface/';
+landmask = [dirs.NCEP_TEMP,filesep,'land.sfc.gauss.nc'];
           
 %   (1)matlab var name, (2)NCEP file,    (3)file path 
 NCEPname(1,:) ={'PRES' ,'pres.sfc.gauss.',NCEPpath1 };   % Surface  pressure, Pascals
 %NCEPname(2,:) ={'RH'  ,'rhum.sig995.',    NCEPpath2};    % Relative humidity (pH2O/pH2O sat)
 
 %NCEPname(2,:) ={'PRES2','pres.sfc.',     NCEPpath2};    % Surface  pressure, Pascals
-landmask = [dirs.NCEP_TEMP,filesep,'land.sfc.gauss.nc'];
 
 
 [num_vars,~] = size(NCEPname); % get number of variables to extract
@@ -122,29 +96,29 @@ end_yr = end_yr(1);
 t1 = LONx < 0;
 LONx(t1) = LONx(t1) + 360; % Convert any - values to 0 to 360E
 
-LAT_bnds = [max(LATx) min(LATx)];   % lat range of data 
-LON_bnds = [min(LONx) max(LONx)]; % lon range of data
+% LAT_bnds = [max(LATx) min(LATx)];   % lat range of data 
+% LON_bnds = [min(LONx) max(LONx)]; % lon range of data
 
-% ************************************************************************
-%               ***  CHECK FOR 0 MERIDIAN CROSSING  ***
-%  Assume no more than 20º of travel In 14 days  so crossing should show
-%                 an abs value in the long diff > 340
-% ************************************************************************
-lon_diff = diff(LONx);
-T_lon = find(abs(lon_diff) > 340,1,'first'); % find 1st meridian crossing
-if isempty(T_lon)
-    LON_flag = 1;   % get lon >= min & lon <= max
-    disp(['LON_flag = ',num2str(LON_flag),' Float does not cross 0 Meridian.']);
-else
-    LON_flag = 0;   % get lon < min & lon > max
-    t1 = (LONx >180);
-    LON_bnds = [max(LONx(~t1)) min(LONx(t1))]; % re-due bounds jp 4/7/17
-    
-    % NORMALLY SIGN OF DIFF: E =1, W= -1, HOW EVER AT MERIDIAN CROSSING
-    % IT IS THE OPPOSITE E= -1 (ex 1-359 =-358), W = 1 (ex 359-1 = 358)
-    LON_dir = sign(lon_diff(T_lon)); % 
-    disp(['LON_flag = ',num2str(LON_flag),' Float transits across 0 Meridian.']);
-end
+% % % % ************************************************************************
+% % % %               ***  CHECK FOR 0 MERIDIAN CROSSING  ***
+% % % %  Assume no more than 20º of travel In 14 days  so crossing should show
+% % % %                 an abs value in the long diff > 340
+% % % % ************************************************************************
+% % % lon_diff = diff(LONx);
+% % % T_lon = find(abs(lon_diff) > 340,1,'first'); % find 1st meridian crossing
+% % % if isempty(T_lon)
+% % %     LON_flag = 1;   % get lon >= min & lon <= max
+% % %     disp(['LON_flag = ',num2str(LON_flag),' Float does not cross 0 Meridian.']);
+% % % else
+% % %     LON_flag = 0;   % get lon < min & lon > max
+% % %     t1 = (LONx >180);
+% % %     LON_bnds = [max(LONx(~t1)) min(LONx(t1))]; % re-due bounds jp 4/7/17
+% % %     
+% % %     % NORMALLY SIGN OF DIFF: E =1, W= -1, HOW EVER AT MERIDIAN CROSSING
+% % %     % IT IS THE OPPOSITE E= -1 (ex 1-359 =-358), W = 1 (ex 359-1 = 358)
+% % %     LON_dir = sign(lon_diff(T_lon)); % 
+% % %     disp(['LON_flag = ',num2str(LON_flag),' Float transits across 0 Meridian.']);
+% % % end
 
 % ************************************************************************
 % ************************************************************************
@@ -173,195 +147,43 @@ end
         %   GRID WILL BE THE SAME FOR ALL YEAR_FILES FOR A GIVEN VARIABLE
         % *****************************************************************
         
-        if yr == start_yr
+%         if yr == start_yr
             lat = ncread(NCEPtarget,'lat');
             lon = ncread(NCEPtarget,'lon');
-            lat_ind = [find(lat>LAT_bnds(1),1,'last'),...
-                find(lat<LAT_bnds(2),1,'first')];
-            lat     = lat(lat_ind(1):lat_ind(2)); % subsetted lat variable
             
-            if LON_flag ==1 % NO FLOAT CROSSING
-                lon_ind = [find(lon<LON_bnds(1),1,'last'),...
-                    find(lon>LON_bnds(2),1,'first')];
-                
-                if length(lon_ind) == 2
-                    lon_1 = lon(lon_ind(1):lon_ind(2)); % subset lon
-                else % float doesn't cross meridian but NCEP data grab does
-                    LON_flag = 0; % RESET FLAG TO ZERO
-                    if LON_bnds(1)< min(lon)
-                        LON_bnds =[LON_bnds(2) max(lon)]; %low pt = problem
-                    else
-                        LON_bnds =[min(lon) LON_bnds(1)]; %high pt = problem
-                    end
-                    disp('NCEP data grab transits 0 Meridian.');
-                    disp(['LON_flag reset to: ',num2str(LON_flag)]);
-                    disp(['LON_bnds reset to: ',num2str(LON_bnds)]);
-                end
-            end
+           % max lon in ncep is ~358 deg.  That means float track with
+           % longitude between 358-360 cannot be interpolated to NCEP.
+           % So...try making a replicate datapoint of lon = 0 for lon = 360
+           % (as these are equivalent), so can trick the code for the
+           % interpolation.  Only do this if lon crosses merid
+           if nanmax(lon)>358;
+            lon = [lon;360];
+           end
+            time = ncread(NCEPtarget,'time');
+            t = time./24 + datenum(1800,1,1,0,0,0);
+            tlength = length(t);
             
-            if LON_flag ==0
-                lon_ind = [find(lon>LON_bnds(1),1,'first'),...
-                    find(lon<LON_bnds(2),1,'last')];
-                lon_1 = [lon(1:lon_ind(1));lon(lon_ind(2):end)];
-            end
-        end
-        
-        % *****************************************************************
-        % EXTRACT DATA RANGE FOR VARIABLE
-        mytime = ncread(NCEPtarget,'time');
-        t = mytime/24 + datenum(1800,1,1,0,0,0);
-        tlength = length(t);
-%         t_ind = [find(t>nanmin(SDNx),1,'first'),find(t<nanmax(SDNx),1,'last')];
-        
-        if LON_flag ==1                     % No 0 meridian crossing data
-            d = ncread(NCEPtarget,'pres', [lon_ind(1) lat_ind(1) 1],[lon_ind(2)-lon_ind(1)+1 lat_ind(2)-lat_ind(1)+1 tlength]);
-            LM = ncread(landmask,'land', [lon_ind(1) lat_ind(1) 1],[lon_ind(2)-lon_ind(1)+1 lat_ind(2)-lat_ind(1)+1 1]);  
+            d = ncread(NCEPtarget,'pres');
+%             mytmp(1,:,:) = d(1,:,:);
+%             D = d;
+            d(193,:,:) = d(1,:,:);
+            
+
+            LM = ncread(landmask,'land');  
+            LM(193,:) = LM(1,:);
             LMask = logical(LM);
             for ilm = 1:tlength
                 Dtmp = d(:,:,ilm);
                 Dtmp(LMask) = nan;
                 d(:,:,ilm) = Dtmp;
             end
-        else
-            disp('PLOT TO VERIFY MERIDIAN CROSSING CODE!!!!');
-            d1 = ncread(NCEPtarget,'pres', [1 lat_ind(1) 1],[lon_ind(2)-1 lat_ind(2)-lat_ind(1)+1 tlength]);
-            LM1 = ncread(landmask,'land', [1 lat_ind(1) 1],[lon_ind(2)-1 lat_ind(2)-lat_ind(1)+1 1]);
-            LMask1 = logical(LM1);
-            for ilm = 1:tlength
-                Dtmp = d1(:,:,ilm);
-                Dtmp(LMask1) = nan;
-                d1(:,:,ilm) = Dtmp;
-            end
-%             d2 = ncread(NCEPtarget,'pres', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2) lat_ind(2)-lat_ind(1)+1 tlength]);
-            d2 = ncread(NCEPtarget,'pres', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2)+1 lat_ind(2)-lat_ind(1)+1 tlength]);
-            LM2 = ncread(landmask,'land', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2)+1 lat_ind(2)-lat_ind(1)+1 1]);
-            LMask2 = logical(LM2);
-            for ilm = 1:tlength
-                Dtmp = d2(:,:,ilm);
-                Dtmp(LMask2) = nan;
-                d2(:,:,ilm) = Dtmp;
-            end
-            d = cat(1,d1,d2);          
-            clear d1 d2
-        end
-        NCEPtime = [NCEPtime; t];
-%         NCEPdata = [NCEPdata; d']; %( time x lat x lon)
-        NCEPdata = cat(3,NCEPdata,d); %( lon x lat x time)
+           [X,Y,Z] = meshgrid(double(lat),double(lon),t);
+           Vq = interp3(X,Y,Z,double(d),LATx,LONx,SDNx);
+           xx = find(~isnan(Vq));
+           ntmp = Vq(xx);
+           NPRES(xx) = ntmp;
+           
     end
-    %TRANSPOSE TO ( time x lat x lon)
-    NCEPdata = permute(NCEPdata,[3,2,1]);
-
-    % ************************************************************************
-    % ***********  EXTRACT NCEP CLIMATE DATA OVER FLOAT TRACK  ***************
-    % ************************************************************************
-    % Interpolate float lat & lon onto NCEP time grid
-    % Could just interpolate on to inputs lat & lon but may want more
-    % detailed NCEP data time wise to play with water age, time lags and O2
-    % calcs
-    
-    if LON_flag == 0 % O MERIDIAN CROSSING - CONVERT LON to -180 to 180
-        LONx(LONx >180) = LONx(LONx >180) - 360;
-        lon_1(lon_1 >180) = lon_1(lon_1 >180) - 360;
-        [lon_1,IX] = sort(lon_1);
-        NCEPdata =NCEPdata(:,:,IX);
-    end 
-        
-%     LAT_i = interp1([fix(SDNx(1)); SDNx], [LATx(1); LATx], NCEPtime);
-%     LON_i = interp1([fix(SDNx(1)); SDNx], [LONx(1); LONx], NCEPtime);
-    
-% Tanya fix  031417
-    LAT_i = interp1([fix(SDNx(1)); SDNx; ceil(SDNx(end))], ...
-            [LATx(1); LATx; LATx(end)], NCEPtime);
-    LON_i = interp1([fix(SDNx(1)); SDNx; ceil(SDNx(end))], ...
-            [LONx(1); LONx; LONx(end)], NCEPtime);
-
-    NO_NaNs = ~isnan(LAT_i);  
-    
-    LAT_i = LAT_i(NO_NaNs);
-    LON_i = LON_i(NO_NaNs);
-    NCEP_SDN = NCEPtime(NO_NaNs);
-   
-    
-    % LOOP THROUGH AND EXTRACT NCEP DATA
-    NCEPdata_pt =[];
-% OLD LOOP - NO INTERPOLATION. COMPARED 2 DIFFERNET NCEP PRESSURE GRIDS
-% DIFFERENCE UP TO 15 so BETTER INTERPOLATE
-%     for i = 1: length(NCEP_SDN)
-%         time_dt = abs(NCEPtime - NCEP_SDN(i)); % time range - time of data pt
-%         time_pt = find(time_dt == min(time_dt)); % time point logical index
-%         lat_dt = abs(lat - LAT_i(i));
-%         lat_pt = find(lat_dt == min(lat_dt)); % lat point index
-%         lon_dt = abs(lon_1 - LON_i(i));
-%         lon_pt = find(lon_dt == min(lon_dt)); % lon point index
-%         
-%         % CHOOSE the first ind if there are 2 (1/2 way bewtween)
-%         NCEPdata_pt =[NCEPdata_pt;NCEPdata(time_pt(1),lat_pt(1),lon_pt(1))]; %extract
-%     end
-
-% BRUTE FORCE LINEAR INTERP - STEP DOWN THROUGH DIMMENSIONS
-     for i = 1: length(NCEP_SDN)
-        % 3D to 2D
-        time_pt = find(NCEPtime >= NCEP_SDN(i),1 ,'first'); % time point upper bound or =
-        if time_pt == 1
-            wt = 0;
-            tmp2 = squeeze(NCEPdata(time_pt, :, :)); % get upper time surfaces
-            tmp_s  = tmp2*(1-wt); % surface
-        else
-            wt = (NCEPtime(time_pt) - NCEP_SDN(i)) /...
-                 (NCEPtime(time_pt) - NCEPtime(time_pt-1));
-            tmp1 = squeeze(NCEPdata(time_pt-1, :, :)); % get lower time surfaces
-            tmp2 = squeeze(NCEPdata(time_pt, :, :)); % get upper time surfaces
-            tmp_s  = tmp1* wt + tmp2*(1-wt); % surface
-        end
-
-        
-%         disp([NCEPtime(time_pt-1) NCEPtime(time_pt) wt ... % for testing
-%             (NCEPtime(time_pt-1)*wt + NCEPtime(time_pt)*(1-wt))  NCEP_SDN(i) ])
-        
-        clear tmp1 tmp2
-
-        % 2D to 1D 90 to -90
-        lat_pt = find(lat >= LAT_i(i),1 ,'last'); % 1st index , but upper bound or =
-        wt = (lat(lat_pt) - LAT_i(i)) / (lat(lat_pt) - lat(lat_pt+1)); 
-        tmp_l = tmp_s(lat_pt+1,:)*wt + tmp_s(lat_pt,:)*(1-wt); % line
-        
-%         disp([lat(lat_pt+1) lat(lat_pt) wt ... % for testing
-%             (lat(lat_pt+1)*wt + lat(lat_pt)*(1-wt)) LAT_i(i)])       
-        
-        
-        % 1D to POINT                       
-        lon_pt = find(lon_1 >= LON_i(i),1 ,'first'); % lon point upper bound or =
-        wt = (lon_1(lon_pt) - LON_i(i)) / (lon_1(lon_pt) - lon_1(lon_pt-1)); 
-        tmp_pt = tmp_l(lon_pt-1)*wt + tmp_l(lon_pt)*(1-wt); % line
-        
-%         disp([lon_1(lon_pt-1) lon_1(lon_pt) wt ... % for testing
-%             (lon_1(lon_pt-1)*wt + lon_1(lon_pt)*(1-wt)) LON_i(i)])    
-        %pause
-        % CHOOSE the first ind if there are 2 (1/2 way bewtween)
-        if isempty(tmp_pt), pause, end
-%         tmp_pt
-        NCEPdata_pt =[NCEPdata_pt;tmp_pt]; % add to array
-%         if isempty(tmp_pt),pause, end
-    end
-       
-    
-    
-    
-    % NOW INTERPOLATE BACK TO INPUT SDN
-    out = interp1(NCEP_SDN,NCEPdata_pt,SDN);
-    
-    %plot(flt_LONG,flt_LAT, 'bo-', jptest(:,3), jptest(:,2),'r*-')% for testing
-    %pause% for testing
-    
-    s1 =['NCEP.',NCEPname{fn,1}, '=out;'];
-    eval(s1);
-    %whos NCEP.PRES
-    
-    % BUILD DATA STRUCTURE
-
-    
-    disp(['NCEP variable ',NCEPname{fn,1}, ' created']);
-    disp(' ');
-% end
-close(WB)
+    NCEP.PRES = NPRES;
+    close(WB)
 

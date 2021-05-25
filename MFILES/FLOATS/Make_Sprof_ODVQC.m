@@ -5,8 +5,6 @@ function tf = Make_Sprof_ODVQC(handles)
 % FILES EXIST & NO ARGO FILES.
 % 4/15/2019: changed name from Make_Mprof_ODVQC to Make_Sprof_ODVQC (moving toward use of Sprof files).
 % 2/24/2021: Removal of "last_cor" variable in the correction application scheme; this was an artifact of MBARI's old adjustment system.  Thanks to Kjell Arne for identifying the issue in this piece of code for external users.
-% 3/25/21 - TM - Forced all fopen writes to UTF-8, because that is the
-%    new default for Matlab 2020 and better cross platform sharing
 
 fp = filesep; % File separator for current platform
 tf = 0;
@@ -25,7 +23,7 @@ RC.BB700 = [-0.000025 0.1]; % argoBGC QC manual 09July2016
 RC.BB532 = [-0.000005 0.1]; % argoBGC QC manual 09July2016
 RC.CDOM  = [-1000 1000]; % Place Holder
 RC.NO3   = [-15 65];
-RCR.PH   = [7.0 8.8];
+RC.PH   = [7.0 8.8];
 
 % GET THE RAW DATA
 fv_path  = [handles.info.file_path, handles.info.float_name,'.TXT'];
@@ -55,8 +53,8 @@ iHS   = find(strcmp('Bisulfide[µmol/kg]',qc_hdr) == 1);
 
 % SET MASTER LIST OF POSSIBLE CORRECTABLE PARAMETERS & TEST FOR DATA
 qc_params = {'Oxygen[µmol/kg]', 'Nitrate[µmol/kg]','pHinsitu[Total]', ...
-             'Chl_a[mg/m^3]'};
-    
+    'Chl_a[mg/m^3]'};
+
 % GET CORRECTIONS FROM GUI STRUCTURE
 QCA       = handles.QCA;
 % qca_params = fieldnames(QCA);
@@ -64,7 +62,7 @@ for qc_ct = 1: size(qc_params,2)
     switch(qc_params{qc_ct})
         
         case 'Oxygen[µmol/kg]'
-            if ~isfield(QCA,'O2') 
+            if ~isfield(QCA,'O2')
                 disp('No O2 gain correction found.')
                 if isfield(QCA,'O2')
                     QCA = rmfield(QCA,'O2');
@@ -82,7 +80,7 @@ for qc_ct = 1: size(qc_params,2)
             if sum(tdata) > 0 % data to correct
                 qca = QCA.O2;
                 Guse = [];
-                for gi = 1:size(qca,1) %perform operation for each row of O2 gains (usually only one single drift, so up to 2 rows, but allow for more complex)          
+                for gi = 1:size(qca,1) %perform operation for each row of O2 gains (usually only one single drift, so up to 2 rows, but allow for more complex)
                     data_tmp = qc_data(tdata,:);
                     if gi == size(qca,1) %either single gain, or last row in qca gain matrix
                         data_tmp = data_tmp(data_tmp(:,iSTN)>= qca(gi,1) & data_tmp(:,iSTN)<=nanmax(data_tmp(:,iSTN)),:);
@@ -93,10 +91,10 @@ for qc_ct = 1: size(qc_params,2)
                     Gtmp = qca(gi,2) + qca(gi,end)./365.*Tdiff;
                     Guse = [Guse;Gtmp]; %will result in a gain value to apply per sample.
                 end
-%                 qc_data(tdata,iO) = qc_data(tdata,iO) * qca(1,2); %if only static mean gain ever applied.
+                %                 qc_data(tdata,iO) = qc_data(tdata,iO) * qca(1,2); %if only static mean gain ever applied.
                 qc_data(tdata,iO) = qc_data(tdata,iO) .* Guse;
                 qc_data(tdata,iO+2) = qc_data(tdata,iO) ./ ...
-                   oxy_sol(qc_data(tdata,iT), qc_data(tdata,iS),0) * 100;
+                    oxy_sol(qc_data(tdata,iT), qc_data(tdata,iS),0) * 100;
                 tRC = qc_data(:,iO) >= RC.O(1) & qc_data(:,iO) <= RC.O(2);
                 tbad = qc_data(:,iO+1) == 8;
                 qc_data(tdata & tRC & ~tbad, iO+1) = 0; % GOOD DATA!
@@ -110,14 +108,14 @@ for qc_ct = 1: size(qc_params,2)
                 disp('No Nitrate QC corrections found.')
                 if isfield(QCA,'NO3')
                     QCA = rmfield(QCA,'NO3');
-                end                
+                end
                 continue
             end
             if isempty(iN) || isempty(QCA.NO3)
                 disp('No Nitrate index exists...skipping Nitrate QC application.')
                 if isfield(QCA,'NO3')
                     QCA = rmfield(QCA,'NO3');
-                end                
+                end
                 continue
             end
             tdata = ~isnan(qc_data(:,iN)) & qc_data(:,iN) ~= -1e10;
@@ -129,7 +127,7 @@ for qc_ct = 1: size(qc_params,2)
                 for i = 1:rr
                     if i < rr
                         t1 = qc_tmp(:,2) >= qca(i,1) & ...
-                             qc_tmp(:,2) <= qca(i+1,1); %get data block
+                            qc_tmp(:,2) <= qca(i+1,1); %get data block
                     else
                         t1 = qc_tmp(:,2) >= qca(i,1); %get data block
                     end
@@ -142,7 +140,7 @@ for qc_ct = 1: size(qc_params,2)
                 
                 % SET BAD QC DATA TO NaN
                 tRC  = qc_tmp(:,iN) >= RC.NO3(1) & ...
-                       qc_tmp(:,iN) <= RC.NO3(2);
+                    qc_tmp(:,iN) <= RC.NO3(2);
                 tbad = qc_tmp(:,iN+1) == 8; % carry over from raw
                 qc_tmp(tRC & ~tbad, iN+1) = 0; % GOOD DATA!
                 qc_tmp((~tRC) | tbad, iN+1) = 8; % BAD!
@@ -180,12 +178,34 @@ for qc_ct = 1: size(qc_params,2)
                 end
                 tP          = qc_tmp(:,iP) < 980; % logical flag for pump on calc
                 pump_offset = pump_offset * tP; % array of 0's and offset
-                TCOR        = (2 + 273.15)./(qc_tmp(:,iT) + 273.15); % drift + offset is f(T) too????
+                myP = qc_tmp(:,iP);
+                myT = (qc_tmp(:,iT);
+                % Find temperature at 1500m, otherwise use T = 2C (if shallow)
+                pres_tol = 500; %if shallow, take T up to 1000m depth
+                p1500   = abs(myP- 1500);
+                min1500 = min(p1500);
+                if min1500 < pres_tol; % look for 1500m sample first
+                    ind = find(p1500 == min1500,1);
+                    if ~isempty(ind)
+                        disp('Calculating reference temp at 1500m for application of pH correction to k0...')
+                        TREF = myT(ind);
+                        disp(['T = ',num2str(TREF),' degC'])
+                        disp(['refdepth = ',num2str(myP(ind))])
+                        TCOR        = (TREF + 273.15)./(myT + 273.15); % drift + offset is f(T) too, brings correction to k0 space
+                    else
+                        disp('Could not calculate reference temp at 1500m for application of pH correction to k0.  Using default reference temp of 2degC.')
+                        TCOR        = (2 + 273.15)./(myT + 273.15); % drift + offset is f(T) too????
+                    end
+                else
+                    disp('Could not calculate reference temp at 1500m for application of pH correction to k0.  Using default reference temp of 2degC.')
+                    TCOR        = (2 + 273.15)./(myT + 273.15); % drift + offset is f(T) too????
+                end
+                clear myT myP tP
                 
                 for i = 1:rr
                     if i < rr
                         t1 = qc_tmp(:,2) >= qca(i,1) &  ...
-                             qc_tmp(:,2) <= qca(i+1,1); %get block
+                            qc_tmp(:,2) <= qca(i+1,1); %get block
                     else
                         t1 = qc_tmp(:,2) >= qca(i,1); %get block
                     end
@@ -194,11 +214,11 @@ for qc_ct = 1: size(qc_params,2)
                     cor(t1)  = tmp_cor;
                 end
                 qc_tmp(:,iPH) = qc_tmp(:,iPH) +(pump_offset - cor) ...
-                                 .* TCOR;
+                    .* TCOR;
                 
                 % SET BAD QC DATA TO NaN
                 tRC  = qc_tmp(:,iPH) >= RC.PH(1) & ...
-                       qc_tmp(:,iPH) <= RC.PH(2);
+                    qc_tmp(:,iPH) <= RC.PH(2);
                 tbad = qc_tmp(:,iPH+1) == 8;
                 qc_tmp(tRC & ~tbad, iPH+1) = 0; % GOOD DATA!
                 qc_tmp((~tRC) | tbad, iPH+1) = 8; % BAD!
@@ -211,7 +231,7 @@ for qc_ct = 1: size(qc_params,2)
                 disp('No CHL index or QC corrections found')
                 if isfield(QCA,'CHL')
                     QCA = rmfield(QCA,'CHL');
-                end                
+                end
                 continue
             end
             tdata = ~isnan(qc_data(:,iCHL)) & qc_data(:,iCHL) ~= -1e10;
@@ -241,25 +261,25 @@ MVI_str = '-1e10'; % MISSING VALUE INDICATOR FOR ODV
 % ************************************************************************
 %RAW ODV FILE
 ODV_adj(1,:)  = {'Pressure[dbar]'        '%0.2f' 'PRES' '' '' ''}; % ?
-ODV_adj(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP' '' '' ''};   
-ODV_adj(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL' '' '' ''};   
+ODV_adj(2,:)  = {'Temperature[°C]'       '%0.4f' 'TEMP' '' '' ''};
+ODV_adj(3,:)  = {'Salinity[pss]'         '%0.4f' 'PSAL' '' '' ''};
 ODV_adj(4,:)  = {'Sigma_theta[kg/m^3]'   '%0.3f' 'SIGMA_THETA' '' '' ''};
 ODV_adj(5,:)  = {'Depth[m]'              '%0.3f' 'DEPTH' '' '' ''};
-ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.3f' 'DOXY' '' '' ''};   
+ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.3f' 'DOXY' '' '' ''};
 ODV_adj(7,:)  = {'OxygenSat[%]'          '%0.3f' 'DOXY_%SAT' '' '' ''};
-ODV_adj(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE' '' '' ''}; 
-ODV_adj(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA' '' '' ''};   
+ODV_adj(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE' '' '' ''};
+ODV_adj(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA' '' '' ''};
 ODV_adj(10,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700' '' '' ''};
-ODV_adj(11,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''}; 
-ODV_adj(12,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};   
-ODV_adj(13,:) = {'CP660[1/m]'            '%0.4f' 'CP660' '' '' ''}; 
+ODV_adj(11,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''};
+ODV_adj(12,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};
+ODV_adj(13,:) = {'CP660[1/m]'            '%0.4f' 'CP660' '' '' ''};
 
 % ADD THESE FOR ODV FLAVOR #2 -PROVOR
-ODV_adj(14,:) = {'D_IRRAD380[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE380' '' '' ''}; 
-ODV_adj(15,:) = {'D_IRRAD412[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE412' '' '' ''}; 
-ODV_adj(16,:) = {'D_IRRAD490[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE490' '' '' ''}; 
-ODV_adj(17,:) = {'D_PAR[W/m^2/nm]'       '%4.4f' 'DOWNWELLING_PAR' '' '' ''}; 
-ODV_adj(18,:) = {'Bisulfide[µmol/kg]'    '%4.4f' 'BISULFIDE' '' '' ''}; 
+ODV_adj(14,:) = {'D_IRRAD380[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE380' '' '' ''};
+ODV_adj(15,:) = {'D_IRRAD412[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE412' '' '' ''};
+ODV_adj(16,:) = {'D_IRRAD490[W/m^2/nm]'  '%4.4f' 'DOWN_IRRADIANCE490' '' '' ''};
+ODV_adj(17,:) = {'D_PAR[W/m^2/nm]'       '%4.4f' 'DOWNWELLING_PAR' '' '' ''};
+ODV_adj(18,:) = {'Bisulfide[µmol/kg]'    '%4.4f' 'BISULFIDE' '' '' ''};
 
 % ************************************************************************
 
@@ -281,61 +301,60 @@ qc_var_ct = size(ODV_adj,1);
 if ~isdir([handles.info.file_path, 'QC',fp])
     mkdir([handles.info.file_path, 'QC',fp]);
 end
-    
+
 fvqc_path  = [handles.info.file_path, 'QC',fp,handles.info.float_name, ...
-              'QC.TXT'];
-fid_qc  = fopen(fvqc_path, 'W','n','UTF-8');
-fid_raw = fopen(fv_path,'r','n','UTF-8');
+    'QC.TXT'];
+fid_qc  = fopen(fvqc_path, 'W');
+fid_raw = fopen(fv_path);
 
 disp(['Printing adjusted data to: ',fvqc_path]);
 
 fprintf(fid_qc,'//0\r\n');
-fprintf(fid_qc,'//<Encoding>UTF-8</Encoding>\r\n');
 fprintf(fid_qc,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
-       '\r\n']);
- 
- tline    = ' ';  
- print_it = 0;
- while ischar(tline)
-     if regexp(tline,'^//File','once')
-         print_it = 1;
-     elseif regexp(tline,'^//Missing','once')
-         break
-     elseif print_it == 1
-         fprintf(fid_qc, '%s\r\n', tline);
-         if regexp(tline,'^//WMO', 'once')
-             WMO = regexp(tline,'\d+', 'match','once');
-         end
-     end
-     tline = fgetl(fid_raw);
- end
- fclose(fid_raw); % Don't need raw file any more
- 
- % PRINT OUT FLOAT VARIABLE QC CORRECTION INFO
- fprintf(fid_qc,'//QUALITY CONTROLLED DATA CORRECTIONS:\r\n');
- fprintf(fid_qc,'//Measurement\tStation\tGain\tOffset\tDrift\r\n');
- possible_fields = {'O2' 'NO3' 'PH' 'CHL' 'BB' 'CDOM'};
- possible_hdr_names = {'Oxygen' 'Nitrate' 'pH' 'Chl' 'BB' 'CDOM'};
- for i = 1 : size(possible_fields,2)
-     if isfield(QCA, possible_fields{i}) %
-         qca = QCA.(possible_fields{i});
-         rr  = size(qca,1); % # adjustment rows
-         for j = 1: rr
-             fprintf(fid_qc, ['//',possible_hdr_names{i},'\t', ...
-                 '%0.0f\t%0.4f\t%0.4f\t%0.4f\r\n'], qca(j,1:4));
-         end
-     end
- end
- fprintf(fid_qc,'//\r\n');
- 
- 
- fprintf(fid_qc,['//Missing data value = ',MVI_str,'\r\n']);
- fprintf(fid_qc,['//Data quality flags: 0=Good, 4=Questionable, 8=Bad, '...
-     '1=Missing or not inspected \r\n']);
- 
+    '\r\n']);
+
+tline    = ' ';
+print_it = 0;
+while ischar(tline)
+    if regexp(tline,'^//File','once')
+        print_it = 1;
+    elseif regexp(tline,'^//Missing','once')
+        break
+    elseif print_it == 1
+        fprintf(fid_qc, '%s\r\n', tline);
+        if regexp(tline,'^//WMO', 'once')
+            WMO = regexp(tline,'\d+', 'match','once');
+        end
+    end
+    tline = fgetl(fid_raw);
+end
+fclose(fid_raw); % Don't need raw file any more
+
+% PRINT OUT FLOAT VARIABLE QC CORRECTION INFO
+fprintf(fid_qc,'//QUALITY CONTROLLED DATA CORRECTIONS:\r\n');
+fprintf(fid_qc,'//Measurement\tStation\tGain\tOffset\tDrift\r\n');
+possible_fields = {'O2' 'NO3' 'PH' 'CHL' 'BB' 'CDOM'};
+possible_hdr_names = {'Oxygen' 'Nitrate' 'pH' 'Chl' 'BB' 'CDOM'};
+for i = 1 : size(possible_fields,2)
+    if isfield(QCA, possible_fields{i}) %
+        qca = QCA.(possible_fields{i});
+        rr  = size(qca,1); % # adjustment rows
+        for j = 1: rr
+            fprintf(fid_qc, ['//',possible_hdr_names{i},'\t', ...
+                '%0.0f\t%0.4f\t%0.4f\t%0.4f\r\n'], qca(j,1:4));
+        end
+    end
+end
+fprintf(fid_qc,'//\r\n');
+
+
+fprintf(fid_qc,['//Missing data value = ',MVI_str,'\r\n']);
+fprintf(fid_qc,['//Data quality flags: 0=Good, 4=Questionable, 8=Bad, '...
+    '1=Missing or not inspected \r\n']);
+
 % NOW PRINT THE QC DATA HEADER
 std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
-                  'Lon [°E]' 'Lat [°N]' 'QF'}; % SIZE = 8
+    'Lon [°E]' 'Lat [°N]' 'QF'}; % SIZE = 8
 std_size = size(std_ODV_vars,2);
 
 for i = 1:std_size % PRINT STANDARD HEADER VARS
@@ -349,7 +368,7 @@ for i = 1:qc_var_ct % PRINT FLOAT SPECIFIC HEADER VARS
         fprintf(fid_qc,'%s\t%s\r\n',ODV_adj{i,1},'QF'); % std vars
     end
 end
- 
+
 % BUILD DATA FORMAT STRING & CREATE DUMMY MATRIX TO DUMP DATA TO
 % THIS CATCHES FLOATS WHICH DON'T HAVE SENSORS FOR GIVEN VARIABLES
 % THESE COLUMNS WILL GET FILLED WITH -1e10 and QC FLAG = 1
@@ -381,7 +400,7 @@ for i = 0:qc_var_ct-1
         end
         dummy_out(:,c_ct:c_ct+1)  = [fill_MVI,fill_QC]; % No data, but need cols
     end
-end 
+end
 
 % NOW PRINT DATA LINES TO FILE
 cast_num  = 0; %initalize
@@ -399,15 +418,15 @@ for sample_ct = 1 : qc_r
         std_str  = sprintf(ODV_std_f, WMO, cast_num, 'C', ...
             date_str, time_str, qc_data(sample_ct,3:5));
         std_str = regexprep(std_str,'NaN',MVI_str);
-    end   
+    end
     
     Dout = dummy_out(sample_ct,:);
     Dout(Dout<-100000000) = nan;
     data_str = sprintf(ODV_qc_f, Dout);
     out_str = [std_str,data_str];
-
+    
     % replace NaN' w/ missing value indicator
-%     out_str = regexprep(out_str,'NaN',MVI_str);  % replace NaN' w/ missing value indicator
+    %     out_str = regexprep(out_str,'NaN',MVI_str);  % replace NaN' w/ missing value indicator
     out_str = regexprep(out_str,'NaN',MVI_str);  % replace -10000000000 w/ missing value indicator
     fprintf(fid_qc, '%s', out_str);
     line_ct = line_ct+1;
@@ -415,7 +434,7 @@ for sample_ct = 1 : qc_r
     if sample_ct == qc_r
         fprintf(fid_qc,[std_str,ODV_space_f]); % add profile spacer line
         line_ct = line_ct+1;
-    end    
+    end
 end
 fclose(fid_qc);
 clear fid_raw cast_num sample_ct
@@ -424,6 +443,6 @@ disp(['DONE printing adjusted data to: ',fvqc_path]);
 clear fid_raw line_ct dummy_out
 
 
-            
+
 
 

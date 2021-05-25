@@ -45,7 +45,7 @@ SS = sS;
 for i = 1:length(SP)
     tmpP = SP(i);
     [c,inds] = nanmin(abs(HRP-tmpP));
-	if c <=2 && i~=length(SP)  %This eliminates imposing the n+1 indexing on the coarse resolution data at depth (n+1 would offset the Temp much more than 2m, this fix is not applicable at depth)
+	if c <=2 && i~=length(SP) && inds~=length(HRT)  %This eliminates imposing the n+1 indexing on the coarse resolution data at depth (n+1 would offset the Temp much more than 2m, this fix is not applicable at depth)
         %Temp
         CTD_for_no3(i,1) = HRT(inds+1); %1 record deeper than the matching CTD (isus temp is warmer due to lag)
         CTDmn_for_no3(i,1) = nanmean(HRT(inds+1:inds+2)); %try a mean (isus temp is warmer due to lag)

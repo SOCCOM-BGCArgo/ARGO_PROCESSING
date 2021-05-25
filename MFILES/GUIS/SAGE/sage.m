@@ -1,4 +1,4 @@
-function varargout = sage()
+function varargout = sage_jp()
 % *************************************************************************
 % *************************************************************************
 % ** THIS MFILE AND ASSOCIATED SOFTWARE IS COPYRIGHT UNDER MIT LICENSE.  **
@@ -89,20 +89,17 @@ function varargout = sage()
 %
 % ************************************************************************
 
-
 % Declare shared variables
-gui = createInterface();
+gui     = createInterface(); % calls functoion below
 handles = [];
 % Define paths
 dirs = SetupDirs_sage;
 
-
 % Initialize variables
-DATA = [];
+DATA   = [];
 inputs = [];
 
-% % Define my colors
-%
+% Define my colors
 mycolors(1,:) = [239 90 17] ./ 255; %orange
 mycolors(2,:) = [197 109 39] ./ 255; %burnt orange
 mycolors(3,:) = [213 185 31] ./ 255; %mustard
@@ -117,12 +114,21 @@ mycolors(8,:) = [6 62 137] ./ 255; %dark purple/blue
 handles.info.NO3_sensor = 0;
 handles.info.O2_sensor  = 0;
 handles.info.PH_sensor  = 0;
-handles.info.S_sensor  = 0;
-handles.info.T_sensor  = 0;
+handles.info.S_sensor   = 0;
+handles.info.T_sensor   = 0;
 
-% LOAD FLOAT ID LIST
-%MBARI name, UW_ID, WMO#, type
-handles.float_IDs = MBARI_float_list(dirs);
+% LOAD FLOAT ID LIST - NEW GOBGC COMPATIBLE VERSION Jp 04/03/21
+% LOAD MAT FILE vs RBUILDING BECAUSE BUILDING LISt TAKES LONGER NOW - COULD
+% REVERT ???
+if exist([dirs.cal,'MBARI_float_list.mat'],'file') == 2
+    load([dirs.cal,'MBARI_float_list.mat'],'d');
+else
+    d = MBARI_float_list(dirs);
+end
+handles.MasterList     = d.list;
+handles.MasterHdr = d.hdr;
+clear d
+
 %-------------------------------------------------------------------------%
     function gui = createInterface( ~ )
         % Create the user interface for the application and return a
@@ -462,13 +468,13 @@ handles.float_IDs = MBARI_float_list(dirs);
                     else
                         DATA.refdata = DATA.reftemp;
                     end
-                case 'CANYON'
-                    DATA.refdata = DATA.reftemp(:,DATA.CIND);
+%                 case 'CANYON'
+%                     DATA.refdata = DATA.reftemp(:,DATA.CIND);
                 case 'CANYON_B'
                     DATA.refdata = DATA.reftemp(:,DATA.CBIND);
                 case 'LIR'
                     DATA.refdata = DATA.reftemp(:,DATA.LIND);
-                case {'MLR W50to80','MLR W30to50'}
+                case {'MLR W50to80','MLR W30to50'} % REMOVE ?? JP 04/03/21
                     DATA.refdata = DATA.MLRdata.(DATA.paramtag).(DATA.refs);
                     %                     MLR = DATA.refs.(DATA.paramtag);
                     %                     if ~isempty(MLR) %will be empty for salinity, temp, oxygen
@@ -565,21 +571,62 @@ handles.float_IDs = MBARI_float_list(dirs);
         set(gui.rb5(3),'Enable','on'); % pH -jp
         
         % CHOOSE FILE
+        % FOR MBARI THE TEXT FILES ARE THE DEFAULT SOURCE
         [fn,pn] = uigetfile([dirs.FVlocal,'*.TXT'],'SELECT FILE');
         if ~isequal(fn, 0)
             str = [pn,fn];
-            set( gui.Fbutton,'String','Loading float data ...');
+            set( gui.Fbutton,'String','Loading RAW & ADJ float data ...');
             wrk_color = gui.Fbutton.BackgroundColor;
             set(gui.Fbutton,'BackgroundColor','y');
             drawnow
-            %set( gui.Fbutton,'String',fn);
+            
             handles.info.file_name  = fn;
             handles.info.file_path  = pn;
-            handles.info.float_name = regexpi(fn,'\w+(?=\QC.txt)|\w+(?=\.txt)', ...
-                'match', 'once');
-            handles.info.UW_ID  = regexp(handles.info.float_name, ...
-                '^\d{3}\d+(?=\w+)','match', 'once'); %#'s but chars follow
-            handles.info.QCadj_file   = [handles.info.float_name,'_FloatQCList.txt'];
+            
+            % GET WMO ID FROM FILE NAME
+            if regexp(fn,'^\d{7}','once')
+                WMO_ID = regexp(fn,'^\d{7}','once','match');
+            elseif regexp(fn,'^NO_WMO','once')
+                WMO_ID = regexp(fn,'^NO_WMO_[uws][ans]\d+','once','match');
+            elseif regexp(fn,'^ODV','once') %For outside users.
+                WMO_ID = regexp(fn,'\d+','once','match');
+            end
+            handles.info.WMO_ID = WMO_ID;
+            
+            handles.info.float_name ={};
+            handles.info.INST_ID    = {};
+            handles.info.float_type = {};
+            if isfield(handles,'MasterList') % For MBARI floats
+                t1 = strcmp(handles.MasterList(:,3),WMO_ID);
+                if sum(t1) == 1
+                     handles.info.float_name = handles.MasterList{t1,1};
+                     handles.info.INST_ID    = handles.MasterList{t1,2};
+                     handles.info.float_type      = handles.MasterList{t1,4};
+                elseif regexp(fn,'^NO_WMO','once') % MBARI FLOAT NOT ON LIST i.e 1173
+                    handles.info.float_name = ...
+                        regexp(fn,'(?<=^NO_WMO_)[uws][ans]\d+','once','match');
+                    handles.info.INST_ID = ...
+                        regexp(handles.info.float_name, ...
+                        '(?<=^NO_WMO_[uws][ans])\d+','once','match');
+                    tmp = handles.info.float_name(2); %a, n or s
+                    handles.info.float_type = regexprep(tmp,'a','APEX'); 
+                    handles.info.float_type = regexprep(tmp,'n','NAVIS');
+                    handles.info.float_type = regexprep(tmp,'s','SOLO');
+                elseif regexp(fn,'^ODV','once') %non-MBARI float
+                    handles.info.float_name = 'NON-MBARIfloat';
+                end
+                clear tmp t1
+            else
+                handles.info.float_name = 'NON-MBARIfloat';
+            end
+            handles.info.QCadj_file   = [WMO_ID,'_FloatQCList.txt'];
+                
+                
+%             handles.info.float_name = regexpi(fn,'\w+(?=\QC.txt)|\w+(?=\.txt)', ...
+%                 'match', 'once');
+%             handles.info.UW_ID  = regexp(handles.info.float_name, ...
+%                 '^\d{3}\d+(?=\w+)','match', 'once'); %#'s but chars follow
+%             handles.info.QCadj_file   = [handles.info.float_name,'_FloatQCList.txt'];
             
             % Set flag for ODV file created from Mprof netcdf vs msg files
             % based on file name
@@ -602,9 +649,14 @@ handles.float_IDs = MBARI_float_list(dirs);
             
             % RAW DATA FIRST
             %fv_path = [handles.dirs.FVlocal, handles.info.float_name,'.TXT'];
-            fv_path = [pn, handles.info.float_name,'.TXT'];
+            %fv_path = [pn, handles.info.float_name,'.TXT'];
+            if handles.info.Mprof == 1
+                fv_path = [pn,'ODV',handles.info.WMO_ID,'.TXT'];
+            else
+                fv_path = [pn, handles.info.WMO_ID,'.TXT'];
+            end
             d = get_FloatViz_data(fv_path);
-            
+            %d.hdr
             % GET SOME RAW INDICES
             DATA.iP    = find(strcmp('Pressure[dbar]', d.hdr)  == 1);
             DATA.iT    = find(strcmp('Temperature[°C]', d.hdr)  == 1);
@@ -641,7 +693,12 @@ handles.float_IDs = MBARI_float_list(dirs);
             
             % TRY TO GET QC DATA NEXT
             %fv_path = [handles.dirs.FVlocal,'QC\' handles.info.float_name,'QC.TXT'];
-            fv_path = [pn,'QC',filesep,handles.info.float_name,'QC.TXT'];
+            %fv_path = [pn,'QC',filesep,handles.info.float_name,'QC.TXT'];
+            if handles.info.Mprof == 1
+                fv_path = [pn,'QC',filesep,'ODV',handles.info.WMO_ID,'QC.TXT'];
+            else
+                fv_path = [pn,'QC',filesep,handles.info.WMO_ID,'QC.TXT'];
+            end
             d = get_FloatViz_data(fv_path);
             if ~isempty(d)
                 handles.info.qc_flag = 1; % 1 = QC data exists
@@ -732,6 +789,7 @@ handles.float_IDs = MBARI_float_list(dirs);
             
             % LOAD CALIBRATION DATA - IT WILL BE USED LATER FOR SENSOR CHECKS
             % WHEN UPDATING FloatQCList AND MAYBE MORE STUFF
+            [dirs.cal,'cal',handles.info.float_name,'.mat']
             if exist([dirs.cal,'cal',handles.info.float_name,'.mat'],'file')
                 handles.info.cal = load([dirs.cal,'cal',handles.info.float_name,'.mat']);
                 %                 handles.info.cal = cal;
@@ -819,7 +877,7 @@ handles.float_IDs = MBARI_float_list(dirs);
             
             ind = strcmpi(handles.info.float_name, handles.bottle_lookup{1,1});
             
-            if sum(ind) > 0; % float(s) exists in lookup table
+            if sum(ind) > 0 % float(s) exists in lookup table
                 set( gui.Fbutton,'String','Loading bottle data ...');
                 drawnow
                 bottle_fname = handles.bottle_lookup{1,7}{ind};
@@ -891,7 +949,8 @@ handles.float_IDs = MBARI_float_list(dirs);
             handles.add_row.Enable = 'on'; % Don't activate until data loaded
             handles.remove_row.Enable = 'on';
             DATA.QCA_path = [dirs.QCadj,handles.info.QCadj_file];
-            QCA      = get_QCA(DATA.QCA_path,handles.info.float_name);
+            %QCA      = get_QCA(DATA.QCA_path,handles.info.float_name);
+            QCA      = get_QCA(DATA.QCA_path);
             handles.QCA = QCA;
             if ~isempty(handles.QCA.(DATA.paramtag))
                 DATA.tableDATA=handles.QCA.(DATA.paramtag);
@@ -943,11 +1002,12 @@ handles.float_IDs = MBARI_float_list(dirs);
         else
             m_proj('stereographic','latitude',-90,'radius',60,'rotangle',45);
         end
-        m_tbase('contourf','edgecolor','none');
+        %m_tbase('contourf','edgecolor','none');
+        m_etopo2('contourf','edgecolor','none');
         %         legend_cell = {};
         hold on
         m_plot(track(:,3),track(:,4),'ko-', 'MarkerSize',3)%     xlim(lon_limits);
-        title(['FLOAT ',handles.info.float_name],'FontSize', 16)
+        title(['FLOAT ',handles.info.WMO_ID,' (',handles.info.float_name,')'],'FontSize', 16)
         hold on
         Hm1 = m_plot(track(1,3),track(1,4),'o', 'MarkerSize',10, 'MarkerFaceColor','g', ...
             'MarkerEdgeColor','k');
@@ -1473,7 +1533,8 @@ handles.float_IDs = MBARI_float_list(dirs);
 %-------------------------------------------------------------------------%
     function on_reloadQC( source, ~ )
         %         DATA.QCA = get_QCA(inputs.qc_path,DATA.floatNAME);
-        handles.QCA      = get_QCA(DATA.QCA_path,handles.info.float_name);
+        %handles.QCA      = get_QCA(DATA.QCA_path,handles.info.float_name);
+        handles.QCA      = get_QCA(DATA.QCA_path);
         if ~isempty(handles.QCA.(DATA.paramtag))
             DATA.tableDATA=handles.QCA.(DATA.paramtag);
         else
@@ -1506,14 +1567,17 @@ handles.float_IDs = MBARI_float_list(dirs);
             set( gui.Fbutton,'String','Reprocessing float ...');
             wrk_color = gui.Fbutton.BackgroundColor;
             set(gui.Fbutton,'BackgroundColor','y');
-            mymsg = figure('Name','UPDATING QC AND REPROCESSING...','NumberTitle','off','units','pixels','position',[500 500 200 50],'windowstyle','modal');
-            uicontrol('style','text','string','PLEASE WAIT.','units','pixels','position',[75 10 50 30]);
+            mymsg = figure('Name','UPDATING QC AND REPROCESSING...', ...
+                'NumberTitle','off','units','pixels','position', ...
+                [500 500 200 50],'windowstyle','modal');
+            uicontrol('style','text','string','PLEASE WAIT.','units', ...
+                'pixels','position',[75 10 50 30]);
             drawnow
-            %             mymsg = msgbox('UPDATING QC AND REPROCESSING....');
+            % mymsg = msgbox('UPDATING QC AND REPROCESSING....');
             handles.info.QCadj_log    = 'FloatQCList_log.txt';
             fid = fopen([dirs.cal, handles.info.QCadj_log],'a');
-            fprintf(fid,'%s\t%s\t%s\t%s\r\n',handles.info.UW_ID,sdn,USER, ...
-                user_input{1});
+            fprintf(fid,'%s\t%s\t%s\t%s\t%s\r\n',handles.info.WMO_ID, ...
+                handles.info.float_name, sdn, USER, user_input{1});
             fclose(fid);
             clear USER sdn title_txt user_input fid
             
@@ -1523,17 +1587,19 @@ handles.float_IDs = MBARI_float_list(dirs);
             % IF QCA.O2 empty this means no QClist file existed, but one now
             % does from reprocessing so update structure - JP
             if isempty(handles.QCA.O2) % file just made so you can add QCA in
-                QCA      = get_QCA(DATA.QCA_path,handles.info.float_name);
+                %QCA      = get_QCA(DATA.QCA_path,handles.info.float_name);
+                QCA      = get_QCA(DATA.QCA_path);
                 handles.QCA = QCA;
-                if QCA.O2(1,2) == 1 % gain equal 1 probably no adjustment yet
-                    mymsg = msgbox({'O2 gain  = 1' 'O2 may not be correted yet!', ...
-                        'No3 & pH corrections may not be valid'},'WARNING');
+                if isempty(QCA.O2) || (~isempty(QCA.O2(1,2)) && QCA.O2(1,2) == 1) % gain equal 1 probably no adjustment yet
+                    mymsg = msgbox({'O2 gain  = 1' 'O2 may not be corrected yet!', ...
+                        'NO3 & pH corrections may not be valid'},'WARNING');
                 end
             end
             
             % REPROCESS FLOATVIZ QC DATAFILE
             if handles.info.Mprof == 0
-                if exist(dirs.msg) && exist(dirs.alt) && exist(dirs.msg_comb)
+                %if exist(dirs.msg) && exist(dirs.alt) && exist(dirs.msg_comb)
+                if exist(dirs.msg,'dir') == 7
                     tf = Process_GUI_float_GLT(handles,dirs);
                 else
                     %9/19/2018 NOTE: CURRENTLY Process_GUI_float_GLT ACCESSES MBARI FLOAT MSG FILES FOR FULL REPROCESS WITH UPDATED QC.
@@ -1544,6 +1610,7 @@ handles.float_IDs = MBARI_float_list(dirs);
                     msgbox('NO ACCESS TO MSG FILES.  CANNOT REPROCESS.')
                 end
             elseif handles.info.Mprof == 1
+                handles.info.float_name = ['ODV',handles.info.WMO_ID];
                 tf = Make_Sprof_ODVQC(handles);
             end
             
@@ -1551,7 +1618,9 @@ handles.float_IDs = MBARI_float_list(dirs);
         set( gui.Fbutton,'String',handles.info.file_name);
         set(gui.Fbutton,'BackgroundColor',wrk_color);
         drawnow
-        close(mymsg)
+        if exist('mymsg','var') == 1 % 04/03/21 JP won't throw error id user closes 1st
+            close(mymsg)
+        end
     end
 %-------------------------------------------------------------------------%
 % %     function nDock( eventSource, eventData, whichpanel )

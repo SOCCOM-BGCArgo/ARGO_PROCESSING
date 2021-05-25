@@ -35,7 +35,10 @@ function Loop_ARGO_dura(float_num,float_type)
 %   dirs.QCadj      = path to QC adjustment list for all floats
 %   dirs.FVlocal   = path to Floatviz file made by matlab go here
 
-% PATHS & NAMES - JOSH DEFAULTS
+% PATHS & NAMES - 
+user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+user_dir = [user_dir, '\Documents\MATLAB\'];
+
 dirs.temp  = 'C:\temp\';
 dirs.msg   = '\\atlas\ChemWebData\floats\';
 % dirs.cal   = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\';
@@ -43,7 +46,7 @@ dirs.msg   = '\\atlas\ChemWebData\floats\';
 %     'DATA\FLOATVIZ\'];
 dirs.cal   = '\\atlas\chem\ARGO_PROCESSING\DATA\CAL\';
 dirs.FV    = '\\atlas\chem\ARGO_PROCESSING\DATA\FLOATVIZ\';
-dirs.save = ['C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\', ...
+dirs.save = [user_dir,'ARGO_PROCESSING\', ...
     'DATA\PH_DIAGNOSTICS\'];
 
 % GET PH SENSOR SN & VERSION LIST, WILL ADD INFO TO ODV TEXT FILES

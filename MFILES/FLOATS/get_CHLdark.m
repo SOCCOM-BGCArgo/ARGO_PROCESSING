@@ -1,14 +1,14 @@
-function DrkStats = get_CHLdark(MBARI_ID_str, dirs, range)
+function DrkStats = get_CHLdark(cal_info, dirs, range)
 %
 % get_CHLdark.m returns insitu minimum CHL counts for the defined profile
 % range for profiles deeper than 900 meters
 %
 % INPUTS:
-%   MBARI_ID_str  = MBARI Float ID as a string
-%   dirs          = Either an empty array or a structure with directory
-%                   strings where files are located. If dirs is empty
-%                   default paths will be used.
-%   range         = if empty all profiles are inspected, if scalar all
+%   cal_info  = cal.info structure containing MBARI_ID & WMO
+%   dirs      = Either an empty array or a structure with directory
+%                  strings where files are located. If dirs is empty
+%                  default paths will be used.
+%   range     = if empty all profiles are inspected, if scalar all
 %                   profiles up to number, if size = 2 a profile range
 %
 % OUTPUTS:
@@ -17,16 +17,19 @@ function DrkStats = get_CHLdark(MBARI_ID_str, dirs, range)
 %       .N      # of profiles used
 %       .std    standard deviation
 %       .data   [Cycle, Pres, DC]
+%
 
 % ************************************************************************
 % TESTING
 
 % MBARI_ID_str = '9762SOOCN';
 % MBARI_ID_str = '0507SOOCN';
-% range = [5];
-% dirs =[];
+%MBARI_ID_str = '7552SOOCN';
+%range = [5];
+%dirs =[];
 % ************************************************************************
-
+MBARI_ID_str = cal_info.name;
+WMO          = cal_info.WMO_ID;
 DrkStats =[];
 max_depth = 900;
 
@@ -39,9 +42,9 @@ if isempty(dirs)
 end
 
 % CHECK DATA FILE
-d = get_FloatViz_data([dirs.FV, MBARI_ID_str, '.TXT']);
+d = get_FloatViz_data([dirs.FV, WMO, '.TXT']);
 if isempty(d)
-    disp(['FILE NOT FOUND: ',dirs.FV, MBARI_ID_str, '.TXT'])
+    disp(['FILE NOT FOUND: ',dirs.FV, WMO, '.TXT'])
     return
 end
 d.data(d.data == -1e10) = NaN; % MVI to NaNs
@@ -71,13 +74,13 @@ if isempty(d.data)
 end
 
 % CHECK CAL FILE
-float_cal_path = [dirs.cal,'cal',MBARI_ID_str,'.mat'];
-if exist(float_cal_path,'file')
-    load(float_cal_path);
+fp_cal = [dirs.cal,'cal',MBARI_ID_str,'.mat'];
+if exist(fp_cal,'file')
+    load(fp_cal);
     if isfield(cal,'CHL') % Convert back to counts
         d.data(:,iC) = d.data(:,iC) ./ cal.CHL.ChlScale + cal.CHL.ChlDC;
     else
-        disp(['No calibration coefficents found for: ',float_cal_path])
+        disp(['No calibration coefficents found for: ',fp_cal])
         return
     end  
 else

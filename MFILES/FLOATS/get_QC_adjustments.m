@@ -1,16 +1,15 @@
-function QC = get_QC_adjustments(float_name, dirs)
+function QC = get_QC_adjustments(WMO, dirs)
 % ************************************************************************
-% PURPOSE: 
+% PURPOSE:
 %   This function extracts quality control corrections from a master text
 %   file that are applied to the raw float data to create adjusted ARGO
 %   variables
 %
 % USAGE:
-%   QC = get_QC_adjustments(float_name, dirs)
+%   QC = get_QC_adjustments(WMO, dirs)
 %
 % INPUTS:
-%   float_name = MBARI float ID name or path\MBARI float ID name.
-%                 if a complete path is given it overrides the default
+%   WMO        = WMO ID, as a string
 %
 %   dirs       = Either an empty variable or a structure with directory
 %                strings where files are located. It must contain these
@@ -30,10 +29,11 @@ function QC = get_QC_adjustments(float_name, dirs)
 % OUTPUTS:
 %    QC = a structure with correction coefficients for each QC'ed variable
 %         coefficients = [SDN CYCLE GAIN OFFSET DRIFT]
-%  
+%
 % EXAMPLES:
-%    QC = get_QC_adjustments('9092SOOCN',dirs);
-%    QC = get_QC_adjustments('9092SOOCN',[]);
+%    QC = get_QC_adjustments('5905634',dirs);
+%    QC = get_QC_adjustments('5905634',[]);
+%    QC = get_QC_adjustments('NO_WMO_un0412',dirs);
 %
 % CHANGE LOG
 %   02/01/2017 - added code ~line 84 to return QC = [] if no QC adjustment
@@ -41,14 +41,13 @@ function QC = get_QC_adjustments(float_name, dirs)
 %   08/02/2017 - modified code to now use float-specific FloatQCList files, located in DATA\CAL\QC_LISTS\
 % 02/5/2018 - Added code for including date of last QC in output structure.
 %	This is used to assist in identifying whether a cycle is real-time or delayed mode, for BRtransfer purposes.
-
-%float_name     = '9092SOOCN'; % TESTING
-%float_name = '\\sirocco\wwwroot\lobo\Data\FloatVizData\QC\'FloatQCList.txt';
+%
+%   03/08/2021 TM Modifications to bring in line with the new MBARI master
+%        float list and switch to WMO for processed file names.
 % ************************************************************************
 % SET PATHS AND FILE NAMES
 % ************************************************************************
-flt_str        = regexpi(float_name,'^\d+','once','match');    
-QC_adj_file    = [float_name,'_FloatQCList.txt'];
+QC_adj_file    = [WMO,'_FloatQCList.txt'];
 
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
 if isempty(dirs)
@@ -72,7 +71,7 @@ elseif ~isstruct(dirs)
     disp('Check "dirs" input. Must be an empty variable or a structure')
     return
 end
-     
+
 % ************************************************************************
 % GET QC ADJUSTMENTS FROM MASTER QC LIST
 % ************************************************************************
@@ -81,11 +80,11 @@ if exist([dirs.QCadj,QC_adj_file],'file')
     
     % FIND SECTION FOR SPECIFIC FLOAT IF IT EXISTS
     tline = ''; % prime engine
-    while ischar(tline) && isempty(regexpi(tline,float_name,'once'))
+    while ischar(tline) && isempty(regexpi(tline,WMO,'once'))
         tline = fgetl(fid);
         tmp = textscan(tline,'%s%s%s');
         xx = [char(tmp{2}) ' ' char(tmp{3})];
-        if strcmpi(char(tmp{1}),float_name)==1 && ~isempty(str2num(xx)) % no time of last QC entered
+        if strcmpi(char(tmp{1}),WMO)==1 && ~isempty(str2num(xx)) % no time of last QC entered
             thetimestamp = datenum(xx,'mm/dd/yy HH:MM');
             QC.date = thetimestamp;
         else
@@ -93,9 +92,9 @@ if exist([dirs.QCadj,QC_adj_file],'file')
             break
         end
     end
-
+    
     if ~ischar(tline) % -1 (end of file reached - no QC for float
-        disp(['No QC adjustments for float: ',float_name])
+        disp(['No QC adjustments for float: ',WMO])
         QC = [];
         return
         
@@ -104,7 +103,7 @@ if exist([dirs.QCadj,QC_adj_file],'file')
         tline   = fgetl(fid); % step to 1st line
         % PREDIMENSION BASED ON EXISTANCE
         while ischar(tline) && isempty(regexpi(tline,'^PREVIOUS','once'))
-           if regexp(tline,'^Oxygen','once')
+            if regexp(tline,'^Oxygen','once')
                 QC.O.steps = [];
             elseif regexp(tline,'^Nitrate','once')
                 QC.N.steps = [];
@@ -125,8 +124,8 @@ if exist([dirs.QCadj,QC_adj_file],'file')
         tline   = fgetl(fid); % step to 1st line
         
         while ischar(tline) && isempty(regexpi(tline,'^PREVIOUS','once'))
-      
-			if regexp(tline,'^Oxygen','once') % only gain value & ONLY 1 LINE
+            
+            if regexp(tline,'^Oxygen','once') % only gain value & ONLY 1 LINE
                 tmp = textscan(tline,'%s%f%f%f%f%s','Delimiter', ',');
                 QC.O.steps  =[QC.O.steps;[tmp{1,2},tmp{1,3},tmp{1,4} tmp{1,5}]];
                 QC.O.type   = 'Oxygen';
@@ -163,27 +162,27 @@ if exist([dirs.QCadj,QC_adj_file],'file')
         % TO QC DATA. TIME NEEDED FOR DRIFT CORRECTION
         % [sdn cycle gain offset drift]
         if isfield(QC,'O')
-            sdn = get_QCstep_dates(flt_str,QC.O.steps,dirs);
+            sdn = get_QCstep_dates(WMO,QC.O.steps,dirs);
             QC.O.steps = [sdn,QC.O.steps];
         end
         if isfield(QC,'pH')
-            sdn = get_QCstep_dates(flt_str,QC.pH.steps,dirs);
+            sdn = get_QCstep_dates(WMO,QC.pH.steps,dirs);
             QC.pH.steps = [sdn,QC.pH.steps];
         end
         if isfield(QC,'N')
-            sdn = get_QCstep_dates(flt_str,QC.N.steps,dirs);
+            sdn = get_QCstep_dates(WMO,QC.N.steps,dirs);
             QC.N.steps = [sdn,QC.N.steps];
         end
         if isfield(QC,'CHL')
-            sdn = get_QCstep_dates(flt_str,QC.CHL.steps,dirs);
+            sdn = get_QCstep_dates(WMO,QC.CHL.steps,dirs);
             QC.CHL.steps = [sdn,QC.CHL.steps];
         end
         if isfield(QC,'BB')
-            sdn = get_QCstep_dates(flt_str,QC.BB.steps,dirs);
+            sdn = get_QCstep_dates(WMO,QC.BB.steps,dirs);
             QC.BB.steps = [sdn,QC.BB.steps];
         end
         if isfield(QC,'CDOM')
-            sdn = get_QCstep_dates(flt_str,QC.CDOM.steps,dirs);
+            sdn = get_QCstep_dates(WMO,QC.CDOM.steps,dirs);
             QC.CDOM.steps = [sdn,QC.CDOM.steps];
         end
     end
@@ -191,7 +190,7 @@ if exist([dirs.QCadj,QC_adj_file],'file')
 else
     disp(['No list of QC adjustments found: ', ...
         dirs.QCadj,QC_adj_file])
-    disp(['No QC adjustments for float: ',float_name])
+    disp(['No QC adjustments for float: ',WMO])
     disp('QC structure remains empty.')
     QC = [];
 end

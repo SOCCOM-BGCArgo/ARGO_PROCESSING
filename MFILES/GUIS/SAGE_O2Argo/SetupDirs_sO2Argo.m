@@ -42,7 +42,11 @@ dirs.bottle    = [dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'SHIPBOARD',fp
 dirs.QCadj     = [dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'CAL',fp,'QC_LISTS',fp]; % empty, but DACs may populate.  GUI checks for QC_LISTs (pre-stored adjustments to populate table)
 dirs.NCEP_TEMP = [dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'NCEP_TEMPORARY',fp];
 dirs.Argo      = [dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'ARGO_REPO',fp];
-dirs.woa       =[dirs.user_dir,'\ARGO_PROCESSING\DATA\WOA2018\'];
+dirs.woa       =[dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp];
+dirs.temp = [dirs.user_dir,fp,'temp',fp];
+if ~exist(dirs.temp, 'dir')
+    mkdir(dirs.temp)
+end
 
 % ERA data reference has been deprecated in this version of the software.
 % Keep file path definition in comments in case of future re-incorporation.

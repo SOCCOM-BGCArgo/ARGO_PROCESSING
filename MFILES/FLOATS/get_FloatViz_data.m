@@ -36,8 +36,8 @@ function floatviz_data = get_FloatViz_data(floatviz_file)
 % 12/13/20 - TM - Forced fopen read to UTF-8, because that is the
 %    new default for Matlab 2020 writes and better cross platform sharing
 %    and all ODV compatible TXT files are  now UTF-8
-%    
-
+% 3/15/21 - TM modified regular exp on line 74 for new floatviz naming
+%   structure.
 % *************************************************************************
 % TESTING
 % floatviz_file = 'C:\Users\jplant\Documents\MATLAB\ARGO\DATA\ADJ\ODV1901467ADJ.TXT';
@@ -71,7 +71,7 @@ switch data_source
         if regexp(floatviz_file,filesep) % direct path (dir included)
             from_str = floatviz_file;
             to_str   = [temp_dir, regexpi(floatviz_file, ...
-                        '\d{3}\d+\w+\.txt','once','match')];
+                        '\w+\d+\w+\.txt','once','match')];
         elseif regexp(floatviz_file,'HRQC','once') % QC DIR
             floatviz_dir  = [floatviz_dir,'HRQC',filesep];
             from_str = [floatviz_dir, floatviz_file, '.txt'];

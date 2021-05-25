@@ -8,8 +8,10 @@ function out = process_data_ref_table
 %   (CUSTARD ex = CTD030SS), cruise name with a period in name (i.e.
 %   A13.5). -9999 vs - vs none as entries. BROKE CRUISE NOW CCAMLR in
 %   special case assignments. Removv fill 0's from numeric strings
-% 12/29/2020 - JP - Sharon's table changed so I updated some indices so 
+% 12/29/2020 - JP - Sharon's table changed so I updated some indices so
 % cruise, station & cycle values where being extracted properly again
+% 03/31/21 - TM - tweaks due to changes in Sharon's table structure; plus
+% the addition of the GOBGC data reference table.
 
 
 out.ref_table        = 0;
@@ -25,7 +27,7 @@ if isempty(dirs)
     user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
     dirs.cal       = [user_dir,'CAL\'];
     dirs.temp      = 'C:\temp\';
-
+    
 elseif ~isstruct(dirs)
     disp('Check "dirs" input. Must be an empty variable or a structure')
     return
@@ -38,19 +40,24 @@ data_url      = 'https://cchdo.ucsd.edu';
 
 % ************************************************************************
 % GET SHARON'S DATA REFERENCE TABLE AS A STRING
+% BOTH SOCCOM AND GOBGC DATA REF TABLES ARE REQUIRED!
 % ************************************************************************
-data_ref_target  = 'http://soccom.ucsd.edu/floats/SOCCOM_data_ref.html';
-big_str = webread(data_ref_target); % Sharon's HTML page as big string
+data_ref_target1  = 'http://soccom.ucsd.edu/floats/SOCCOM_data_ref.html';
+big_str1 = webread(data_ref_target1); % Sharon's HTML page as big string
+data_ref_target2  = 'http://go-bgc.ucsd.edu/GOBGC_data_reference.html';
+big_str2 = webread(data_ref_target2); % Sharon's HTML page as big string
+big_str = [big_str1 big_str2]; %Cat them together!
+
 ind     = regexp(big_str,'\n'); % find newline characters
 ind     = [0,ind]; % zero because it will be i+1 when subsetting
 Nind    = size(ind,2);
 
-hdr  = {'MBARI ID' 'UW ID' 'WMO' 'CRUISE' 'STATION' 'CAST' 'Data file' ...
-        'CCHDO URL' 'Bottle file URL' 'CCHDO upload flag' 'CTD file URL'};
+hdr  = {'MBARI ID' 'INST ID' 'WMO' 'CRUISE' 'STATION' 'CAST' 'Data file' ...
+    'CCHDO URL' 'Bottle file URL' 'CCHDO upload flag' 'CTD file URL'};
 
 % DEFINE COLUMN INDEXES FROM HEADER
 iM   = find(strcmp('MBARI ID',hdr)          == 1);
-iUW  = find(strcmp('UW ID',hdr)             == 1);
+iINST  = find(strcmp('INST ID',hdr)             == 1);
 iWMO = find(strcmp('WMO',hdr)               == 1);
 iCRU = find(strcmp('CRUISE',hdr)            == 1);
 iSTA = find(strcmp('STATION',hdr)           == 1);
@@ -64,11 +71,12 @@ iCTD = find(strcmp('CTD file URL',hdr)     == 1);
 % ************************************************************************
 % STEP THROUGH STRING AND FIND FLOATS
 try
-    disp(['Parsing data reference table from: ',data_ref_target]);
+    disp(['Parsing data reference table from: ',data_ref_target1,' and ',data_ref_target2]);
     list = cell(1000,size(hdr,2)); % predim
     ct   = 0;
     for i = 1:Nind-1
         test_str = big_str(ind(i)+1: ind(i+1)-1);
+        %         pause
         if regexp(test_str,'^\s+<tr|^\s+</tr', 'once') % format lines/no info/skip
             continue % Don't really need this line
             % Useful info lines start with "<td"
@@ -76,30 +84,33 @@ try
             ct = ct+1;
             col_inds = regexp(test_str,'<td');
             % EXTRACT USEFUL INFO
+            
             WMO = regexp(test_str,'(?<=>)\d{7}(?=<)', 'once', 'match');
             if isempty(WMO)
                 WMO = 'NO WMO';
             end
-            UW_ID = regexp(test_str,'(?<=>)\d+(?=<)', 'once', 'match');
-            cchdo = regexp(test_str,'http://cchdo\.\w+\.\w+/\w+/\w+', ...
-                    'once', 'match');
+            INST_str = test_str(col_inds(6):col_inds(7));
+            INST_ID = regexp(INST_str,'(?<=html" >).+(?=</a)', 'once', 'match');
+            cchdo = regexp(test_str,'https://cchdo\.\w+\.\w+/\w+/\w+', ...
+                'once', 'match');
+            
             if isempty(cchdo)
                 cchdo = 'NO URL YET';
             end
             
-            cruise_str = test_str(col_inds(6):col_inds(7));
+            cruise_str = test_str(col_inds(2):col_inds(3));
             %cruise = regexp(cruise_str,'(?<=>)\w+(?=<)', 'once', 'match');
             cruise = regexp(cruise_str,'(?<=>).+(?=</td)', 'once', 'match');
             
-            sta_str = test_str(col_inds(7):col_inds(8));
+            sta_str = test_str(col_inds(10):col_inds(11));
             sta_str = regexprep(sta_str,'none|uwDrop|-999|-','-999');
             station = regexp(sta_str,'(?<=>)\w+|(?<=>)\-\w+', 'once', 'match');
             
-            % EXCEPTIIONS 
+            % EXCEPTIIONS
             % CUSTARD CRUISE
-%             if regexp(station,'S+','once') % non standard "station number"
-%                 station = regexp(station,'[1-9]\d*(?=S+)','match','once');
-%             end
+            %             if regexp(station,'S+','once') % non standard "station number"
+            %                 station = regexp(station,'[1-9]\d*(?=S+)','match','once');
+            %             end
             
             % REMOVE FILL ZEROS IN NUMBER IF THEY EXIST & DEAL WITH
             % ALPHA-NUMERIC STATION NUMBERS FOR CUSTARD CRUISE
@@ -107,7 +118,7 @@ try
                 station = regexp(station,'[1-9]\d*','match','once');
             end
             
-            cast_str = test_str(col_inds(8):col_inds(9));
+            cast_str = test_str(col_inds(11):col_inds(12));
             cast_str = regexprep(cast_str,'none|-999|-','-999');
             cast = regexp(cast_str,'(?<=>)\w+|(?<=>)\-\w+', 'once', 'match');
             
@@ -117,7 +128,7 @@ try
             end
             
             % ASSIGN OUTPUTS
-            list(ct,[iUW, iWMO]) = {UW_ID, WMO};
+            list(ct,[iINST, iWMO]) = {INST_ID, WMO};
             list(ct,[iCRU, iSTA, iCST]) = {cruise, station, cast};
             list(ct,iCCH) = {cchdo};
             
@@ -129,24 +140,26 @@ try
     clist = size(list,2);
     out.ref_table        = 1;
 catch
-    disp('Reference table could not be parsed - check link & try again.');
-    disp(data_ref_target);
+    disp('Reference tables could not be parsed - check link & try again.');
+    disp(data_ref_target1);
+    disp(data_ref_target2);
     return
 end
-
 clear big_str
+
 
 % ***********************************************************************
 % ADD MBARI FLOAT NAMES FROM MASTER LIST
 % ***********************************************************************
 try
-    MBARI =load([dirs.cal,'MBARI_float_list.mat']);
+    load([dirs.cal,'MBARI_float_list.mat']);
+    MBARI = d;
     for i = 1:rlist
         tf = strcmp(list{i, iWMO}, MBARI.list(:,3));
         if sum(tf) > 0
             list{i, iM} = MBARI.list{tf,1};
         else
-            list{i, iM} = ['NO WMO_',list{i, iUW}];
+            list{i, iM} = ['NO WMO_',list{i, iINST}];
         end
     end
     out.mbari_names      = 1;
@@ -154,7 +167,7 @@ catch
     disp(['Could not load: ', dirs.cal,'MBARI_float_list.mat']);
     return
 end
-    
+
 clear MBARI tf i
 
 % ***********************************************************************
@@ -172,7 +185,7 @@ try
             fprintf('.')
         end
         bottle_flag = 1; % Unmerged Data as Received = 0, 1 toggles bopttle search
-%         disp(list{i,iM})
+        %         disp(list{i,iM})
         if strcmp(list{i,iCCH},'NO URL YET') % No URL  so no data path or file
             list{i,iBF} = 'NO DATA PATH YET';
             list{i,iCCF} = '0';
@@ -213,7 +226,7 @@ try
             for j = 1:Nind-1 % collect file names & dates
                 test_str = sub_str(ind(j)+1: ind(j+1)-1);
                 t1 = regexp(test_str,'hy1\.csv', 'once'); %priority
-                t2 = regexp(test_str,'exc\.csv', 'once'); 
+                t2 = regexp(test_str,'exc\.csv', 'once');
                 
                 if ~isempty(t1)
                     ct = ct+1;
@@ -232,7 +245,7 @@ try
                 % It looks to me like the file path string could also be
                 % used to determine file priority (if date doesn't always
                 % work), for example: "/data/12717/320620161224_hy1.csv"
-                % The dir between data and file name appears to be 
+                % The dir between data and file name appears to be
                 % incremental so the highest value should take priority
                 % I will check with Sharon at some point. 4/10/19 - jp
                 if time_flag == 1 % Get file time stamp
@@ -260,9 +273,9 @@ try
             end
         end
         
-%         if regexp(data_ref_target,'320620161224', 'once') % testing
-%             pause
-%         end
+        %         if regexp(data_ref_target,'320620161224', 'once') % testing
+        %             pause
+        %         end
         
         clear sub_str ind Nind tmp_cell
         
@@ -282,8 +295,13 @@ try
                 if regexp(file_path,'hy1\.csv', 'once') % but double check
                     list{i,iBF} = [data_url, file_path];
                 else
-                    list{i,iBF} = 'NO DATA PATH YET';
-                    list{i,iCCF} = '0';
+                    file_path = sub_str(ind1A(3)+1:ind1A(4)-1); % if not, try second one (ie cruise 74JC20151217 it's the second file)
+                    if regexp(file_path,'hy1\.csv', 'once') % but double check
+                        list{i,iBF} = [data_url, file_path];
+                    else
+                        list{i,iBF} = 'NO DATA PATH YET';
+                        list{i,iCCF} = '0';
+                    end
                 end
                 clear file_path sub_str ind1A
             end
@@ -328,8 +346,8 @@ try
     end
     fprintf('\n')
     out.cchdo_file_urls = 1;
-catch   
-%catch ME
+catch
+    %catch ME
     disp('CCHDO URL search failed!.');
     %disp(ME.message)
     return
@@ -352,8 +370,8 @@ d = d{1,1};
 fclose(fid);
 
 for i = 1:size(d,1)
-    list(rlist+i,[iM,iUW,iWMO,iCRU,iSTA,iCST,iDF]) = ...
-        d(i,[iM,iUW,iWMO,iCRU,iSTA,iCST,iDF]);
+    list(rlist+i,[iM,iINST,iWMO,iCRU,iSTA,iCST,iDF]) = ...
+        d(i,[iM,iINST,iWMO,iCRU,iSTA,iCST,iDF]);
     list(rlist+i,[iCCH,iBF,iCCF,iCTD]) = {'NO URL YET' ...
         'NO DATA PATH YET','-1' 'NO DATA PATH YET'};
 end
@@ -364,7 +382,7 @@ clear fid d i tline ns_hdr f_str
 % !!! EXCEPTIONS SECTION !!!
 % Add data file names to the list that exist but are not available for
 % public use and should not be destributed outside of SOCCOM
-% 
+%
 % Also add float file name if the normal file selection precidence does not
 % apply (i.e HAZMAT)
 % ***********************************************************************
@@ -376,7 +394,7 @@ if sum(t1) > 0
     list(t1,iDF) = {'09AR20160111.exc.csv'};
 end
 
-% Investigator (IN_2018v01) bottle data for the Austr. occupation of SR03 
+% Investigator (IN_2018v01) bottle data for the Austr. occupation of SR03
 % DATA appear to be at CCHDO now - jp 04/10/19
 t1 = strcmp(list(:,iCRU),'SR03') & cellfun(@isempty,(list(:,iDF)));
 if sum(t1) > 0
@@ -390,7 +408,7 @@ if sum(t1) > 0
 end
 
 %NCAOR cruise.
-t1 = strcmp(list(:,iCRU),'NCAOR') & cellfun(@isempty,(list(:,iDF)));
+t1 = strcmp(list(:,iCRU),'NCPOR') & cellfun(@isempty,(list(:,iDF)));
 if sum(t1) > 0
     list(t1,iDF) = {'91AA20171209.exc.csv'};
 end
@@ -409,7 +427,7 @@ if sum(t1) > 0
 end
 
 %ANDREXII cruise.  4/30/19.  Bottle file came direct from Bob Key on 4/17/19.  Not online yet.  May remove exception once available/updated online.
-t1 = strcmp(list(:,iCRU),'AndrexII') & cellfun(@isempty,(list(:,iDF)));
+t1 = strcmp(list(:,iCRU),'ANDREXII') & cellfun(@isempty,(list(:,iDF)));
 if sum(t1) > 0
     list(t1,iDF) = {'74JC20190221.exc.csv'};
 end
@@ -420,7 +438,7 @@ end
 % Presently there is a hy1 & exc files in the unmerged section
 % hy1 usually takes priority but Bob's file (exc is more recent in this
 % case). NOT NEEDED CORRECT TIME STAMP ACCOUNTING TAKES CARE OF IT NOW !!
-% t1 = strcmp(list(:,iCRU),'HAZMAT') 
+% t1 = strcmp(list(:,iCRU),'HAZMAT')
 % if sum(t1) > 0
 %     list(t1,iDF) = {'320620161224.exc.csv'};
 % end
@@ -520,7 +538,7 @@ end
 fprintf('\n');
 clear clist ia
 
-    
+
 
 
 

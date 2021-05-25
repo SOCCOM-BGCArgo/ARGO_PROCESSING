@@ -1,6 +1,6 @@
 function data = parse_APEXmsg4ARGO(msg_file)
-% PURPOSE: 
-%   This function parses an NAVIS biochemical float *.msg file and
+% PURPOSE:
+%   This function parses an UW/MBARI APEX biochemical float *.msg file and
 %   returns a structure of raw data. The # of colums are determined from
 %   the low resolution header line
 %
@@ -45,6 +45,11 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %              not included in original code.
 %   10/28/20 - JP, Modified Surface Obs parseing code to include PAL sensor
 %              float formats
+%   04/28/21 - JP fixed 12712 issue processing cyles 61 & 111 with no
+%              profile terminted time line in msg file. Get time from
+%              SBE cp header line
+%  05/13/21 - TM added check for hi-res pressure level of 0; exists in msg
+%             file 12892.064.msg but bad data, should be removed (AOML screening for this) 
 
 % ************************************************************************
 % FORMATS & VARIABLES
@@ -66,10 +71,12 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %msg_file = 'c:\temp\12878.006.msg'; % under ice surf obs values = 0
 %msg_file = 'c:\temp\5143.002.msg'; % no surf obs line data.air = [];
 %msg_file = 'c:\temp\6968.002.msg'; %T & Phase onle , no RPhase
+%msg_file = 'C:\temp\12712.061.msg';
+%msg_file = 'C:\temp\12712.016.msg';
 
 
 % HIGH RESOLUTION SAMPLES FOR UW / MBARI APEX FLOATS
-% The first 4-bytes of the encoded sample represents the pressure in 
+% The first 4-bytes of the encoded sample represents the pressure in
 % centibars.  The second 4-bytes represents the temperature in
 % millidegrees.  The third 4-bytes represent the salinity in parts per
 % million.  The final 2-bytes represent the number of samples collected in
@@ -97,7 +104,7 @@ f_aircal = '%*s%s%s%s%s%*f%f%f%f%f%f';
 
 % ************************************************************************
 % GET HEADER ROW & COLUMN INDICES FOR FLOAT VARS
-% ************************************************************************               
+% ************************************************************************
 fid = fopen(msg_file);
 
 tline = '';
@@ -118,7 +125,7 @@ float_vars = msg_hdr{1,1}; % r x 1 cell array with header variables
 
 % BUILD LOW RES DATA FORMAT STRING - VARIES W/ FLOAT
 low_res_format  = '';
-for i =1:length(float_vars) 
+for i =1:length(float_vars)
     low_res_format = [low_res_format,'%f '];
 end
 clear ind1 i tline fid msg_hdr
@@ -151,6 +158,7 @@ clear str
 % ************************************************************************
 % ************************************************************************
 data_chk   = 0;
+alt_sdn_chk = 0;
 msg_task   = 'profile time';
 low_res    = [];
 high_res   = [];
@@ -162,7 +170,7 @@ FlbbMode   = NaN;
 % AND START OF LOW RES SAMPLES
 while ischar(tline)
     tline     = strtrim(tline); % at top so while catches tline = -1
-    
+
     % GET SOME INFOR FOR ANNIE
     FwRev_ind = regexp(tline,'FwRev', 'once');
     if ~isempty(FwRev_ind) % Firmware version
@@ -180,9 +188,9 @@ while ischar(tline)
         FlbbMode = str2double(regexp(tline,'\d+','once','match'));
         clear FlbbMode_ind
     end
-   
-    if data_chk == 0 && ~isempty(regexp(tline,'^\$ Profile', 'once')) 
-        msg_time_format = '%*s %*s %*s %*s %*s %s %s %s %s'; 
+    
+    if data_chk == 0 && ~isempty(regexp(tline,'^\$ Profile', 'once'))
+        msg_time_format = '%*s %*s %*s %*s %*s %s %s %s %s';
         d_str = textscan(tline,msg_time_format,'CollectOutput',1);
         d_str = d_str{1}; % cells: mmm dd hh:mm:ss 2008
         s1 = [d_str{2},'-',d_str{1},'-',d_str{4},' ',d_str{3}]; % = Malab format
@@ -190,18 +198,28 @@ while ischar(tline)
         %if ~isreal(SDN), pause, end % WHY DID I PUT THIS HERE?? -jp
         clear d_str s1
         data_chk = 1;
+    
+    % 04/28/2021 12712 61 & 111 strange msg files no "profile terminated line"
+    % to get time from - try and  get time from SBE CP header line
+    elseif data_chk == 0 && ~isempty(regexp(tline,'^\$ Discrete samples', 'once'))
+        disp(['WARNING: Profile terminated line not found for ' ,msg_file]);
+        disp('Attempt to estimate termination time from SBE CP header.')
+        data_chk = 1;
+        alt_sdn_chk = 1;
         
-  % LOOK FOR PRESSURE VALUE AT BEGINING OF LOW RES DATA LINE ^(\d+\.\d+)
+    % LOOK FOR PRESSURE VALUE AT BEGINING OF LOW RES DATA LINE ^(\d+\.\d+)
     elseif data_chk == 1
         ind1 = regexp(tline,'^(\d+\.\d+)|^(-\d+\.\d+)','once');
         if ~isempty(ind1)
             msg_task   = 'profile data';
-            break    
+            break
         end
-    elseif isnumeric(tline) % tline = -1, end of file w/o termination time
-        disp(['No termination time found for ',file_name, ' NO DATA!'])
-        data = [];
-        return
+    % 04/28/2021 JP - this test is never reached becuase the while statement
+    % catches the -1 before the last elseif block
+%     elseif isnumeric(tline) % tline = -1, end of file w/o termination time
+%         disp(['No termination time found for ',file_name, ' NO DATA!'])
+%         data = [];
+%         return
     end
     tline = fgetl(fid);
 end
@@ -223,15 +241,20 @@ while ischar(tline)
                 ind1 = regexp(tline,'\(Park Sample\)$','once');
                 if isempty(ind1) && ~isempty(tline)
                     tmp = textscan(tline,low_res_format,1,...
-                        'CollectOutput',1);                 
+                        'CollectOutput',1);
                     low_res = [low_res; tmp{1}]; % tmp1: p, t, s, etc
                 end
-            %elseif ~isempty(regexp(tline,'Sbe41cpSerNo','once')) %cp hdr
+                %elseif ~isempty(regexp(tline,'Sbe41cpSerNo','once')) %cp hdr
             elseif ~isempty(regexpi(tline,'^#.+sbe','once')) %cp hdr
+                if alt_sdn_chk == 1 % 04/28/2021 JP no teminated time, get from SBE hdr
+                    str = regexp(tline,'(?<=\#\s+)[\w\s\:]+(?=\s+Sbe)', ...
+                        'once','match');
+                    data.sdn = datenum(str,'mmm dd yyyy HH:MM:SS');
+                end
                 data.CTDtype = regexpi(tline,'sbe\w+(?=serno)', ...
-                               'match', 'once');
+                    'match', 'once');
                 data.CTDsn = regexpi(tline,'(?<=serno[)\d+', ...
-                               'match', 'once');                
+                    'match', 'once');
                 msg_task = 'cp_data';  % finished low res, start high res
             else % No high resolution data found - look for a fix
                 msg_task = 'GPS data';
@@ -245,7 +268,7 @@ while ischar(tline)
                 if ~isempty(ind1)
                     tmp = sscanf(tline,high_res_format);
                     high_res = [high_res; tmp']; % cp = p t s
-
+                    
                     if data_chk == 1
                         data_chk = 2; % In the cp data lines now
                     end
@@ -263,9 +286,11 @@ while ischar(tline)
                     ac_tmp = textscan(tline,f_aircal,1,'collectoutput',1);
                     d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
                         ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
-                    data.aircal =[data.aircal; ...
-                        datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
-                        ac_tmp{1,2}];
+                    if ~isempty(ac_tmp{1,2})
+                        data.aircal =[data.aircal; ...
+                            datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+                            ac_tmp{1,2}];
+                    end
                     clear ac_tmp d_str
                 end
                 msg_task = 'GPS data';
@@ -277,10 +302,10 @@ while ischar(tline)
                 if ~isempty(gps)
                     gps_sdn = char(sscanf(tline,'%*s %*f %*f %17c',1))'; %[mm/dd/yyyy; hhmmss]
                     if size(gps_sdn,2) == 17
-                        Gsdn = datenum(gps_sdn,'mm/dd/yyyy HHMMSS'); 
+                        Gsdn = datenum(gps_sdn,'mm/dd/yyyy HHMMSS');
                         data.gps = [data.gps; [Gsdn gps']];
                     else
-                    data.gps = [data.gps; [data.sdn NaN NaN]];
+                        data.gps = [data.gps; [data.sdn NaN NaN]];
                     end
                 else
                     data.gps = [data.gps; [data.sdn NaN NaN]];
@@ -289,10 +314,10 @@ while ischar(tline)
             
             % complete surf line is bounded by curly braces, count to check
             if ~isempty(regexp(tline,'^(SurfaceObs)','once')) && ...
-                    size(regexp(tline,'{|}'),2) == 2 
+                    size(regexp(tline,'{|}'),2) == 2
                 
                 % use slash as delimiter to break up string
-                stmp = regexp(tline,'/','split'); 
+                stmp = regexp(tline,'/','split');
                 if size(stmp,2) == 4 % count substrings (in cell array now)
                     O2_str = strtrim(stmp{3});
                 elseif size(stmp,2) == 2 % PAL SENSOR FLOATS!
@@ -306,7 +331,7 @@ while ischar(tline)
                 
                 %space charcter divides numbers, number ct = space count +1
                 %Is "C" at end of string?
-                num_ct  = sum(O2_str == ' ',2) + 1; 
+                num_ct  = sum(O2_str == ' ',2) + 1;
                 tf_endC = ~isempty(regexp(O2_str,'C$', 'once'));
                 if num_ct == 3 && tf_endC % 3 #'s & "C" at end of string
                     tmp = sscanf(O2_str,'%f %f %fC')'; % TPh RPh T
@@ -323,56 +348,58 @@ while ischar(tline)
                 end
                 data.air =[data.air; tmp];
             end
-                
-                
-
-                
-%                 if size(ind,2) >= 3 % make sure data line complete
-%                     str = strtrim(tline(ind(2)+1:ind(3)-1)); %O2 data string
-%                     nct = length(regexp(str,'\d+\.')); % how many #'s in str
-%                     T_pos = ~isempty(regexp(str,'^\d+\.\d+C|^-\d+\.\d+C','once')); % T 1st
-%                     if nct == 3 % 4330 optode
-%                         if T_pos == 1 % 3 #'s, T at begining
-%                             tmp = sscanf(str,'%fC %f %f')'; % T TPh RPh
-%                         else % 3 #'s, T at end
-%                             tmp = sscanf(str,'%f %f %fC')'; % TPh RPh T
-%                             tmp = tmp([3,1,2]);             % T TPh RPh
-%                         end
-%                         data.air =[data.air; tmp];
-%                     elseif nct == 2 % 4330 optode or older optode
-%                         if T_pos == 1 % 2 #'s, T at begining
-%                             tmp = sscanf(str,'%fC %f')'; % temp, phase
-%                         else          % 2 #'s, T at end
-%                             tmp = sscanf(str,'%f %fC')'; % phase, temp
-%                             tmp = tmp([2,1]);            % temp, phase
-%                         end
-%                         data.air =[data.air; tmp];
-%                     else
-%                         disp('Could not parse surf obs')
-%                     end
-%                 else
-%                     disp('Partial Surf Obs line - could not parse')
-%                 end
-%                 pause
-%             else
-%                 disp('Partial Surf Obs line was not parses')
-%             end
-
+            
+            
+            
+            
+            %                 if size(ind,2) >= 3 % make sure data line complete
+            %                     str = strtrim(tline(ind(2)+1:ind(3)-1)); %O2 data string
+            %                     nct = length(regexp(str,'\d+\.')); % how many #'s in str
+            %                     T_pos = ~isempty(regexp(str,'^\d+\.\d+C|^-\d+\.\d+C','once')); % T 1st
+            %                     if nct == 3 % 4330 optode
+            %                         if T_pos == 1 % 3 #'s, T at begining
+            %                             tmp = sscanf(str,'%fC %f %f')'; % T TPh RPh
+            %                         else % 3 #'s, T at end
+            %                             tmp = sscanf(str,'%f %f %fC')'; % TPh RPh T
+            %                             tmp = tmp([3,1,2]);             % T TPh RPh
+            %                         end
+            %                         data.air =[data.air; tmp];
+            %                     elseif nct == 2 % 4330 optode or older optode
+            %                         if T_pos == 1 % 2 #'s, T at begining
+            %                             tmp = sscanf(str,'%fC %f')'; % temp, phase
+            %                         else          % 2 #'s, T at end
+            %                             tmp = sscanf(str,'%f %fC')'; % phase, temp
+            %                             tmp = tmp([2,1]);            % temp, phase
+            %                         end
+            %                         data.air =[data.air; tmp];
+            %                     else
+            %                         disp('Could not parse surf obs')
+            %                     end
+            %                 else
+            %                     disp('Partial Surf Obs line - could not parse')
+            %                 end
+            %                 pause
+            %             else
+            %                 disp('Partial Surf Obs line was not parses')
+            %             end
+            
             if (regexp(tline,'^OptodeAirCal','once'))
                 ac_tmp = textscan(tline,f_aircal,1,'collectoutput',1);
                 d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
-                          ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
-                data.aircal =[data.aircal; ...
-                              datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
-                              ac_tmp{1,2}];
+                    ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
+                if ~isempty(ac_tmp{1,2})
+                    data.aircal =[data.aircal; ...
+                        datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+                        ac_tmp{1,2}];
+                end
                 clear ac_tmp d_str
             end
             
             % check for file termination, one per satelite comms/GPS cycle
-            if regexp(tline,'^<EOT>','once') 
+            if regexp(tline,'^<EOT>','once')
                 data.EOT = data.EOT +1;
             end
-
+            
             
     end
     tline = fgetl(fid); % Grab next text line
@@ -391,23 +418,23 @@ end
 % 16 bit world as well as signed integers in a hex world
 % ************************************************************************
 if ~isempty(high_res)
-                  % [> is neg number, scale factor]
+    % [> is neg number, scale factor]
     hex_conv    = [32768 10; ...     % p  these are used to convert to pst
-                   61440 1000; ...   % t
-                   61440 1000];      % s
+        61440 1000; ...   % t
+        61440 1000];      % s
     
     tmp  = high_res(:,1:3) * NaN; % predim test array w NaN's
     t0   = ones(size(tmp(:,1))); % helper array for matrix building
     
     % BUILD TEST MATRIX: > CUTOFF, NEG #'s, = 1; < CUTOFF, POS #'s, = 0;
     % = CUTOFF, BAD VALUE, = NAN
-    t_hi = high_res(:,1:3) - (t0 * hex_conv(:,1)') > 0; % neg numbers 
+    t_hi = high_res(:,1:3) - (t0 * hex_conv(:,1)') > 0; % neg numbers
     tmp(t_hi)  = 1; % neg values, test matrix = 1
     t_low = high_res(:,1:3) - (t0 * hex_conv(:,1)') < 0; % neg numbers
     tmp(t_low) = 0; % pos values, test matrix = 0
     % VALUES NOT CAUGHT BY FLAGS REMAIN AS NAN's
     
-    high_res(:,1:3) = high_res(:,1:3) - (t0*[65536 65536 65536]) .* tmp; 
+    high_res(:,1:3) = high_res(:,1:3) - (t0*[65536 65536 65536]) .* tmp;
     high_res(:,1:3) = high_res(:,1:3) ./ (t0 * hex_conv(:,2)');
 end
 
@@ -417,7 +444,7 @@ clear tmp t0 t_hi t_low
 % ************************************************************************
 if isempty(low_res) && isempty(high_res)
     disp(['No data found in ',msg_file])
-else  
+else
     data.FwRev         = FwRev;
     data.CpActivationP = CpActP;
     data.FlbbMode      = FlbbMode;
@@ -432,6 +459,10 @@ else
     end
     
     if ~isempty(high_res)
+        %check for any zero pressure level - remove (ie 12892.064.msg; AOML
+        %screens for this)
+        xx = find(high_res(:,1)==0);
+        high_res(xx,:) = [];
         data.hr_d  = high_res(:,1:4); % p t s nbin
         data.hr_hdr = [float_vars(1:3);'nbin ctd'];
     else

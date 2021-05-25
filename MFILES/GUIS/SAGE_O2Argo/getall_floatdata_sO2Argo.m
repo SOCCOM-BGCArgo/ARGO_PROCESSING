@@ -5,12 +5,12 @@ function DATA = getall_floatdata_sO2Argo(thedatadir,floatID)
 %
 % Function to loop through all data from External (non-MBARI) Argo float,
 % utilizing the BRtrj and ODV(from Mprof.nc) files.
-% 
+%
 %
 % INPUTS:  thedatadir  = input directory path structure
 %          floatID = WMO ID
 %
-% OUTPUTS: 
+% OUTPUTS:
 %
 %
 % AUTHOR: Tanya Maurer
@@ -42,7 +42,7 @@ if exist(odvfile,'file')==0  % if missing ODV file;  if missing BRtraj is ok, ju
     errorstring = ['ODV',floatID,'.TXT is missing from ',thedatadir,'.  Must be present before proceeding.  Use Sprof converter code to generate ODV file.'];
     h = errordlg(errorstring,'Missing File');
 end
- 
+
 %__________________________________________________________________________
 %__________________________________________________________________________
 % PARSE CORIOLIS ODV FILE TO GET PROFILE DATA
@@ -57,7 +57,10 @@ iT  = find(strcmp('Temperature[°C]',   D.hdr) == 1); % CTD T
 iP = find(strcmp('Pressure[dbar]', D.hdr) == 1); % CTD P
 iO = find(strcmp('Oxygen[µmol/kg]', D.hdr) == 1); % Oxygen (umol/kg)
 iOsat = find(strcmp('OxygenSat[%]', D.hdr) == 1); % OxygenSat (%)
-% all quality flags columns are (iX)+1 
+iNO3 = find(strcmp('Nitrate[µmol/kg]',D.hdr) == 1); % Nitrate.  For knowledge that this sensor is on float.
+iPH = find(strcmp('pHinsitu[Total]',D.hdr) == 1); %pH. For knowledge that this sensor is on float.
+iCHL = find(strcmp('Chl_a[mg/m^3]',D.hdr) == 1); %CHL.  For knowledge that this sensor is on float.
+% all quality flags columns are (iX)+1
 
 %__________________________________________________________________________
 %__________________________________________________________________________
@@ -91,6 +94,47 @@ ST = MPROF(:,iST);
 LAT = MPROF(:,iLAT);
 LON = MPROF(:,iLON);
 
+%Do NO3 and pH data exist?  If so, need to keep record of this for proper
+%structuring of the FloatQClist text file (downstream).
+if ~isempty(iNO3)
+    NO3data = MPROF(:,iNO3);
+    tmp = NO3data;
+    tmp(tmp<-100000)=[];
+    if isempty(tmp)
+        DATA.isNO3 = 0;
+    else
+        DATA.isNO3 = 1;
+    end
+else
+    DATA.isNO3 = 0;
+end
+if ~isempty(iPH)
+    PHdata = MPROF(:,iPH);
+    tmp = PHdata;
+    tmp(tmp<-100000)=[];
+    if isempty(tmp)
+        DATA.isPH = 0;
+    else
+        DATA.isPH = 1;
+    end
+else
+    DATA.isPH = 0;
+end
+
+if ~isempty(iCHL)
+    CHLdata = MPROF(:,iCHL);
+    tmp = CHLdata;
+    tmp(tmp<-100000)=[];
+    if isempty(tmp)
+        DATA.isCHL = 0;
+    else
+        DATA.isCHL = 1;
+    end
+else
+    DATA.isCHL = 0;
+end
+
+
 %pres, keep only 1s and 0s
 P = MPROF(:,iP);
 P(MPROF(:,iP+1)>1,:)=nan;
@@ -112,7 +156,7 @@ OSAT(MPROF(:,iOsat+1)>4,:)=nan;
 %__________________________________________________________________________
 %__________________________________________________________________________
 % GENERATE VARIABLE TO HOLD PTS PROFILE DATA
-%[sdn, cast, S, LAT, LON, P, T, S]; 
+%[sdn, cast, S, LAT, LON, P, T, S];
 TMPpts = [SDN ST LAT LON P T S];
 %double check for missing values
 [tmp1, tmp2] = find(TMPpts < - 100000000);
@@ -132,7 +176,7 @@ TMP = [SDN ST S P T nan(size(SDN,1),1) O];
 %double check for missing values
 [tmp1, tmp2] = find(TMP < - 100000000);
 TMP(tmp1,tmp2) = nan;
-DATA.O2data{1} = TMP; 
+DATA.O2data{1} = TMP;
 % ----------------------------------------
 % CALCULATE OXYGEN PERCENT SATURATION %
 % % % O2sol = oxy_sol(TMP(:,5),TMP(:,3),0); % Benson & Krause coeffs used, see oxy_sol.m in MFILES/MISC
@@ -141,13 +185,13 @@ DATA.O2data{1} = TMP;
 %------------------------------------------
 % Just grab O2 %sat from MPROF file.  Has already been calculated.
 % Calculations are also written above (also see oxy_sol.m) for additional reference in case
-% future code mods required due to change in MPROF structure.  
+% future code mods required due to change in MPROF structure.
 %double check for missing values
 [xsat1, xsat2] = find(OSAT < - 100000000);  %remove fill values
 OSAT(xsat1,xsat2) = nan;
 whos OSAT
 DATA.O2data{1}(:,11) = OSAT;
-%DATA.O2data columns are now: 
+%DATA.O2data columns are now:
 %[sdn, cast, S, P, T, Phase,  O2, O2sol, pO2, pH20, O2Sat]; % umol /L & % sat
 % O2sol, pO2, pH20 columns are empty for profile data, since we grabbed O2Sat from the Mprof
 % file directly, however, these columns are kept as placeholders.
@@ -185,10 +229,10 @@ end
 if exist(BRtraj,'file')==0 %NO BRtraj data!!  Cal to WOA & maintain empty O2air structures.
     DATA.O2air = cell(1,2);
     DATA.O2air{1} = []; %empty, no air cals
-    DATA.O2air{2} = []; 
+    DATA.O2air{2} = [];
 else
-    mytarget = [thedatadir,floatID,'_BRtraj.nc'];   
-    ds  = ncdataset(mytarget); 
+    mytarget = [thedatadir,floatID,'_BRtraj.nc'];
+    ds  = ncdataset(mytarget);
     ga = ds.attributes;       % Global Attributes
     VARs = ds.variables;
     % check for needed variables.
@@ -206,25 +250,25 @@ else
     Index_tdoxyqc = find(not(cellfun('isempty', Index)));
     Index = strfind(VARs, 'CYCLE_NUMBER');
     Index_cycle = find(not(cellfun('isempty', Index)));
-% NOT ALL DACS ARE PROPERLY POPULATING JULD, LATITUDE AND LONGITUDE WITHIN
-% BRTRAJ FILES.  WE CAN USE LAT,LON,JULD WITHIN THE MPROF FILES FOR NOW,
-% BUT KEEP THIS HERE JUST IN CASE FOR FUTURE.
-%     Index = strfind(VARs, 'JULD');
-%     Index_jday = find(not(cellfun('isempty', Index)));
-%     Index = strfind(VARs, 'LATITUDE');
-%     Index_lat = find(not(cellfun('isempty', Index)));
-%     Index = strfind(VARs, 'LONGITUDE');
-%     Index_lon = find(not(cellfun('isempty', Index)));
+    % NOT ALL DACS ARE PROPERLY POPULATING JULD, LATITUDE AND LONGITUDE WITHIN
+    % BRTRAJ FILES.  WE CAN USE LAT,LON,JULD WITHIN THE MPROF FILES FOR NOW,
+    % BUT KEEP THIS HERE JUST IN CASE FOR FUTURE.
+    %     Index = strfind(VARs, 'JULD');
+    %     Index_jday = find(not(cellfun('isempty', Index)));
+    %     Index = strfind(VARs, 'LATITUDE');
+    %     Index_lat = find(not(cellfun('isempty', Index)));
+    %     Index = strfind(VARs, 'LONGITUDE');
+    %     Index_lon = find(not(cellfun('isempty', Index)));
     if isempty(Index_ppox) || isempty(Index_mc) || isempty(Index_pres) || isempty(Index_tdoxy) || isempty(Index_cycle) ...
-           || isempty(Index_ppoxqc) || isempty(Index_tdoxyqc) % NO Air-cal data
+            || isempty(Index_ppoxqc) || isempty(Index_tdoxyqc) % NO Air-cal data
         f = msgbox({'BRtraj file does not include necessary variables for aircal.','Calibrate to WOA2013.'});
         DATA.O2air = cell(1,2);
         DATA.O2air{1} = []; %empty, no air cals
-        DATA.O2air{2} = []; 
+        DATA.O2air{2} = [];
     else % Air-cal data; populate structures:
-        % Keep only QC flags <4 for ppox_doxy 
+        % Keep only QC flags <4 for ppox_doxy
         surfO = double(ds.data('PPOX_DOXY')); %air-cal samples;  Units of millibar (hPa equivalent)
-        surfO_qc = ds.data('PPOX_DOXY_QC'); %you really only want good data, however, I don't think DACs aren't performing QC on air-samples as of now, so QCflags=0 (Argo) 
+        surfO_qc = ds.data('PPOX_DOXY_QC'); %you really only want good data, however, I don't think DACs aren't performing QC on air-samples as of now, so QCflags=0 (Argo)
         tmp_qcO = ones(size(surfO_qc))*NaN; % predim QC matrix
         for j = 1:size(surfO_qc,1)
             qcvals = sscanf(surfO_qc(j,:),'%1f')';
@@ -236,7 +280,7 @@ else
         surfO(oi)=nan;
         
         Tdoxy = double(ds.data('TEMP_DOXY')); %This variable is needed for aircal!  But not all DACs are storing it...
-        Tdoxy_qc = ds.data('TEMP_DOXY_QC'); 
+        Tdoxy_qc = ds.data('TEMP_DOXY_QC');
         tmp_Td = ones(size(Tdoxy_qc))*NaN; % predim QC matrix
         for j = 1:size(Tdoxy_qc,1)
             qcvals = sscanf(Tdoxy_qc(j,:),'%1f')';
@@ -263,14 +307,14 @@ else
         X = XX(mscode==711,:); % MC = 711; X+11 for in-air samples, part of surface sequence(X = 700 (TST))
         T = X(:,3); %temp doxy
         S = zeros(length(T),1);
-%         P = zeros(length(T),1);
+        %         P = zeros(length(T),1);
         P = X(:,2);
         % P2 = X(:,2);
         % P2(isnan(P2))=0;
         O2 = X(:,end);
-
-%__________________________________________________________________________
-%__________________________________________________________________________
+        
+        %__________________________________________________________________________
+        %__________________________________________________________________________
         % GET OTHER O2 PARAMETERS, THIS CODE SNIPPET CAME FROM "calc_O2_4ARGO.m"
         % The BRtraj file already gives us pO2 in millibars, so all we need
         % is pH20.
@@ -299,15 +343,15 @@ else
         % S_corr = S.*part1 + S.^2 * Co;
         % L      = polyval(pA,Ts) + S_corr;
         % O2sol  = (1000/O2_volume) * exp(L); % Oxygen solubility real gas, mmol/m^3 =uM/L
-        % 
+        %
         % % Calculate vapor pressure h20
         ph2o = exp(52.57 -(6690.9./TK) - 4.681 .* log(TK));
         % pO2 = (O2 ./ O2sol) .* ((1013.25- pH2O) * 0.20946);
         % -------------------------------------------------------------------------
         % -------------------------------------------------------------------------
         
-%__________________________________________________________________________
-%__________________________________________________________________________
+        %__________________________________________________________________________
+        %__________________________________________________________________________
         % STORE PO2 AND PH20 IN ORDER TO CALCULATE GAIN
         % Ok, now have pO2 and pH20 for all air cal samples.  For cycles with multiple
         % telemetry air samples, do some averaging.
@@ -331,33 +375,33 @@ else
             %file could give a more precise measure of optode location -->
             %more datapoints.
             PRESthresh = 0.10;
-            bp = find(myp<PRESthresh); 
+            bp = find(myp<PRESthresh);
             myO2 = myO2(bp);
             myph2o = myph2o(bp);
             PO2(i) = nanmean(myO2);
             PH2O(i) = nanmean(myph2o);
             PO2st(i) = nanstd(myO2);
             PH2Ost(i) = nanstd(myph2o);
-%             Is dedicated air-cal sequence.  For
-%             certain PROVOR floats, in-air samples have a sequence of 15
-%             samples.  First 5 are "in-water", last 10 are "in-air".  But
-%             this does not apply to all floats so do not keep in main
-%            primary software version.
-%             if length(myO2) == 15 
-%                 PO2(i) = nanmean(myO2(6:end));
-%                 PH2O(i) = nanmean(myph2o(6:end));
-%                 PO2st(i) = nanstd(myO2(6:end));
-%                 PH2Ost(i) = nanstd(myph2o(6:end));
-%             else
-%                 PO2(i) = nanmean(myO2);
-%                 PH2O(i) = nanmean(myph2o);
-%                 PO2st(i) = nanstd(myO2);
-%                 PH2Ost(i) = nanstd(myph2o);
-%             end
+            %             Is dedicated air-cal sequence.  For
+            %             certain PROVOR floats, in-air samples have a sequence of 15
+            %             samples.  First 5 are "in-water", last 10 are "in-air".  But
+            %             this does not apply to all floats so do not keep in main
+            %            primary software version.
+            %             if length(myO2) == 15
+            %                 PO2(i) = nanmean(myO2(6:end));
+            %                 PH2O(i) = nanmean(myph2o(6:end));
+            %                 PO2st(i) = nanstd(myO2(6:end));
+            %                 PH2Ost(i) = nanstd(myph2o(6:end));
+            %             else
+            %                 PO2(i) = nanmean(myO2);
+            %                 PH2O(i) = nanmean(myph2o);
+            %                 PO2st(i) = nanstd(myO2);
+            %                 PH2Ost(i) = nanstd(myph2o);
+            %             end
         end
-
-%__________________________________________________________________________
-%__________________________________________________________________________
+        
+        %__________________________________________________________________________
+        %__________________________________________________________________________
         % FOR DATA.O2air FIELD, MAINTAIN SAME STRUCTURE AS DONE IN SAGE_O2 FOR MBARI, IN
         % ORDER TO UTILIZE SIMILAR SUPPORTING FUNCTIONS
         %[sdn, cast, S, P, T, Phase,  O2, O2sol, pO2, pH20, O2Sat]; % umol /L & % sat

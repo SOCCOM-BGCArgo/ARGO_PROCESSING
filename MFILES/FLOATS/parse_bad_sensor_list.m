@@ -4,12 +4,14 @@ function out = parse_bad_sensor_list(file_path)
 % 08/28/17 Added code to look for "NO_WMO" floats in addition to those with
 %   WMO #'s -jp
 % 09/12/2018 TM, added flag option (final column)  THESE FLAG ENTRIES ARE ARGO FORMAT!!! (QF=3 IS QUESTIONABLE, QF=4 IS BAD)
+% 03/02/2021 TM, Slight modification to single-cycle identiier logic.
 
 % TEST
 % file_path  = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
 %     'DATA\CAL\bad_sensor_list.txt'];
 % file_path  = ['C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\', ...
 %     'DATA\CAL\bad_sensor_list.txt'];
+% file_path = '\\atlas\tempbox\Plant\TEST_CAL\bad_sensor_list_GOBGC.txt'
 
 % DO SOME PREP WORK
 out.hdr    = []; % Output if function fails
@@ -60,12 +62,14 @@ for i = 1:ct
     list(i,iFLAG) = cell_list(i,end);
     cycle_str = regexprep(cell_list{i,iCYC}, ' ', ''); % remove any spaces
     
-    % Get indvidual profile list - look for a block of #'s followed by a comma
-    if ~isempty(regexp(cycle_str,'\d+(?=,)', 'once'))
+    % Get indvidual profile list - look for a block of #'s separated by
+    % commas - flexible enough to catch cases where trailing comma is
+    % forgotten on last entry.
+
+    if ~isempty(regexp(cycle_str,'(\d+(?=,))|((?<=,)\d+)', 'once'))
         list{i,iCYC} = cellfun(@str2double,regexp(cycle_str, ...
-            '\d+(?=,)','match'));
-    end
-    
+            '(\d+(?=,))|((?<=,)\d+)','match'));
+    end   
     % OK NOW PROCESS BAD PROFILE BLOCKS IF ANY - LOOK for dash
     find_dash = regexp(cycle_str,'-');
     dash_ct   = max(size(find_dash));

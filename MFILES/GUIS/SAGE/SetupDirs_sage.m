@@ -55,9 +55,9 @@ else
     dirs.temp = [getenv('HOME'),filesep,'temp',filesep];
 end
 % msg file directories (MBARI).  Comment out if not used.
-dirs.msg       = '\\atlas\ChemWebData\floats\';
-dirs.alt       = '\\atlas\ChemWebData\floats\alternate\'; 
-dirs.msg_comb  = '\\atlas\ChemWebData\floats\combined\';
+dirs.msg   = '\\seaecho.shore.mbari.org\floats\';
+% dirs.alt       = '\\atlas\ChemWebData\floats\alternate\'; 
+% dirs.msg_comb  = '\\atlas\ChemWebData\floats\combined\';
 end
 
 

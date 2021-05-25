@@ -1,4 +1,4 @@
-function d = merge_ARGO_mat(MBARI_ID_str, dirs)
+function d = merge_ARGO_mat(WMO_ID, dirs)
 % ************************************************************************
 % PURPOSE: 
 %    This function merges all *.mat profile files for a given float.
@@ -6,32 +6,26 @@ function d = merge_ARGO_mat(MBARI_ID_str, dirs)
 %    used by FloatViz and SOCOmViz
 %
 % USAGE:
-%	d = merge_ARGO_mat(UW_ID_str, dirs)
+%	d = merge_ARGO_mat(WMO_ID, dirs)
 %
 % INPUTS:
-%   MBARI_ID_str  = MBARI Float ID as a string
+%   WMO_ID  = WMO ID as a string
 %
 %   dirs       = Either an empty variable or a structure with directory
 %                strings where files are located. It must contain these
 %                fields at a minimum or be empty. If dirs is empty default
 %                paths will be used.
 %
-%   dirs.msg       = path to float message file directories
 %   dirs.mat       = path to *.mat profile files for ARGO NETCDF
 %   dirs.cal       = path to *.cal (nitrate) and cal####.mat (working float cal) files
-%   dirs.config    = path to config.txt files
-%   dirs.NO3config = path to ####.cal nitrate calibration files
-%   dirs.temp      = path to temporary working dir
-%   dirs.FV        = path to FloatViz files served to web
-%   dirs.QCadj      = path to QC adjustment list for all floats
-%   dirs.FVlocal   = path to Floatviz file made by matlab go here
 %
 % OUTPUTS:
 %   A stucture of merged float data
 %     d.INFO
 %       .UD_ID_num
 %       .WMO
-%       .FloatViz_name
+%       .FloatViz_name (should match WMO)
+%       .MBARI_ID_str
 %       .CTDtype
 %       .CTDsn
 %
@@ -47,96 +41,71 @@ function d = merge_ARGO_mat(MBARI_ID_str, dirs)
 %    and HR data
 % 02/11/2020 JP - Added PRES_QC, PRES_ADJUSTED & PRES_ADJUSTED_QC to the
 %    parameter search list
-
+% 03/03/2021 TM - Code modifications to bring this function in line with
+%   our processing system overhaul(!)  The main system changes are related to the
+%   float IDs and the naming of floatViz files (floatViz files will now be
+%   identified by WMO, instead of MBARI-ID.)
+%
 % ************************************************************************
 %TESTING
-% MBARI_ID_str = '8501SOOCN';
-%MBARI_ID_str = '0509SOOCN';
-% MBARI_ID_str = '0412HAWAII';
-
-% MBARI_ID_str = '9018SOOCN';
-% MBARI_ID_str = '0568SOOCN';
-% MBARI_ID_str = '0569SOOCN';
-%MBARI_ID_str = '7593Hawaii';
-% MBARI_ID_str = '0949STNP';
-% MBARI_ID_str = '12888SOOCN';
-% MBARI_ID_str = '18081SOOCN';
-% MBARI_ID_str = '0566SOOCN';
 % dirs =[];
 
 % *************************************************************************
 %  SET DATA DIRS AND PATHS
 % *************************************************************************
 RC.P    = [0 12000]; % from argo parameter list
-% **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
+% **** DEFAULT STRUCTURE FOR DIRECTORY PATHS. ONLY TWO ARE NEEDED FOR THIS FUNCTION TO OPERATE. ****
 if isempty(dirs)
     user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
     user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
-    
     dirs.mat       = [user_dir,'FLOATS\'];
     dirs.cal       = [user_dir,'CAL\'];
-    dirs.NO3config = [user_dir,'CAL\'];
-    dirs.FVlocal   = [user_dir,'FLOATVIZ\'];
-    dirs.FV        = [user_dir,'FLOATVIZ\'];
-    %dirs.FV        = '\\sirocco\wwwroot\lobo\Data\FloatVizData\';
-    
-    dirs.QCadj     = [user_dir,'CAL\QC_LISTS\'];
-    dirs.temp      = 'C:\temp\';
-    dirs.msg       = '\\atlas\ChemWebData\floats\';
-    dirs.config    = '\\atlas\Chem\ISUS\Argo\';
-    
-    dirs.log = [user_dir,'Processing_logs\'];
-elseif ~isstruct(dirs)
+    elseif ~isstruct(dirs)
     disp('Check "dirs" input. Must be an empty variable or a structure')
     return
 end
 
-%WMO_path  = [dirs.cal, 'float_WMO_list.mat']; % WMO file path
-WMO_path  = [dirs.cal, 'MBARI_float_list.mat']; % WMO file path
+list_path  = [dirs.cal, 'MBARI_float_list.mat']; % MBARI master list file path
 % *************************************************************************
-%  GET MBARI FLOAT NAME, FIND WMO DIR ASSOCIATED WITH FLOAT NAME,
-%  AND GET FILE NAMES FOR CAST
+%  GET ALL IDS ASSOCIATED WITH WMO INPUT
 % *************************************************************************
-if exist(WMO_path, 'file') % load list variables
-    load(WMO_path);
+if exist(list_path, 'file') % load list variables
+    load(list_path)
 else
     disp('BUILDING FLOAT ID LIST ...')
-    % build float name, UW_ID, WMO_ID lists
-    %[float_names, UW_ID, WMO_ID] = get_MBARI_WMO_list(dirs);
-    list = MBARI_float_list(dirs); %[float_name, UW_ID, WMO_ID, float type]
+    d = MBARI_float_list([]); %leave dirs structure empty; the function will build it, ensuring all fields are filled appropriately.
 end
-float_names = list(:,1);
-UW_ID       = list(:,2);
-WMO_ID      = list(:,3);
-clear list
-
-ind = find(strcmpi(MBARI_ID_str, float_names) == 1);
+iWMO = find(strcmp('WMO',d.hdr) == 1);
+iMB  = find(strcmp('MBARI ID',d.hdr) == 1);
+iINST = find(strcmp('INST ID',d.hdr) == 1);
+ind = find(strcmpi(WMO_ID, d.list(:,iWMO)) == 1);
 %pause
 if isempty(ind)
-    disp(['No MBARI_ID match found in lookup table for ',MBARI_ID_str])
+    disp(['No WMO_ID match found in lookup table for ',WMO_ID])
     disp('NO MATCH FOUND - EXITING')
     d = []; % Return this if no data
     return
 end
 
-WMO       = WMO_ID{ind};
-UW_ID_str = UW_ID{ind};
+INST_ID_str = d.list{ind,iINST};
+MBARI_ID_str = d.list{ind,iMB};
+clear d
 
-disp(['WMO# for ',MBARI_ID_str, ' = ', WMO]);
-disp(['UW ID for ',MBARI_ID_str, ' = ', UW_ID_str]);
+disp(['MBARI ID for WMO ',WMO_ID, ' = ', MBARI_ID_str]);
+disp(['Institution ID for ',WMO_ID, ' = ', INST_ID_str]);
 
 
-float_dir = [dirs.mat,WMO,'\'];
+float_dir = [dirs.mat,WMO_ID,'\'];
 if exist(float_dir, 'dir') == 7 % list * .mat files
-    file_list = ls([float_dir,WMO,'*.mat']);
+    file_list = ls([float_dir,WMO_ID,'*.mat']);
     r_list    = size(file_list,1);
     if r_list == 0 %directory exists but no .mat files exist yet.
-        disp(['WMO directory found for ', MBARI_ID_str, ' (', WMO, '), but no .mat files exist yet.']);
+        disp(['WMO directory found for ', MBARI_ID_str, ' (', WMO_ID, '), but no .mat files exist yet.']);
         d = []; % Return this if no data
         return
     end
 else
-    disp(['No WMO directory found for ', MBARI_ID_str, ' (', WMO, ')']);
+    disp(['No WMO directory found for ', MBARI_ID_str, ' (', WMO_ID, ')']);
     d = []; % Return this if no data
     return
 end
@@ -342,15 +311,12 @@ for file_ct = 1 : r_list
     
     
     % BUILD MATRIX OF CAST SDN LON and LAT
-    
     tmp =[fill_0+INFO.cast, fill_0+INFO.sdn, fill_0+gps(2), ...
           fill_0+gps(3)]; %gps indexing changed after addition of sdn to gps vector (TM, 10/2020)
       
     rdata = [rdata; tmp,rtmp];
     adata = [adata; tmp,atmp];
     
-   
-
     % ********************************************************************
     % NEXT MERGE HR APEX FLOAT DATA FOR HR+LR TXT FILES LATER (ALL DATA)
     % FOR APEX THIS IS ONLY PTS SO ADJ = RAW
@@ -392,9 +358,10 @@ ahdr = ahdr2; % Update with cast sdn lat lon
 
 
 % FILL STRUCTURE AND CLEAN UP
-d.INFO.UW_ID_num     = UW_ID_str;
-d.INFO.WMO           = WMO;
-d.INFO.FloatViz_name = MBARI_ID_str;
+d.INFO.INST_ID_num     = INST_ID_str;
+d.INFO.WMO           = WMO_ID;
+d.INFO.FloatViz_name = WMO_ID; %3/3/21 NOW USING WMO FOR FLOATVIZ FILE NAMING!!!  :-)
+d.INFO.MBARI_ID_str  = MBARI_ID_str;
 d.INFO.float_type    = INFO.float_type;
 d.INFO.CTDtype       = CTDtype;
 d.INFO.CTDsn         = CTDsn;

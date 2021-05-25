@@ -26,21 +26,14 @@ function d = Merge_isus_msgs(MBARI_ID_str, dirs)
 % 12/13/20 - jp - Forced all fopen writes to UTF-8, because that is the
 %     new default for Matlab 2020 and better cross platform sharing
 % 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
-
+% 03/23/21 - JP/TM modifications to bring in line with new WMO-based file naming system (GOBGC!)
 print_flag = 1;
 d = [];
 % ************************************************************************
 % FOR TESTING
-
-%MBARI_ID_str  = '18864SOOCN';
-%MBARI_ID_str  = '12744SOOCN';
-% MBARI_ID_str  = '6400STNP';
-% MBARI_ID_str  = '0037SOOCN';
-%MBARI_ID_str  = '6966HAWAII';
-%MBARI_ID_str  = '7593HAWAII';
-% MBARI_ID_str  = '0068ROSSSEA';
-% MBARI_ID_str  = '7622HAWAII';
-% MBARI_ID_str  = '9634SOOCN';
+%MBARI_ID_str  = 'ua6966';
+% MBARI_ID_str  = 'ua7622';
+%MBARI_ID_str  = 'ua19719';
 % dirs =[];
 
 % ************************************************************************
@@ -56,10 +49,12 @@ MVI_str = '-1e10';
 
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
 if isempty(dirs)
-    dirs.msg   = '\\atlas\ChemWebData\floats\';
+    user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+    user_dir = [user_dir, '\Documents\MATLAB\'];
+    dirs.msg   = '\\seaecho.shore.mbari.org\floats\';
     %dirs.cal   = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\';
     %dirs.cal   = '\\atlas\chem\ARGO_PROCESSING\DATA\CAL';
-    dirs.cal   = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\';
+    dirs.cal   = [user_dir,'ARGO_PROCESSING\DATA\CAL\'];
     
     dirs.temp  = 'C:\temp\';
     %     dirs.FV    = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
@@ -68,8 +63,8 @@ if isempty(dirs)
     
     %    dirs.save = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
     %                  'DATA\SENSOR_STATS\NO3 DIAGNOSTICS\'];
-    dirs.save = ['C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\', ...
-        'DATA\PH_DIAGNOSTICS\'];
+    dirs.save = [user_dir,'ARGO_PROCESSING\', ...
+        'DATA\NO3_DIAGNOSTICS\'];
 elseif ~isstruct(dirs)
     disp('Check "dirs" input. Must be an empty variable or a structure')
     return
@@ -90,71 +85,43 @@ if ~isfield(cal,'N')
     return
 end
 
-INFO.UW         = cal.info.UW_ID; % a string
-UW              = str2double(INFO.UW);
-% INFO.float_type = cal.info.float_type; % a string
-%
-% if regexp(MBARI_ID_str,'0037|0276','once') % cal file info getting set to "APEX"???
-%     INFO.float_type = 'NAVIS';
-% end
-
 ncal            = cal.N;
+
+INFO.INST_ID = cal.info.INST_ID; % a string
+INFO.WMO     = cal.info.WMO_ID; % a string
+INFO.Program = cal.info.Program; % a string
+INFO.Region  = cal.info.Region; % a string
+INFO.msg_dir = cal.info.msg_dir; % a string
 
 % ************************************************************************
 % BUILD *.ISUS LIST
 % ************************************************************************
-dlist = get_msg_list(MBARI_ID_str, dirs,'isus'); % isus file list
+nlist = get_msg_list(cal.info,'isus'); % isus file list
 
-
-% CHECK FLOAT TYPE FROM MESSAGE FILE PATH
-% if strcmp(INFO.float_type,'APEX')
-%     disp([MBARI_ID_str,' is an APEX float'])
-% elseif strcmp(INFO.float_type,'NAVIS')
-%     disp([MBARI_ID_str,' is an NAVIS float'])
-% else
-%     disp(['Could not determine float type for ',MBARI_ID_str])
-% end
-
-%pause
+% CHECK FOR ODD FILE NEMES & REMOVE (i.e. 19719 has "._19719.001.dura")
+t1 = cellfun(@isempty,regexp(nlist.list(:,1),'^\d','once'));
+if sum(t1) > 0 % non standard dura files
+    nlist.list = nlist.list(~t1,:);
+    disp(['Odd dura file removed from list for ',MBARI_ID_str])
+end
 
 % ************************************************************************
 % COPY FLOAT MESSAGE FILES TO LOCAL TEMPORARY DIRECTORY
 % Three file groups *.msg, *.isus, *.dura
 % ************************************************************************
-if isempty(dlist)
-    disp(['No float isus files found to process for float ',MBARI_ID_str]);
+if isempty(nlist.list)
+    disp(['No float dura files found to process for float ',MBARI_ID_str]);
     return
-elseif isempty(dlist.reg_list) && isempty(dlist.alt_list)
-    disp(['No float isus files found to process for float ',MBARI_ID_str]);
-    return
-else
-    INFO.float_type = 'APEX';
-    if regexp(dlist.reg_dir,'\\n\d+','once')
-        INFO.float_type = 'NAVIS';
-        disp([MBARI_ID_str,' is an NAVIS float'])
-    else
-        disp([MBARI_ID_str,' is an APEX float'])
     end
     
-    disp(['Copying isus message files to ', dirs.temp, '  .......'])
-    
-    % COPY *.isus files
+% COPY *.ISUS files
     if ~isempty(ls([dirs.temp,'*.isus']))
         delete([dirs.temp,'*.isus']) % Clear any message files in temp dir
     end
-    if ~isempty(dlist)
-        if ~isempty(dlist.reg_list)
-            for i = 1:length(dlist.reg_list)
-                copyfile([dlist.reg_dir, dlist.reg_list{1,i}],dirs.temp);
-            end
-        end
-        if ~isempty(dlist.alt_list)
-            for i = 1:length(dlist.alt_list)
-                copyfile([dlist.alt_dir, dlist.alt_list{1,i}],dirs.temp);
-            end
-        end
-        clear dlist i
-    end
+
+for i = 1:size(nlist.list,1)
+    fp = fullfile(nlist.list{i,2}, nlist.list{i,1});
+    copyfile(fp, dirs.temp);
 end
 
 % ************************************************************************
@@ -163,11 +130,12 @@ end
 msg_list   = ls([dirs.temp,'*.isus']); % get list of file names to process
 disp(['Processing float ',MBARI_ID_str, '.........'])
 
-merge_NO3_hdr = {'UW ID' 'Cycle' 'SDN' 'Dark_Current' 'Pres' 'Temp', ...
+merge_NO3_hdr = {'WMO ID' 'Cycle' 'SDN' 'Dark_Current' 'Pres' 'Temp', ...
     'Sal' 'NO3' 'BL_intercept' 'BL_slope' 'RMS_ERROR' 'WL240', ...
     'ABS_240' 'INTENSITY_240' 'MSC_Version'};
 merge_NO3 = ones(300*70,size(merge_NO3_hdr,2))*NaN;
 line_ct = 1;
+INST_ID_num = str2double(INFO.INST_ID);
 
 for msg_ct = 1:size(msg_list,1)
     NO3_file = strtrim(msg_list(msg_ct,:));
@@ -188,7 +156,7 @@ for msg_ct = 1:size(msg_list,1)
             spec.SDN = spec.SDN + 1024*7;
         end
         
-        if strcmp(INFO.float_type, 'APEX')
+        if strcmp(cal.info.float_type, 'APEX')
             if size(spec.pix_fit_win,2) == 2
                 iINT = spec.pix_fit_win(2) - spec.spectra_pix_range(1); % intensity index ~240
             else
@@ -205,7 +173,7 @@ for msg_ct = 1:size(msg_list,1)
                 iINT = spec.pix_fit_win(2) - spec.spectra_pix_range(1); % intensity index ~240
                 clear pfit_low pfit_hi
             end
-        elseif strcmp(INFO.float_type, 'NAVIS')
+        elseif strcmp(cal.info.float_type, 'NAVIS')
             pfit_low = find(cal.N.WL >= spec.WL_fit_win(1),1,'first');
             pfit_hi  = find(cal.N.WL <= spec.WL_fit_win(2),1,'last');
             spec.pix_fit_win = [pfit_low pfit_hi];
@@ -217,7 +185,7 @@ for msg_ct = 1:size(msg_list,1)
         %[SDN, DarkCur,Pres,Temp,Sal,NO3,BL_B,BL_M,RMS ERROR,WL~240,ABS~240]
         NO3 = calc_FLOAT_NO3(spec, ncal, 1); % ESW P corr, umol/L
         rN = size(NO3,1);
-        merge_NO3(line_ct: rN+line_ct-1,:) = [ones(rN,1)*[UW, cast_num], ...
+        merge_NO3(line_ct: rN+line_ct-1,:) = [ones(rN,1)*[INST_ID_num, cast_num], ...
             NO3, UV_INTEN(:,iINT), ones(rN,1)*spec.MSC_FW_ver];
         line_ct = line_ct + rN;
     end
@@ -309,7 +277,7 @@ if print_flag == 1
     hstr  = datestr(pdata(:,iSDN),'HH:MM');
     
     % GET LAT AND LON FROM FLOATVIZ FILES
-    d = get_FloatViz_data([dirs.FV, MBARI_ID_str,'.TXT']);
+    d = get_FloatViz_data([dirs.FV, INFO.WMO,'.TXT']);
     uC = unique(pdata(:,iC)); % merge file cycle #'s
     LL = ones(size(pdata,1),3)*NaN; % predim lon lat QF
     
@@ -335,7 +303,7 @@ if print_flag == 1
     %     'ABS_240' 'INTENSITY_240'};
     
     % PRINT HEADER FIRST
-    out_name = [MBARI_ID_str,'_NO3.TXT'];
+    out_name = [INFO.WMO,'_NO3.TXT'];
     
     
     print_hdr ={'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm'...
@@ -365,7 +333,11 @@ if print_flag == 1
     fprintf(fid,'//<Encoding>UTF-8</Encoding>\r\n');
     fprintf(fid,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
         '\r\n']);
-    fprintf(fid,['//MBARI ID: ',MBARI_ID_str,'\r\n//\r\n']);
+    fprintf(fid,['//WMO ID: ',INFO.WMO,'\r\n']);
+    fprintf(fid,['//Institution ID: ',INFO.INST_ID,'\r\n']);
+    fprintf(fid,['//MBARI ID: ',MBARI_ID_str,'\r\n']);
+    fprintf(fid,['//Project Name: ',INFO.Program,'\r\n']);
+    fprintf(fid,['//Region: ',INFO.Region,'\r\n//\r\n']); 
     fprintf(fid,'//WARNING:\r\n');
     fprintf(fid,'//  NITRATE CONCENTRATION IN THIS FILE IS NOT CORRECTED!\r\n');
     fprintf(fid,['//  Users of this data file should have a good ',...
@@ -425,7 +397,7 @@ if print_flag == 1
         end
         
         % ADD SOME META DATA
-        fprintf(fid, fstr_txt, MBARI_ID_str, pdata(ct,iC), 'B', ...
+        fprintf(fid, fstr_txt, INFO.WMO, pdata(ct,iC), 'B', ...
             dstr(ct,:), hstr(ct,:));
         
         % BUILD DATA LINE AS STRING

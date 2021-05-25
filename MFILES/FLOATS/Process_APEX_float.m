@@ -33,11 +33,9 @@ function tf_float = Process_APEX_float(MBARI_ID_str, dirs, update_str)
 %   dirs.mat       = path to *.mat profile files for ARGO NETCDF
 %   dirs.cal       = path to *.cal (nitrate) and cal####.mat (working float cal) files
 %   dirs.config    = path to config.txt files
-%   dirs.NO3config = path to ####.cal nitrate calibration files
 %   dirs.temp      = path to temporary working dir
 %   dirs.FV        = path to FloatViz files served to web
 %   dirs.QCadj     = path to QC adjustment list for all floats
-%   dirs.FVlocal   = path to Floatviz file made by matlab go here
 %
 % OUTPUTS:
 %   tf_float =  1 if processing was a success, 0 otherwise
@@ -109,46 +107,75 @@ function tf_float = Process_APEX_float(MBARI_ID_str, dirs, update_str)
 %     work for CHL wherea 5 may be entered in the NPQ zone
 %04/10/20, JP improvedQC lagging for pH incase dura diagnostics not there
 %    or diagnostic data fails the file size test( i.e. 12884)
-%6/11/20 TM - added the ".*1e9" to this line.  It was lacking in previous update from 4/7/20 
+%6/11/20 TM - added the ".*1e9" to this line.  It was lacking in previous update from 4/7/20
 %    and causing erroneous flagging for certain cases, ie float 9634 surface samples of cycles 67 and 97.
-%    However, this has pointed to the need to re-evaluate this code, and make it cleaner and more modular.  So, additional 
+%    However, this has pointed to the need to re-evaluate this code, and make it cleaner and more modular.  So, additional
 %    changes to how the flagging is handled may be forthcoming!
 %9/30/20 TM - Added exclusion block to pH IK/IB diagnostic flagging for two recent EqPac floats (these floats are presenting railed diagnostics when pH sensor is actually working)
 %10/27/20 TM, minor mods to accomadate change to parser (inclusion of sdn in gps vector)
+% 12/17/20 JP, minor adjustment to TM 6/11/20 fix. Fill value can be
+% 99999*1e9 or 99999(if no dura file)
+% 03/11/2021 JP, modified for GOBGC file name change and updates to some
+% other functions. Still could use a thourough clean up when time permits
 % ************************************************************************
 
+% ************************************************************************
+% ************************************************************************
 % *** FOR TESTING ***
-% MBARI_ID_str = '9095SOOCN';
+
+% MBARI_ID_str = 'ua18739';
 % update_str = 'all';
+% MBARI_ID_str = 'ua19719';
+% update_str = 'update';
 % dirs =[];
+% ************************************************************************
+% ************************************************************************
 
 
 % ************************************************************************
-% SET FORMATS, DEFAULT DIRS, PREDIMENSION STRUCTURE, BOOKKEEPING
+% SET FORMATS, DEFAULT DIRS, PREDIMENSION STRUCTURE, FILTERS, BOOKKEEPING
 % ************************************************************************
 fclose all; % CLOSE ANY OPEN FILES
 tf_float.status = 0; % Default flag for float processing success 0 = no good
 tf_float.new_messages = {};
 tf_float.bad_messages = {};
 
+% THIS IS A LIST OF FLOATS WITH BAD NO3 FROM THE START OR NO3 LISTED IN THE
+% MSG HEADER BUT NO SENSOR ON BOARD
+bad_no3_filter = 'un0691|un0569|ua7622|ua18340';
+
+% THIS IS A LIST OF FLOATS WITH WITH STRONG O2 GRADIENTS AT THE SURFACE
+% NO SPIKE TESTS PERFORMED ON THESE FLOATS (CURRENTLY JUST ARCTIC FLOATS)
+no_o2_spike = 'un0691|ua7564|';
+
+% THIS IS FOR CHL PROCESSING EXCEPTIONS THAT ARE NOT CAUGHT BY OTHER MEANS
+% 5/11/20, add exception for 12542, flbb dying and sampling turned
+% off by Dana Swift on cycle 117.  But, still need to create BR file
+% fields as this float has an flbb sensor so these variables should
+% be present.  Not sure why master_FLBB variable part of the
+% statement, seems having just ~istempty(iChl) would suffice?  Add
+% special case for this float for now.  Same for 19875?
+bad_chl_filter = 'ua12542|ua18169|ua19875';
+
+% THIS IS FOR pH PROCESSING EXCEPTIONS THAT ARE NOT CAUGHT BY OTHER MEANS
+% 09/30/20 TM - EXCLUSION BLOCK FOR NEWER EQPAC FLOATS EXHIBITING THE
+% ERRONEOUS RAILED DIAG VALUES
+skip_ph_diag = 'ua17534|ua18601|ua18114';
+
+% ************************************************************************
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
 if isempty(dirs)
     user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+    % user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
     user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
     
     dirs.mat       = [user_dir,'FLOATS\'];
     dirs.cal       = [user_dir,'CAL\'];
-    %dirs.NO3config = [user_dir,'CAL\'];
-    dirs.FVlocal   = [user_dir,'FLOATVIZ\'];
     dirs.FV        = [user_dir,'FLOATVIZ\'];
-    %dirs.FV        = '\\sirocco\wwwroot\lobo\Data\FloatVizData\';
     
     dirs.QCadj     = [user_dir,'CAL\QC_LISTS\'];
     dirs.temp      = 'C:\temp\';
-    dirs.msg       = '\\atlas\ChemWebData\floats\';
-    %dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\';
-    %dirs.msg       = 'C:\temp\';
-    dirs.config    = '\\atlas\Chem\ISUS\Argo\';
+    dirs.msg       = '\\seaecho.shore.mbari.org\floats\';
     
     dirs.log = [user_dir,'Processing_logs\'];
     
@@ -176,23 +203,6 @@ elseif ~isstruct(dirs)
 end
 
 % ************************************************************************
-% SET MSG DIRECTORIES FOR SPECIAL CASE FLOATS. SO FAR THIS INCLUDES FLOATS
-% WITH NO WMO #'s OR FLOATS WITH DUPLICATE UW ID #'s. THE MBARI ID IS THE
-% ONLY ID THAT UNIQUELY IDENTIFIES ALL FLOATS
-if strcmpi(MBARI_ID_str,'6966HAWAII') 
-    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\';
-end
-if strcmpi(MBARI_ID_str,'8501CalCurrent')
-    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\';
-end
-if strcmpi(MBARI_ID_str,'8514HAWAII')
-    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\f8514_2\';
-end
-if strcmpi(MBARI_ID_str,'9254SOOCN')
-    dirs.msg       = '\\atlas\chemwebdata\floats\duplicate\';
-end
-% ************************************************************************
-
 % SET DATA FILL VALUES
 fv.bio = 99999;
 fv.QC  = 99;
@@ -231,38 +241,88 @@ RC.PHV   = [-1.2 -0.7]; % Range check on pH volts
 RC.IB    = [-100 100]; % Range check on pH Ib, nano amps
 RC.IK    = [-100 100]; % Range check on pH Ik, nano amps
 
-UW_ID_str = regexp(MBARI_ID_str,'^\d+', 'once','match');
+INST_ID_str = regexp(MBARI_ID_str,'^\d+', 'once','match');
 crazy_val = 99990; %some ridiculous number that is less than the GDAC fill value of 99999
 
 % ************************************************************************
 % LOAD OR BUILD CALIBRATION DATA
 % ************************************************************************
-float_cal_path = [dirs.cal,'cal',MBARI_ID_str,'.mat'];
-if exist(float_cal_path,'file')
-    load(float_cal_path);
-    disp(' ')
+fp_cal = [dirs.cal,'cal',MBARI_ID_str,'.mat'];
+if exist(fp_cal,'file') == 2
+    load(fp_cal);
     disp(' ')
     disp(['FLOAT ',MBARI_ID_str, '(',cal.info.WMO_ID,')']);
-    disp(['Existing calibration file loaded: ',float_cal_path])
-%	if ~isempty(strfind(cal.info.WMO_ID,'NO_WMO'))
-	if ~isempty(strfind(cal.info.WMO_ID,'NO_WMO')) || ~isempty(strfind(cal.info.WMO_ID,'NaN')) %TM 8/16/20
-		old_WMO = cal.info.WMO_ID; %get old WMO
-		delete(float_cal_path)
-		disp(['Attempting to retrieve updated WMOnum by deleting and rebuilding cal file ',float_cal_path,'.'])
-		cal = get_float_cals(MBARI_ID_str, dirs);
-		if ~strcmp(cal.info.WMO_ID,old_WMO) % if different WMO found
-			update_str = 'all';
-		end
-	end
-else
-    disp(' ')
-    disp(' ')
+    disp(['Existing calibration file loaded: ',fp_cal])
+    
+    % IF TEMPORARY WMO STILL - TRY & UPDATE WITH ACTUAL WMO
+    
+    if strncmp(cal.info.WMO_ID,'NO', 2) && cal.info.tf_bfile ~= 0
+        disp(['Attempting to retrieve updated WMO num by deleting ', ...
+            'and rebuilding cal file ',fp_cal])
+        tmp_WMO = cal.info.WMO_ID; % need this to wipe old files if new WMO found
+        delete(fp_cal)
+        cal = get_float_cals(MBARI_ID_str, dirs); %
+        if regexp(cal.info.WMO_ID, '^\d{7}', 'once') % WMO found - update successful!
+            update_str = 'all';
+            
+            %             % WIPE OLD FILES (sirocco, chem, ftp & local
+            %             disp(['Temporary WMO text & mat files (',tmp_WMO,') for ', ...
+            %                 cal.info.WMO_ID,' have been removed']);
+            %             % *.MAT FILES FIRST
+            %             mat_dirs = {dirs.mat,'\\atlas\chem\ARGO_PROCESSING\DATA\FLOATS\', ...
+            %                 '\\atlas\ftp\pub\ARGO_DATA\'};
+            %             for dct = 1:size(mat_dirs,2)% step through *.mat profile dirs
+            %                 fp_mat = [mat_dirs{dct}, tmp_WMO,'\'];
+            %                 if ~isempty(ls([fp_mat,'*.mat']))
+            %                     delete([fp_mat,'*.mat']);
+            %                     rmdir(fp_mat)
+            %                 end
+            %             end
+            %             % NOW WIPE TEMPORARY TXT FILES
+            %             TXT_dirs = {dirs.FV, ...
+            %                 '\\atlas\Chem\ARGO_PROCESSING\DATA\FLOATVIZ\', ...
+            %                 '\\sirocco\wwwroot\lobo\Data\FloatVizData\'};
+            %             TXT_subdirs ={'' 'QC\' 'HR\' 'HRQC\' 'CANYON_QC' 'MLR_QC'};
+            %             for dct = 1:size(TXT_dirs,2)% step through *.TXT file dirs
+            %                 fp_txt = TXT_dirs{dct};
+            %                 for fct = 1:size(TXT_subdirs,2)
+            %                     fp_txt2 = [fp_txt, TXT_subdirs{fct}, tmp_WMO,'.TXT'];
+            %                     if isfile(fp_txt2)
+            %                         delete(fp_txt2);
+            %                     end
+            %                 end
+            %             end
+            %             clear tmp_WMO mat_dirs fp_mat dct
+            %             clear TXT_dirs TXT_subdirs fct fp_txt fp_txt2
+        end
+    end
+else % No cal file built so build it
+    fprintf('\n\n');
     disp(['FLOAT ',MBARI_ID_str]);
     cal = get_float_cals(MBARI_ID_str, dirs);
 end
 
 if isempty(cal)
     disp(['NO CALIBRATION DATA FOR ',MBARI_ID_str])
+    return
+end
+
+% CHECK FOR FLOAT TYPE IN NOT APEX EXIT
+float_type = cal.info.float_type;
+if strcmp(float_type,'APEX') % APEX
+    disp([cal.info.name,' is an APEX float'])
+elseif strcmp(float_type,'NAVIS') % NAVIS
+    disp(['Float ',cal.info.name, ' appears to be a NAVIS float.'])
+    disp(['Processing should be done with Process_NAVIS_float.m',...
+        ' instead'])
+    return
+elseif strcmp(float_type,'SOLO') % SOLO
+    disp(['Float ',cal.info.name, ' appears to be a SOLO float.'])
+    disp(['Processing should be done with Process_SOLO_float.m',...
+        ' instead'])
+    return
+else
+    disp('Unknown float type')
     return
 end
 
@@ -274,32 +334,22 @@ if isfield(cal, 'N')
             num2str(cal.N.WL_offset)]);
     end
 end
-clear dirs.config dirs.cal s1
 
 % ************************************************************************
 % GET QC ADJUSTMENT DATA
 % ************************************************************************
-QC = get_QC_adjustments(cal.info.name, dirs);
+QC = get_QC_adjustments(cal.info.WMO_ID, dirs);
 
 % ************************************************************************
-% LOOK FOR MOST RECENT PROFILE FILE (*.mat) AND ANY MISSING CASTS
-% ONLY WANT NEW OR MISSING CASTS IN THE COPY LIST
-% YOU MUST DELETE A MAT FILE TO REDO IF IT IS PARTIAL FOR A GIVEN CAST
-% ************************************************************************
-[last_cast, missing_casts, first_sdn] = get_last_cast(dirs.mat,cal.info.WMO_ID);
-%[last_cast, missing_casts] = get_last_cast(dirs.mat,cal.info.WMO_ID);
-if isempty(last_cast)
-    last_cast = 0; % set low for logic tests later
-end
+% GET MSG, ISUS, AND DURA FILE LISTS
+% call returns a structure of hdr & list{file name, file dir, & file date}
+mlist = get_msg_list(cal.info, 'msg');
+ilist = get_msg_list(cal.info, 'isus');
+dlist = get_msg_list(cal.info, 'dura');
 
-% GET FILE LISTS
-mlist = get_msg_list(MBARI_ID_str,dirs,'msg');  % message file list
-ilist = get_msg_list(MBARI_ID_str,dirs,'isus'); % isus file list
-dlist = get_msg_list(MBARI_ID_str,dirs,'dura'); % isus file list
-
-% CHECK FOR EMTPY MSG DIR - chemwebdata dir is empty - FLOAT HAS NOT SENT
+% CHECK FOR EMTPY MSG DIR - if msgdir is empty - FLOAT HAS NOT SENT
 % ANY MSG FILES YET
-if isempty(mlist)
+if isempty(mlist.list)
     disp([MBARI_ID_str, ' may be deployed but it has not sent any *.msg',...
         ' files yet!']);
     return
@@ -309,208 +359,131 @@ end
 % SEEMS LIKE SEVERAL INTERATIONS OF INCOMPLETE FILES CAN BE TRANSMITTED
 % DURING SURFACING
 
-% CREATE ANONYMOUS FONCTION TO TEST FOR FILE AGE LESS THEN 4 HOURS OLD
+% TEST FOR FILE AGE LESS THEN 4 HOURS OLD
 % REMOVE THESE FILES FROM LIST
-age_test = @(x) x > (now-4/24);
-% age_test = @(x) x > (now);
+age_limit = now - 4/24;
+%age_limit = now; % no lag if you want an imediate process
 
-% if strcmp(MBARI_ID_str,'12701SOOCN')==1
-%     if ~isempty(mlist) && ~isempty(mlist.reg_list)
-%         t1 = cellfun(age_test2, mlist.reg_sdn, 'UniformOutput', 1);
-%         mlist.reg_list(t1) = [];
-%         mlist.reg_sdn(t1)  = [];
-%     end
-% else
-%     if ~isempty(mlist) && ~isempty(mlist.reg_list)
-%         t1 = cellfun(age_test, mlist.reg_sdn, 'UniformOutput', 1);
-%         mlist.reg_list(t1) = [];
-%         mlist.reg_sdn(t1)  = [];
-%     end
-% end
-
-
-if ~isempty(mlist) && ~isempty(mlist.reg_list)
-    t1 = cellfun(age_test, mlist.reg_sdn, 'UniformOutput', 1);
-    mlist.reg_list(t1) = [];
-    mlist.reg_sdn(t1)  = [];
+if ~isempty(mlist.list)
+    t1 = cell2mat(mlist.list(:,3)) < age_limit;
+    mlist.list = mlist.list(t1,:);
 end
-    
-if ~isempty(mlist) && ~isempty(mlist.alt_list)
-    t1 = cellfun(age_test, mlist.alt_sdn, 'UniformOutput', 1);
-    mlist.alt_list(t1) = [];
-    mlist.alt_sdn(t1)  = [];
-end
-if ~isempty(ilist) && ~isempty(ilist.reg_list)
-    t1 = cellfun(age_test, ilist.reg_sdn, 'UniformOutput', 1);
-    ilist.reg_list(t1) = [];
-    ilist.reg_sdn(t1)  = [];
-end
-if ~isempty(ilist) && ~isempty(ilist.alt_list)
-    t1 = cellfun(age_test, ilist.alt_sdn, 'UniformOutput', 1);
-    ilist.alt_list(t1) = [];
-    ilist.alt_sdn(t1)  = [];
-end 
-if ~isempty(dlist) && ~isempty(dlist.reg_list)
-    t1 = cellfun(age_test, dlist.reg_sdn, 'UniformOutput', 1);
-    dlist.reg_list(t1) = [];
-    dlist.reg_sdn(t1)  = [];
-end
-if ~isempty(dlist) && ~isempty(dlist.alt_list)
-    t1 = cellfun(age_test, dlist.alt_sdn, 'UniformOutput', 1);
-    dlist.alt_list(t1) = [];
-    dlist.alt_sdn(t1)  = [];
-end  
 
+if ~isempty(ilist.list)
+    t1 = cell2mat(ilist.list(:,3)) < age_limit;
+    ilist.list = ilist.list(t1,:);
+end
 
+if ~isempty(dlist.list)
+    t1 = cell2mat(dlist.list(:,3)) < age_limit;
+    dlist.list = dlist.list(t1,:);
+end
+clear t1
+% ************************************************************************
+% LOOK FOR MOST RECENT PROFILE FILE (*.mat) AND ANY MISSING CASTS
+% ONLY WANT NEW OR MISSING CASTS IN THE COPY LIST
+% YOU MUST DELETE A MAT FILE TO REDO IF IT IS PARTIAL FOR A GIVEN CAST
+% ************************************************************************
+[last_cast, missing_casts, first_sdn] = get_last_cast(dirs.mat, ...
+    cal.info.WMO_ID);
+if isempty(last_cast)
+    last_cast = 0; % set low for logic tests later
+end
 % UPDATE MODE -- ONLY LOOK FOR NEW FILES
-if strcmp(update_str, 'update')
-    % Build anonymous function to get cast number from msg file name
-    % reg exp pulls str between two periods & sscanf converts to #
-    get_cast_num = @(str) sscanf(regexp(str,'(?<=\.)\d+(?=\.)','once', ...
-        'match'),'%f');
- 
-    if ~isempty(last_cast) % ONLY KEEP NEW FILES IN LIST
-        if ~isempty(mlist) && ~isempty(mlist.reg_list)
-            casts = cellfun(get_cast_num, mlist.reg_list);
-            mlist.reg_list(casts <= last_cast &  ...
-                ~ismember(casts,missing_casts)) =[];
-            mlist.reg_sdn(casts <= last_cast &  ...
-                ~ismember(casts,missing_casts)) =[];            
-        end
-        if ~isempty(mlist) && ~isempty(mlist.alt_list)
-            casts = cellfun(get_cast_num, mlist.alt_list);
-            mlist.alt_list(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];
-            mlist.alt_sdn(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];            
-        end
-       
-        if ~isempty(ilist) && ~isempty(ilist.reg_list)
-            casts = cellfun(get_cast_num, ilist.reg_list);
-            ilist.reg_list(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];
-            ilist.reg_sdn(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];            
-        end
-        if ~isempty(ilist) && ~isempty(ilist.alt_list)
-            casts = cellfun(get_cast_num, ilist.alt_list);
-            ilist.alt_list(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];
-            ilist.alt_sdn(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];            
-        end
-        if ~isempty(dlist) && ~isempty(dlist.reg_list)
-            casts = cellfun(get_cast_num, dlist.reg_list);
-            dlist.reg_list(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];
-            dlist.reg_sdn(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];            
-        end
-        if ~isempty(dlist) && ~isempty(dlist.alt_list)
-            casts = cellfun(get_cast_num, dlist.alt_list);
-            dlist.alt_list(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];
-            dlist.alt_sdn(casts <= last_cast & ...
-                ~ismember(casts,missing_casts)) =[];            
-        end
+if strcmp(update_str, 'update') && last_cast > 0
+    if ~isempty(mlist.list)
+        tmp   = (regexp(mlist.list(:,1),'(?<=\d+\.)\d{3}(?=\.msg)','match','once'));
+        casts = str2double(tmp);
+        t1    = casts > last_cast; % new cycles in file list
+        t2    = ismember(casts, missing_casts); %loc of missing in file list
+        mlist.list = mlist.list(t1|t2,:);
+    end
+    
+    if ~isempty(ilist.list)
+        tmp   = (regexp(ilist.list(:,1),'(?<=\d+\.)\d{3}(?=\.isus)','match','once'));
+        casts = str2double(tmp);
+        t1    = casts > last_cast; % new cycles in file list
+        t2    = ismember(casts, missing_casts); %loc of missing in file list
+        ilist.list = ilist.list(t1|t2,:);
+    end
+    
+    if ~isempty(dlist.list)
+        tmp   = (regexp(dlist.list(:,1),'(?<=\d+\.)\d{3}(?=\.dura)','match','once'));
+        casts = str2double(tmp);
+        t1    = casts > last_cast; % new cycles in file list
+        t2    = ismember(casts, missing_casts); %loc of missing in file list
+        dlist.list = dlist.list(t1|t2,:);
     end
 end
+clear tmp t1 t2 casts
 
 % ************************************************************************
 % COPY FLOAT MESSAGE FILES TO LOCAL TEMPORARY DIRECTORY
 % Three file groups *.msg, *.isus, *.dura
 % ************************************************************************
-if isempty(mlist.reg_list) && isempty(mlist.alt_list)
+if isempty(mlist.list)
     disp(['No float message files found to process for float ',MBARI_ID_str]);
     disp(['Last processed cast: ',sprintf('%03.0f',last_cast)])
     return
-else
-    % CHECK FLOAT TYPE
-    if regexp(mlist.reg_dir,'\\f\d{3}\d+','once') % APEX
-        float_type = 'APEX';
-        disp([cal.info.name,' is an APEX float'])
-    elseif regexp(mlist.reg_dir,'\\n\d{3}\d+','once') % NAVIS
-        float_type = 'NAVIS';
-        disp(['Float ',cal.info.name, ' appears to be a NAVIS float.'])
-        disp(['Processing should be done with Process_NAVIS_float.m',...
-            ' instead'])
-        return
-    else
-        float_type = 'unknown';
-        disp('Unknown float type')
-        return
-    end
-    
-    disp(['Copying message files to ', dirs.temp, '  .......'])
-    
-    % COPY *.MSG files
-    if ~isempty(ls([dirs.temp,'*.msg']))
-        delete([dirs.temp,'*.msg']) % Clear any message files in temp dir
-    end
-    if ~isempty(mlist.reg_list)
-        for i = 1:length(mlist.reg_list)
-            copyfile([mlist.reg_dir, mlist.reg_list{1,i}],dirs.temp);
-        end
-    end
-    if ~isempty(mlist.alt_list)
-        for i = 1:length(mlist.alt_list)
-            copyfile([mlist.alt_dir, mlist.alt_list{1,i}],dirs.temp);
-        end
-    end
-    clear mlist i
-    
-    % COPY *.ISUS files
-    if ~isempty(ls([dirs.temp,'*.isus']))
-        delete([dirs.temp,'*.isus']) % Clear any message files in temp dir
-    end
-    if ~isempty(ilist)
-        if ~isempty(ilist.reg_list)
-            for i = 1:length(ilist.reg_list)
-                copyfile([ilist.reg_dir, ilist.reg_list{1,i}],dirs.temp);
-            end
-        end
-        if ~isempty(ilist.alt_list)
-            for i = 1:length(ilist.alt_list)
-                copyfile([ilist.alt_dir, ilist.alt_list{1,i}],dirs.temp);
-            end
-        end
-        clear ilist i
+end
+
+disp(['Copying message files to ', dirs.temp, '  .......'])
+
+% COPY *.MSG files
+if ~isempty(ls([dirs.temp,'*.msg']))
+    delete([dirs.temp,'*.msg']) % Clear any message files in temp dir
+end
+if ~isempty(mlist.list)
+    for i = 1:size(mlist.list,1)
+        fp = fullfile(mlist.list{i,2}, mlist.list{i,1});
+        copyfile(fp, dirs.temp);
     end
 end
 
-% COPY *.dura files
+% COPY *.ISUS files
+if ~isempty(ls([dirs.temp,'*.isus']))
+    delete([dirs.temp,'*.isus']) % Clear any message files in temp dir
+end
+if ~isempty(ilist.list)
+    for i = 1:size(ilist.list,1)
+        fp = fullfile(ilist.list{i,2}, ilist.list{i,1});
+        copyfile(fp, dirs.temp);
+    end
+end
+
+% COPY *.DURA files
 if ~isempty(ls([dirs.temp,'*.dura']))
     delete([dirs.temp,'*.dura']) % Clear any message files in temp dir
 end
-if ~isempty(dlist)
-    if ~isempty(dlist.reg_list)
-        for i = 1:length(dlist.reg_list)
-            copyfile([dlist.reg_dir, dlist.reg_list{1,i}],dirs.temp);
-        end
+if ~isempty(dlist.list)
+    for i = 1:size(dlist.list,1)
+        fp = fullfile(dlist.list{i,2}, dlist.list{i,1});
+        copyfile(fp, dirs.temp);
     end
-    if ~isempty(dlist.alt_list)
-        for i = 1:length(dlist.alt_list)
-            copyfile([dlist.alt_dir, dlist.alt_list{1,i}],dirs.temp);
-        end
-    end
-    clear dlist i
 end
 
 % ************************************************************************
-% CHECK FOR WMO ID & DIR, IF NO WMO ID CREATE TEMPORARY
-% IF DIR NOT THERE MAKE IT,
+% CHECK FOR WMO ID & DIR, IF NO WMO ASSIGNED YET NOTIFY
+% IF WMO DIR NOT THERE MAKE IT,
 % IF UPDATE = ALL, CLEAR FILES
 % ************************************************************************
 % CHECK FOR WMO ID
 WMO  = cal.info.WMO_ID;
-if isempty(WMO) | isnan(WMO) %TM 8/16/20
-    disp(['NO WMO# FOUND FOR FLOAT! CREATING TEMPORARY ', ...
-        'DATA DIR FOR ', MBARI_ID_str])
-    WMO = ['NO_WMO_',cal.info.UW_ID]; % CREATE TEMPORARY WMO NAME
+
+if strncmp(WMO,'^NO_WMO',6) && cal.info.tf_bfile == 0
+    fprintf('WMO will never be assigned to %s\n', cal.info.name);
+elseif strncmp(WMO,'^NO_WMO',6)
+    fprintf('No WMO number assigned to %s yet\n', cal.info.name);
 end
 
+% if strncmp(WMO,'^NO_WMO',6) && cal.info.tf_bfile == 1
+%     fprintf('No WMO number assigned to %s yet\n', cal.info.name);
+% elseif strncmp(WMO,'^NO_WMO',6) && cal.info.tf_bfile == 0
+%     fprintf('WMO will never be assigned to %s\n', cal.info.name);
+% end
+
 % CHECK FOR EXISTING WMO DIR, CREATE IF NOT THERE
-if ~exist([dirs.mat,WMO,'\'],'dir')
+if exist([dirs.mat,WMO,'\'],'dir') ~= 7
     status = mkdir([dirs.mat,WMO,'\']);
     if status == 0
         disp(['Directory could not be created at: ', ...
@@ -533,11 +506,6 @@ end
 % ************************************************************************
 % PROCESS APEX MESSAGE FILES FOR GIVEN FLOAT
 % ************************************************************************
-if strcmp(float_type,'NAVIS')
-    disp(['Float ',cal.info.name, 'appears to be a NAVIS float.'])
-    disp('moving to next float')
-    return
-end
 
 % ***********************************************************************
 % GET DIR LIST AS STRUCTURE - THIS WILL BE USED TO SEND AN EMAIL OF
@@ -549,11 +517,24 @@ if rr > 0
     ct = 0;
     for m_ct = 1:rr
         tmp_cycle = str2double(regexp(mdir(m_ct).name,'\d+(?=\.msg)', ...
-                    'once','match')); % profile # from name
+            'once','match')); % profile # from name
+        %TM 3/2/21.  Why did we exclude the missing casts from the
+        %final reporting?  This is useful info for floats in
+        %catchup mode.  Not sure what the original reasoning was?
+        %Perhaps I'm missing something.  I think we want to modify
+        %this moving forward, but maybe still distinguish between
+        %the two (["new"] VS ["previously missing" or "catch-up"]).
         t1 = missing_casts == tmp_cycle;% missing or new? only add new
         if sum(t1) == 0
             ct = ct+1;
-            str = sprintf('%s\t%s\t%0.1f', mdir(m_ct).name, ...
+            str = sprintf('%s\t%s\t%s\t%s\t%0.1f','new     :', WMO, mdir(m_ct).name, ...
+                datestr(mdir(m_ct).datenum,'mm/dd/yy HH:MM'), ...
+                mdir(m_ct).bytes/1000);
+            new_msgs{ct} = str;
+            tf_float.status = 1;
+        else
+            ct = ct+1;
+            str = sprintf('%s\t%s\t%s\t%s\t%0.1f','catch-up:', WMO, mdir(m_ct).name, ...
                 datestr(mdir(m_ct).datenum,'mm/dd/yy HH:MM'), ...
                 mdir(m_ct).bytes/1000);
             new_msgs{ct} = str;
@@ -566,7 +547,6 @@ end
 
 % ***********************************************************************
 
-
 msg_list   = ls([dirs.temp,'*.msg']); % get list of file names to process
 
 lr_ind_chk = 0; % indice toggle - find indices once per float
@@ -578,7 +558,6 @@ master_FLBB = 0; % some floats (i.e.7558) change mode, start 1 , always 1
 BSL = dirs.BSL;
 
 disp(['Processing ARGO float ' cal.info.name, '.........'])
-
 for msg_ct = 1:size(msg_list,1)
     clear LR HR INFO
     msg_file = strtrim(msg_list(msg_ct,:));
@@ -587,71 +566,112 @@ for msg_ct = 1:size(msg_list,1)
     pH_file  = regexprep(msg_file,'msg','dura');
     % find block of numbers then look ahead to see if '.msg' follows
     cast_num = regexp(msg_file,'\d+(?=\.msg)','once','match');
-    %         if rem(msg_ct,30) ~= 0
-    %             fprintf('%s ',cast_num)
-    %         else
-    %             fprintf('\r\n')
-    %         end
     
     d = parse_APEXmsg4ARGO([dirs.temp,msg_file]);
     
+    %     % IF MSG FILE EXIST BUT NO LR DATA REMOVE FROM NEW LIST AND
+    %     % PUT IN BAD LIST
+    %     if isempty(d.lr_d) || size(d.lr_d,1)<=3
+    %         %         msg_size = size(msg_file,2);
+    %         %         t1 = strncmp(tf_float.new_messages, msg_file, msg_size);
+    %         Indext1 = strfind(tf_float.new_messages,msg_file);
+    %         t1 = find(not(cellfun('isempty',Indext1)));
+    %         if ~isempty(t1)
+    %             tf_float.bad_messages = [tf_float.bad_messages; ...
+    %                 tf_float.new_messages(t1)];
+    %             tf_float.new_messages(t1) =[];
+    %             tf_float.status = 0;
+    %         end
+    %     end
+    
     % IF MSG FILE EXIST BUT NO LR DATA REMOVE FROM NEW LIST AND
-    % PUT IN BAD LIST
-    if isempty(d.lr_d)
-        msg_size = size(msg_file,2);
-        t1 = strncmp(tf_float.new_messages, msg_file, msg_size);
-        if sum(t1>0)
-            tf_float.bad_messages = [tf_float.bad_messages; ...
-                tf_float.new_messages(t1)];
-            tf_float.new_messages(t1) =[];
-            tf_float.status = 0;
+    % PUT IN BAD LIST. IF NOTHING GOOD LEFT, EXIT
+    if isempty(d.lr_d) || size(d.lr_d,1)<=3
+        t1 = ~cellfun(@isempty,regexp(tf_float.new_messages, msg_file,'once'));
+        tf_float.bad_messages = [tf_float.bad_messages; ...
+            tf_float.new_messages(t1)];
+        tf_float.new_messages(t1) =[];
+        if isempty(tf_float.new_messages)
+            tf_float.status = 0; % NO VALID MESSAGES LEFT TO PROCESS
+            disp(['No complete float message files found to process', ...
+                'for float ',MBARI_ID_str]);
+            disp(['Last processed cast: ',sprintf('%03.0f',last_cast)])
+            return
         end
     end
     
     fileinfos = dir([dirs.temp,msg_file]);
     timestamps = fileinfos.date;
-	timediff = now-datenum(timestamps); % was using 'd.sdn', but for floats just coming up from under ice that doesn't make sense.
+    timediff = now-datenum(timestamps); % was using 'd.sdn', but for floats just coming up from under ice that doesn't make sense.
     %make sure all 3 files are present if float includes all 3 sensors,
     %otherwise, end processing for this cycle (but if msg file is > 20 days old, and still no isus or dura, then process as usual)
-%     timediff = 50; % for manual processing override.
-    %disp(['MBARI_ID_str ===>  ',MBARI_ID_str])
-    if (strcmp(MBARI_ID_str,'6091SOOCN')==1) || ...
-            (strcmp(MBARI_ID_str,'0569SOOCN')==1) || ...
-            (strcmp(MBARI_ID_str,'7622HAWAII')==1) || ...
-            (strcmp(MBARI_ID_str,'18340CalCurrent')==1)%these 4 will never have .isus files
+    %     timediff = 50; % for manual processing override.
+    
+    if regexp(MBARI_ID_str, bad_no3_filter, 'once') % EXCEPTIONS
+        disp([MBARI_ID_str,' Nitrate sensor failed from the start & ', ...
+            'never any isus files to  process'])
     else
+        %         exist([dirs.temp, NO3_file],'file')
+        %         isfield(cal,'N')
+        %         timediff
+        %         exist([dirs.temp, pH_file],'file')
+        %         isfield(cal,'pH')
+        %         pause
         if (exist([dirs.temp, NO3_file],'file')==0 && isfield(cal,'N') && ...
-                timediff<=20) || (exist([dirs.temp, pH_file],'file')==0 && ...
-                isfield(cal,'pH') && timediff<=20) 
+                timediff<=20)
             disp('*******************************************************')
-            disp(['WARNING: .isus OR .dura FILE IS MISSING FOR: ',msg_file])
+            disp(['WARNING: .isus FILE IS MISSING FOR: ',msg_file])
             disp(['PROCESSING HALTED FOR ',msg_file,' UNTIL ALL FILES ARE PRESENT.'])
             disp('*******************************************************')
-            msg_size = size(msg_file,2);
-            t1 = strncmp(tf_float.new_messages, msg_file, msg_size);
-            if sum(t1>0)
-                tf_float.new_messages(t1) ={[char(tf_float.new_messages(t1)),' waiting for .isus/.dura']}; %mark on list as in limbo
-            end       
+            %             msg_size = size(msg_file,2);
+            %             t1 = strncmp(tf_float.new_messages, msg_file, msg_size);
+            %             if sum(t1>0)
+            Indext1 = strfind(tf_float.new_messages,msg_file);
+            t1 = find(not(cellfun('isempty',Indext1)));
+            if ~isempty(t1)
+                tf_float.new_messages(t1) ={[char(tf_float.new_messages(t1)),' .isus lag']}; %mark on list as in limbo
+            end
+            continue
+        end
+        
+        if (exist([dirs.temp, pH_file],'file')==0 && ...
+                isfield(cal,'pH') && timediff<=20)
+            disp('*******************************************************')
+            disp(['WARNING: .dura FILE IS MISSING FOR: ',msg_file])
+            disp(['PROCESSING HALTED FOR ',msg_file,' UNTIL ALL FILES ARE PRESENT.'])
+            disp('*******************************************************')
+            %             msg_size = size(msg_file,2);
+            %             t1 = strncmp(tf_float.new_messages, msg_file, msg_size);
+            %             if sum(t1>0)
+            Indext1 = strfind(tf_float.new_messages,msg_file);
+            t1 = find(not(cellfun('isempty',Indext1)));
+            if ~isempty(t1)
+                tf_float.new_messages(t1) ={[char(tf_float.new_messages(t1)),' .dura lag']}; %mark on list as in limbo
+            end
+            
             continue
         end
     end
-	
-	if exist([dirs.temp,pH_file],'file')==1
-	    dura = parse_pHmsg([dirs.temp,pH_file]);
-		if dura.EOT~=1 && timediff<=20
-			disp('*******************************************************')
+    
+    if exist([dirs.temp,pH_file],'file')==1
+        dura = parse_pHmsg([dirs.temp,pH_file]);
+        if dura.EOT~=1 && timediff<=20
+            disp('*******************************************************')
             disp('WARNING: .dura FILE IS MISSING <EOT>')
             disp(['PROCESSING HALTED FOR ',msg_file,' UNTIL ALL FILES ARE PRESENT IN FULL.'])
             disp('*******************************************************')
-            msg_size = size(msg_file,2);
-            t1 = strncmp(tf_float.new_messages, msg_file, msg_size);
-            if sum(t1>0)
-                tf_float.new_messages(t1) ={[char(tf_float.new_messages(t1)),' waiting for complete .dura file']}; %mark on list as in limbo
-            end       
+            %             msg_size = size(msg_file,2);
+            %             t1 = strncmp(tf_float.new_messages, msg_file, msg_size);
+            %             if sum(t1>0)
+            Indext1 = strfind(tf_float.new_messages,msg_file);
+            t1 = find(not(cellfun('isempty',Indext1)));
+            if ~isempty(t1)
+                tf_float.new_messages(t1) ={[char(tf_float.new_messages(t1)),' .dura size']}; %mark on list as in limbo
+            end
             continue
-		end
-	end
-
+        end
+    end
+    
     % GATHER INFO FOR BUILDING ODV FILE LATER AND JUST TO MAKE LIFE
     % EASIER
     INFO.CpActivationP = d.CpActivationP;
@@ -659,16 +679,15 @@ for msg_ct = 1:size(msg_list,1)
     INFO.CTDtype  = d.CTDtype;
     INFO.CTDsn    = d.CTDsn;
     INFO.FlbbMode = d.FlbbMode;
-    if isfinite(INFO.FlbbMode)  && INFO.FlbbMode >0 
+    if isfinite(INFO.FlbbMode)  && INFO.FlbbMode >0
         master_FLBB = 1;
     end
     
     INFO.sdn      = d.sdn;
     
-    
     % CHECK FOR BAD GPS TIME 10/30/19 -jp
     % WE ARE GETTING TIME FROM PROFILE TERMINATION TIME NOT GPS FIX TIME!!!
-    if ~isempty(first_sdn) && ~isempty(INFO.sdn)  
+    if ~isempty(first_sdn) && ~isempty(INFO.sdn)
         if INFO.sdn > first_sdn + 365*20 && dvec(1) == 2099 % 20 yrs from start?
             disp(['GPS time for this profile is > 20 years past start ', ...
                 '- gps week day number bug?!!'])
@@ -682,11 +701,10 @@ for msg_ct = 1:size(msg_list,1)
             INFO.sdn = INFO.sdn + 1024*7;
         end
     end
-
     INFO.cast     = d.cast;
     INFO.gps      = d.gps;
     
-    INFO.UW_ID  = cal.info.UW_ID;
+    INFO.INST_ID  = cal.info.INST_ID;
     INFO.name   = cal.info.name;
     INFO.WMO_ID = cal.info.WMO_ID;
     INFO.float_type = float_type;
@@ -696,7 +714,7 @@ for msg_ct = 1:size(msg_list,1)
     % ****************************************************************
     % DEAL WITH LOW RESOLUTION DATA FIRST
     % ****************************************************************
-    if isempty(d.lr_d) || size(d.lr_d,1)<=3 % CHECK FOR DATA; sometimes incomplete msg files will come through with minimal LR data (ie 12633.127.msg). 
+    if isempty(d.lr_d) || size(d.lr_d,1)<=3 % CHECK FOR DATA; sometimes incomplete msg files will come through with minimal LR data (ie 12633.127.msg).
         disp(['No low res data in message file for ', ...
             strtrim(msg_list(msg_ct,:))])
         continue
@@ -737,14 +755,22 @@ for msg_ct = 1:size(msg_list,1)
             iPhase = [];
         end
         
+        
+        
         % GET FLOATVIZ DATA - REG AND QC & GET HR DATA TOO
         % WILL BE USED TO EXTRACT QF DATA FLAGS LATER
         % DATA IS BEING PULLED FROM SIROCCO
-        FVQC_flag = 1;
-        FV_data   = get_FloatViz_data(INFO.name);
-        FV_QCdata = get_FloatViz_data([INFO.name,'QC']);
-        FV_HRdata   = get_FloatViz_data([INFO.name,'_HR']);
-        FV_HRQCdata = get_FloatViz_data([INFO.name,'_HRQC']);
+        FVQC_flag   = 1;
+        %         mymockSirocco = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING_siroccoMock\DATA\FLOATVIZ\';
+        %         FV_data     = get_FloatViz_data([mymockSirocco,INFO.WMO_ID,'.TXT']);
+        %         FV_QCdata   = get_FloatViz_data([mymockSirocco,'QC\',INFO.WMO_ID,'QC.TXT']);
+        %         FV_HRdata   = get_FloatViz_data([mymockSirocco,'HR\',INFO.WMO_ID,'_HR.TXT']);
+        %         FV_HRQCdata = get_FloatViz_data([mymockSirocco,'HRQC\',INFO.WMO_ID,'_HRQC.TXT']);
+        FV_data     = get_FloatViz_data(INFO.WMO_ID);
+        FV_QCdata   = get_FloatViz_data([INFO.WMO_ID,'QC']);
+        FV_HRdata   = get_FloatViz_data([INFO.WMO_ID,'_HR']);
+        FV_HRQCdata = get_FloatViz_data([INFO.WMO_ID,'_HRQC']);
+        
         if isempty(FV_QCdata)
             FV_QCdata = FV_data;
             FV_HRQCdata = FV_HRdata;
@@ -761,7 +787,7 @@ for msg_ct = 1:size(msg_list,1)
     LR.PRES_QC          = fill0 + fv.QC;
     LR.PRES_ADJUSTED    = LR.PRES;
     LR.PRES_ADJUSTED_QC = fill0 + fv.QC;
-
+    
     LR.PSAL             = lr_d(:,iS);
     LR.PSAL_QC          = fill0 + fv.QC;
     LR.PSAL_ADJUSTED    = LR.PSAL;
@@ -775,13 +801,14 @@ for msg_ct = 1:size(msg_list,1)
     % CHECK FOR BAD PRESS VALUES
     LRQF_P = LR.PRES < RCR.P(1) | LR.PRES > RCR.P(2);
     LR.PRES_QC(LRQF_P)  = 4;  % BAD
-    LR.PRES_QC(~LRQF_P & LR.PRES ~= fv.bio) = 1; % GOOD    
+    LR.PRES_QC(~LRQF_P & LR.PRES ~= fv.bio) = 1; % GOOD
     
     LR.PRES_ADJUSTED_QC(LRQF_P)  = 4;  % BAD
-    LR.PRES_ADJUSTED_QC(~LRQF_P & LR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD     
+    LR.PRES_ADJUSTED_QC(~LRQF_P & LR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD
     
     % FIND BAD SALINITY & TEMP QF BECAUSE BAD S PERCOLATES TO
     % O, N and pH, density
+    % I don't think any change required to isbadsensor.m -JP 03/10/2021
     [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
     LRQF_S = LR.PSAL < RCR.S(1) | LR.PSAL > RCR.S(2);
     t_bio  = LR.PSAL ~= fv.bio;
@@ -793,7 +820,7 @@ for msg_ct = 1:size(msg_list,1)
     LR.PSAL_ADJUSTED_QC(~LRQF_S & LR.PSAL_ADJUSTED ~= fv.bio) = 1; % GOOD
     LR.PSAL_ADJUSTED_QC(t_bio) = LR.PSAL_ADJUSTED_QC(t_bio) * ...
         ~BSLflag + BSLflag*theflag;
-
+    
     [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
     LRQF_T  = LR.TEMP < RCR.T(1) | LR.TEMP > RCR.T(2);
     t_bio   = LR.TEMP ~= fv.bio;
@@ -859,7 +886,7 @@ for msg_ct = 1:size(msg_list,1)
         LR.DOXY(tDOXY) = crazy_val; % SET TO crazy bad value
         LR.DOXY_QC(~t_nan)      = 3;
         % JP: QC assignment below not needed - crazy value greater than range limits
-		%LR.DOXY_QC(tDOXY) = 4; % set crazy bad value QF to 4 
+        %LR.DOXY_QC(tDOXY) = 4; % set crazy bad value QF to 4
         LR.TEMP_DOXY(~t_nan)    = lr_d(~t_nan,iTo);
         LR.TEMP_DOXY_QC(~t_nan) = fv.QC;
         % Save O2sol, pO2?
@@ -867,7 +894,7 @@ for msg_ct = 1:size(msg_list,1)
         
         if isfield(QC,'O')
             % !! ONE TIME GAIN CORRECTION ONLY !!
-%             LR.DOXY_ADJUSTED(~t_nan)  = LR.DOXY(~t_nan) .* QC.O.steps(1,3);
+            %             LR.DOXY_ADJUSTED(~t_nan)  = LR.DOXY(~t_nan) .* QC.O.steps(1,3);
             QCD = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), LR.DOXY(~t_nan)];
             LR.DOXY_ADJUSTED(~t_nan) = ...
                 apply_QC_corr(QCD, INFO.sdn, QC.O);
@@ -875,11 +902,11 @@ for msg_ct = 1:size(msg_list,1)
             LR.DOXY_ADJUSTED(tDOXY_ADJ) = crazy_val; % SET TO crazy bad value
             LR.DOXY_ADJUSTED_QC(~t_nan) = 1; % set=1 9/27/16 vs 2 = probably good
             % JP: QC assignment below not needed - crazy value greater than range limits
-			%LR.DOXY_ADJUSTED_QC(tDOXY_ADJ) = 4; %set crazy val QF to bad
+            %LR.DOXY_ADJUSTED_QC(tDOXY_ADJ) = 4; %set crazy val QF to bad
             LR.DOXY_ADJUSTED_ERROR(~t_nan) = LR.DOXY_ADJUSTED(~t_nan) * 0.01;
             INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G';
             INFO.DOXY_SCI_CAL_COEF = ['G=', ...
-                num2str(QC.O.steps(3),'%0.4f')];
+                num2str(QC.O.steps(1,3),'%0.4f')];
             
             if isfield(cal.O,'SVUFoilCoef')
                 O2_cal_str = 'SVU Foil calibration coeficients were used. ';
@@ -930,15 +957,6 @@ for msg_ct = 1:size(msg_list,1)
         
         t_chk = t_chk & t_bio; % & not MVI either
         
-%         % TESTING
-%          if INFO.cast == 24
-%              BSLflag
-%              LR.PSAL_QC
-%              tST
-%              t_chk
-%              pause
-%          end
-        
         if isfield(LR,'BPHASE_DOXY')
             LR.BPHASE_DOXY_QC(t_bio) = LR.BPHASE_DOXY_QC(t_bio) * ...
                 ~BSLflag + BSLflag*theflag;
@@ -961,53 +979,60 @@ for msg_ct = 1:size(msg_list,1)
             t_chk = LR.DOXY_ADJUSTED < RC.O(1)| ...
                 LR.DOXY_ADJUSTED > RC.O(2) | O2_chk;
             t_chk = (t_chk | tST) & t_bio;
-
+            
             LR.DOXY_ADJUSTED_QC(t_bio) = LR.DOXY_ADJUSTED_QC(t_bio) * ...
                 ~BSLflag + BSLflag*theflag;
             LR.DOXY_ADJUSTED_QC(t_chk) = 4;
         end
         
-        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
+        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         % DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
         % (BAD).  BGC_spiketest screens for nans and fill values and pre-identified bad values.
         %
         % RUN TEST ON RAW DOXY
-		% however....if Arctic float, do not perform O2 spiketest (very large gradient near surface...does not work well in this region!)
-		if strcmp(MBARI_ID_str,'7596ARCTIC') ~=1 && strcmp(MBARI_ID_str,'7564ARCTIC') ~=1
-			QCscreen_O = LR.DOXY_QC == 4; % screen for BAD data already assigned.
-			[spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.DOXY],'O2',dirs.cal,fv.bio,QCscreen_O);
-			if ~isempty(spike_inds)
-				LR.DOXY_QC(spike_inds) = quality_flags;
-				disp(['LR.DOXY QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
-	%         else
-	%             disp(['NO LR.DOXY SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
-			end
-			%
-			% RUN TEST ON QC DOXY_ADJUSTED
-			QCscreen_Oadj = LR.DOXY_ADJUSTED_QC == 4; % screen for BAD data already assigned.
-			[spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.DOXY_ADJUSTED],'O2',dirs.cal,fv.bio,QCscreen_Oadj);
-			if ~isempty(spike_inds)
-				LR.DOXY_ADJUSTED_QC(spike_inds) = quality_flags;
-				disp(['LR.DOXY_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
-	%         else
-	%             disp(['NO LR.DOXY_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
-			end
-			% -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
-			clear QCscreen_O QCscreenOadj spike_inds quality_flags
-		end
+        % however....if Arctic float, do not perform O2 spiketest
+        %(very large gradient near surface...does not work well in this region!)
+        if regexp(MBARI_ID_str ,no_o2_spike,'once')
+            disp([MBARI_ID_str,' is on the no DOXY spike test list'])
+        else
+            QCscreen_O = LR.DOXY_QC == 4; % screen for BAD data already assigned.
+            [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str, ...
+                str2double(cast_num),[LR.PRES LR.DOXY],'O2',dirs.cal,fv.bio,QCscreen_O);
+            if ~isempty(spike_inds)
+                LR.DOXY_QC(spike_inds) = quality_flags;
+                disp(['LR.DOXY QUALITY FLAGS ADJUSTED FOR IDENTIFIED ', ...
+                    'SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+            end
+            %
+            % RUN TEST ON QC DOXY_ADJUSTED
+            QCscreen_Oadj = LR.DOXY_ADJUSTED_QC == 4; % screen for BAD data already assigned.
+            [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str, ...
+                str2double(cast_num),[LR.PRES LR.DOXY_ADJUSTED],'O2',...
+                dirs.cal,fv.bio,QCscreen_Oadj);
+            if ~isempty(spike_inds)
+                LR.DOXY_ADJUSTED_QC(spike_inds) = quality_flags;
+                disp(['LR.DOXY_ADJUSTED QUALITY FLAGS ADJUSTED FOR ', ...
+                    'IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+            end
+            % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
+            clear QCscreen_O QCscreenOadj spike_inds quality_flags
+        end
     end
     
-        % ****************************************************************
+    % ****************************************************************
     % CALCULATE CHLOROPHYLL CONCENTRATION (µg/L or mg/m^3)
     % ****************************************************************
-    if (~isempty(iChl) && master_FLBB ~= 0) || (~isempty(iChl) && (strcmp(MBARI_ID_str,'12542SOOCN')==1)) || (~isempty(iChl) && (strcmp(MBARI_ID_str,'18169SOOCN')==1))
-        % 5/11/20, add exception for 12542, flbb dying and sampling turned
-        % off by Dana Swift on cycle 117.  But, still need to create BR file
-        % fields as this float has an flbb sensor so these variables should
-        % be present.  Not sure why master_FLBB variable part of the
-        % statement, seems having just ~istempty(iChl) would suffice?  Add
-        % special case for this float for now.
-        %disp(INFO.FlbbMode)
+    
+    if (~isempty(iChl) && master_FLBB ~= 0) || ...
+            (~isempty(iChl) && ~isempty(regexp(MBARI_ID_str, bad_chl_filter,'once')))
+        
+        % Not sure why master_FLBB variable part of the statement, seems having
+        % just ~istempty(iChl) would suffice?
+        % JP 03/10/20201 - There are a handful of earlier floats where the msg
+        % file header indicates that an FLBB exists but there isn't one on the
+        % float. For these floats the FLBB_mode = 0 from the start maybe there
+        % is a better way...
+        
         % Predim variables with fill values then adjust as needed
         LR.FLUORESCENCE_CHLA    = fill0 + fv.bio;
         LR.FLUORESCENCE_CHLA_QC = fill0 + fv.QC;
@@ -1020,7 +1045,7 @@ for msg_ct = 1:size(msg_list,1)
         INFO.CHLA_SCI_CAL_COEF  = 'not applicable';
         INFO.CHLA_SCI_CAL_COM   = 'not applicable';
         INFO.CHLA_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
-
+        
         t_nan = isnan(lr_d(:,iChl)); % NaN's in data if any
         
         LR.FLUORESCENCE_CHLA(~t_nan)    = lr_d(~t_nan,iChl);
@@ -1036,11 +1061,12 @@ for msg_ct = 1:size(msg_list,1)
             
             % 1st CHECK FOR IN SITU DARKS & TRY AND GET THEM IF NOT THERE
             if ~isfield(cal.CHL, 'SWDC')
-                SWDC = get_CHLdark(MBARI_ID_str, dirs, 5); % 1st 5 good profiles
+                %SWDC = get_CHLdark(MBARI_ID_str, dirs, 5); % 1st 5 good profiles
+                SWDC = get_CHLdark(cal.info, dirs, 5); % 1st 5 good profiles
                 if ~isempty(SWDC)
                     cal.CHL.SWDC = SWDC; % add structure to cal file
-                    save(float_cal_path,'cal') % update cal file
-                    disp(['Cal file updated: ',float_cal_path]);
+                    save(fp_cal,'cal') % update cal file
+                    disp(['Cal file updated: ',fp_cal]);
                 end
             end
             
@@ -1052,17 +1078,16 @@ for msg_ct = 1:size(msg_list,1)
                 CHL_DC = cal.CHL.ChlDC; % NO IN SITU DARKS YET OR EVER
             end
             
-            
             LR.CHLA_ADJUSTED(~t_nan) = (lr_d(~t_nan,iChl) - ...
                 CHL_DC) .* cal.CHL.ChlScale ./ 2;
             LR.CHLA_ADJUSTED_QC(~t_nan) =  2;
             % NPQ NEXT
             NPQ_CHL = LR.CHLA_ADJUSTED;
             NPQ_CHL(t_nan) = NaN; % fill back to NaN
-%                 NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
-%                 %INFO.gps now includes sdn, TM 10/27/20
-                NPQ = get_NPQcorr(nanmean(INFO.gps,1), ...
-                    [lr_d(:,[iP,iT,iS]),NPQ_CHL], dirs);
+            %                 NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
+            %                 %INFO.gps now includes sdn, TM 10/27/20
+            NPQ = get_NPQcorr(nanmean(INFO.gps,1), ...
+                [lr_d(:,[iP,iT,iS]),NPQ_CHL], dirs);
             NPQ.data(t_nan,2:end) = fv.bio; % nan back to fill
             
             if ~isempty(NPQ.data)
@@ -1074,18 +1099,6 @@ for msg_ct = 1:size(msg_list,1)
                     NPQ.data(tNPQ & ~t_nan,iSPIKE);
                 LR.CHLA_ADJUSTED_QC(tNPQ & ~t_nan) =  5;
                 
-%                 figure(10) % TESTING
-%                 plot(NPQ.data(:,2),NPQ.data(:,1),'go-','MarkerFaceColor','g')
-%                 hold on
-%                 plot(LR.CHLA_ADJUSTED,NPQ.data(:,1),'b*-', ...
-%                     NPQ.data(tNPQ,iXing)+NPQ.data(tNPQ,iSPIKE),NPQ.data(tNPQ,1),'ko-', ...
-%                     NPQ.data(:,3),NPQ.data(:,1),'r-')
-%                 plot(xlim,xlim*0+NPQ.XMLDZ,'y','LineWidth',2)
-%                 set(gca,'Ydir','reverse','Ylim',[0 100])
-%                 legend('SWDC & *0.5', 'Corrected', 'Xing + spike', ...
-%                     '3pt median','NPQ start')
-%                 hold off
-%                 pause
             end
             LR.CHLA_ADJUSTED_ERROR(~t_nan) = ...
                 abs(LR.CHLA_ADJUSTED(~t_nan) * 2);
@@ -1121,13 +1134,14 @@ for msg_ct = 1:size(msg_list,1)
             end
         end
     end
-
+    
     % ****************************************************************
     % CALCULATE PARTICLE BACKSCATTER COEFFICIENT FROM VOLUME
     % SCATTERING FUNCTION (VSF) (m^-1)
     % APEX FLBB
     % ****************************************************************
-    if (~isempty(iBb) && master_FLBB ~= 0) || (~isempty(iBb) && (strcmp(MBARI_ID_str,'12542SOOCN')==1)) || (~isempty(iChl) && (strcmp(MBARI_ID_str,'18169SOOCN')==1))
+    if (~isempty(iBb) && master_FLBB ~= 0) || ....
+            (~isempty(iBb) && ~isempty(regexp(MBARI_ID_str, bad_chl_filter,'once')))
         %     if ~isempty(iBb) && master_FLBB ~= 0
         VSF                          = fill0 + fv.bio;
         BETA_SW                      = fill0 + fv.bio;
@@ -1250,7 +1264,7 @@ for msg_ct = 1:size(msg_list,1)
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'CDOM');
         t_bio = LR.CDOM ~= fv.bio;
         LR.FLUORESCENCE_CDOM_QC(t_bio) = FLUORESCENCE_CDOM_QC(t_bio) ...
-            * ~BSLflag + BSLflag*theflag;        
+            * ~BSLflag + BSLflag*theflag;
         LR.CDOM_QC(t_bio) = LR.CDOM_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         
         t_chk = t_bio & (LR.CDOM < RCR.CDOM(1)|LR.CDOM > RCR.CDOM(2));
@@ -1265,6 +1279,7 @@ for msg_ct = 1:size(msg_list,1)
         LR.CDOM_ADJUSTED_QC(t_chk) = 4;
         
     end
+    
     
     % ****************************************************************
     % CALCULATE pH (µmol / kg scale)
@@ -1307,7 +1322,7 @@ for msg_ct = 1:size(msg_list,1)
             LR.PH_IN_SITU_TOTAL(LR_inf)    = 20.1; %UNREAL #
             LR.PH_IN_SITU_TOTAL_QC(LR_inf) = 4;
         else % data returned  but no cal
-            disp(['pH data exists but no cal file for ',UW_ID_str])
+            disp(['pH data exists but no cal file for ',INST_ID_str])
         end
         
         % GET  DATA FROM *.dura SO I CAN GRAB Ib & Ik
@@ -1315,7 +1330,7 @@ for msg_ct = 1:size(msg_list,1)
         myINFO = dir([dirs.temp,pH_file]);
         if ~isempty(myINFO)
             ph_filesize = myINFO.bytes;
-        else 
+        else
             ph_filesize = 0;
         end
         if (isempty(dura.data) || ph_filesize< 10000) % usually > 10 Kb for full profile
@@ -1393,10 +1408,10 @@ for msg_ct = 1:size(msg_list,1)
             %                     LR.PH_IN_SITU_TOTAL_ADJUSTED(~t_nan) - 0.0167;
             
             % FIX 9660 04/02/18 -jp
-            if strcmpi(MBARI_ID_str, '9660SOOCN')
+            if strcmpi(MBARI_ID_str, 'ua9660')
                 % pH sensor is not in pumped flow stream. Sensor is exposed to
                 % ambient light. Use Ib to correct for light sensitivity
-                %d(pH)/d(iB), daylight, <50m, Model I R*R > 0.8, = 1.488e6 
+                %d(pH)/d(iB), daylight, <50m, Model I R*R > 0.8, = 1.488e6
                 gps9660 = mean(INFO.gps,1);
                 [~,El] = SolarAzElq(gps9660(1), gps9660(3),gps9660(2), 0);% sdn lat lon al
                 if El > 0
@@ -1409,60 +1424,61 @@ for msg_ct = 1:size(msg_list,1)
                     LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_nan & dz1) = 2;
                     clear dz1 dz2 IBo gps9660
                 end
-            end    
+            end
         end
         
-%         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-%         % RAW DATA
-%         %tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect pH
-%         tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4; 
-%         t_bio   = LR.PH_IN_SITU_TOTAL ~= fv.bio;        
-%         
-%         t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
-%                  LR.PH_IN_SITU_TOTAL > RCR.PH(2) | tST); % RANGE
-%         t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
-%             & (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2) | ...
-%             IK < RCR.IK(1) | IK > RCR.IK(2)); % DIAGNOSTIC
-%         %t_chk3 = t_bio & (LRQF_S | LRQF_T);
-%         t_chk4 = LR.VRS_PH ~= fv.bio &  (LR.VRS_PH < RCR.PHV(1) | ...
-%             LR.VRS_PH > RCR.PHV(2));
-%         t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio  ...
-%             & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
-%             IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
-% 
-%         %LR.PH_IN_SITU_TOTAL_QC(t_chk1 | t_chk2 | t_chk3) = 4;
-%         LR.PH_IN_SITU_TOTAL_QC(t_chk2) = 3; % set pH with out of range Ik/Ib to questionable, unless pH is also out of range (then set to bad)
-%         LR.PH_IN_SITU_TOTAL_QC(t_chk5) = 4;
-% 		LR.PH_IN_SITU_TOTAL_QC(t_chk1) = 4;
-%         LR.VRS_PH_QC(t_chk4) = 4;
-%         LR.IB_PH_QC(t_chk2)  = 3;
-%         LR.IB_PH_QC(t_chk5)  = 4;        
-%         
-% 		[BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
-%         LR.VRS_PH_QC(t_bio) = LR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-%         LR.IB_PH_QC(t_bio)  = LR.IB_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-%         LR.PH_IN_SITU_FREE_QC(t_bio) = LR.PH_IN_SITU_FREE_QC(t_bio) ...
-%             * ~BSLflag + BSLflag*theflag;
-%         LR.PH_IN_SITU_TOTAL_QC(t_bio) = LR.PH_IN_SITU_TOTAL_QC(t_bio) ...
-%             * ~BSLflag + BSLflag*theflag;
+        %         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
+        %         % RAW DATA
+        %         %tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect pH
+        %         tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4;
+        %         t_bio   = LR.PH_IN_SITU_TOTAL ~= fv.bio;
+        %
+        %         t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
+        %                  LR.PH_IN_SITU_TOTAL > RCR.PH(2) | tST); % RANGE
+        %         t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
+        %             & (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2) | ...
+        %             IK < RCR.IK(1) | IK > RCR.IK(2)); % DIAGNOSTIC
+        %         %t_chk3 = t_bio & (LRQF_S | LRQF_T);
+        %         t_chk4 = LR.VRS_PH ~= fv.bio &  (LR.VRS_PH < RCR.PHV(1) | ...
+        %             LR.VRS_PH > RCR.PHV(2));
+        %         t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio  ...
+        %             & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
+        %             IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
+        %
+        %         %LR.PH_IN_SITU_TOTAL_QC(t_chk1 | t_chk2 | t_chk3) = 4;
+        %         LR.PH_IN_SITU_TOTAL_QC(t_chk2) = 3; % set pH with out of range Ik/Ib to questionable, unless pH is also out of range (then set to bad)
+        %         LR.PH_IN_SITU_TOTAL_QC(t_chk5) = 4;
+        % 		LR.PH_IN_SITU_TOTAL_QC(t_chk1) = 4;
+        %         LR.VRS_PH_QC(t_chk4) = 4;
+        %         LR.IB_PH_QC(t_chk2)  = 3;
+        %         LR.IB_PH_QC(t_chk5)  = 4;
+        %
+        % 		[BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
+        %         LR.VRS_PH_QC(t_bio) = LR.VRS_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        %         LR.IB_PH_QC(t_bio)  = LR.IB_PH_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        %         LR.PH_IN_SITU_FREE_QC(t_bio) = LR.PH_IN_SITU_FREE_QC(t_bio) ...
+        %             * ~BSLflag + BSLflag*theflag;
+        %         LR.PH_IN_SITU_TOTAL_QC(t_bio) = LR.PH_IN_SITU_TOTAL_QC(t_bio) ...
+        %             * ~BSLflag + BSLflag*theflag;
         
-       
+        
         % DO A FINAL QC CHECK
         % 04/07/2020 JP - Now that the BSL flag can be 3 or 4 it has the
         % potential to overwrite a 4 with a 3 so don't let this happen
         t_bio = LR.PH_IN_SITU_TOTAL ~= fv.bio;
         
-        %6/11/20 TM need this incase no diagnostic data, 0 if no data.  
-        % added the ".*1e9" to this line.  It was lacking in Josh's update 
-        % from 4/7/20 and causing erroneous flagging for certain cases, ie 
+        %6/11/20 TM need this incase no diagnostic data, 0 if no data.
+        % added the ".*1e9" to this line.  It was lacking in Josh's update
+        % from 4/7/20 and causing erroneous flagging for certain cases, ie
         % float 9634 surface samples of cycles 67 and 97.
-        %t_diag = LR.IB_PH ~= fv.bio.*1e9; 
+        %t_diag = LR.IB_PH ~= fv.bio.*1e9;
         
         % JP 12/17/20 slight modification to TM's fix. If the dura file is
         % too small no Ib & Ik tests happen & LR.IB_PH, LR.IK_PH is never
         % reassigned so you need to check for fv.bio*1e9 & fv.bio as fill
         % values
         t_diag = ~(LR.IB_PH == fv.bio.*1e9 | LR.IB_PH == fv.bio); % JP 12/17/20
+        
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
         tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
         tSTP  = (LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4)*4; % Bad STP will affect nitrate
@@ -1472,93 +1488,95 @@ for msg_ct = 1:size(msg_list,1)
         tIK3  = (IK < RCR.IK(1) | IK > RCR.IK(2)).*t_diag*3; % DIAGNOSTIC
         tIB4  = (LR.IB_PH < RCR.IB(1)*25 | LR.IB_PH > RCR.IB(2)*25).*t_diag*4; % DIAGNOSTIC
         tIK4  = (IK < RCR.IK(1)*25 | IK > RCR.IK(2)*25).*t_diag*4; % DIAGNOSTIC
-		
-		% 09/30/20 TM - EXCLUSION BLOCK FOR NEWER EQPAC FLOATS EXHIBITING THE ERRONEOUS RAILED DIAG VALUES
-		if strcmp(MBARI_ID_str,'17534EqPacE') == 1 || strcmp(MBARI_ID_str,'18601EqPacE')==1 || strcmp(MBARI_ID_str,'18114EqPacE')==1 || strcmp(MBARI_ID_str,'17350EqPacE')==1
-		%keep syntax the same to ensure proper function!  Set flags in this block to 0 (always good)
-			disp('Excluding float from pH sensor diagnostic checks (erroneous railed values!)!')
-		    tIB3  = (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2)).*t_diag*0; % DIAGNOSTIC
-			tIK3  = (IK < RCR.IK(1) | IK > RCR.IK(2)).*t_diag*0; % DIAGNOSTIC
-			tIB4  = (LR.IB_PH < RCR.IB(1)*25 | LR.IB_PH > RCR.IB(2)*25).*t_diag*0; % DIAGNOSTIC
-			tIK4  = (IK < RCR.IK(1)*25 | IK > RCR.IK(2)*25).*t_diag*0; % DIAGNOSTIC
-		end
-		   
+        
+        % 09/30/20 TM - EXCLUSION BLOCK FOR NEWER EQPAC FLOATS EXHIBITING
+        % THE ERRONEOUS RAILED DIAG VALUES
+        if regexp(MBARI_ID_str, skip_ph_diag, 'once')
+            % keep syntax the same to ensure proper function!
+            % Set flags in this block to 0 (always good)
+            disp('Excluding float from pH sensor diagnostic checks (erroneous railed values!)!')
+            tIB3  = (LR.IB_PH < RCR.IB(1) | LR.IB_PH > RCR.IB(2)).*t_diag*0; % DIAGNOSTIC
+            tIK3  = (IK < RCR.IK(1) | IK > RCR.IK(2)).*t_diag*0; % DIAGNOSTIC
+            tIB4  = (LR.IB_PH < RCR.IB(1)*25 | LR.IB_PH > RCR.IB(2)*25).*t_diag*0; % DIAGNOSTIC
+            tIK4  = (IK < RCR.IK(1)*25 | IK > RCR.IK(2)*25).*t_diag*0; % DIAGNOSTIC
+        end
+        
         tALL  = max([LR.PH_IN_SITU_TOTAL_QC, tBSL, tSTP, tRC, ...
             tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
         LR.PH_IN_SITU_TOTAL_QC(t_bio) = tALL(t_bio);
         LR.PH_IN_SITU_FREE_QC(t_bio)  = tALL(t_bio);
         
-        tALL  = max([LR.VRS_PH_QC, tBSL, tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag           
+        tALL  = max([LR.VRS_PH_QC, tBSL, tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
         LR.VRS_PH_QC(t_bio) = tALL(t_bio);
-
-        tALL  = max([LR.IB_PH_QC, tBSL, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag       
+        
+        tALL  = max([LR.IB_PH_QC, tBSL, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
         LR.IB_PH_QC(t_bio)  = tALL(t_bio);
-
-       
-		
-%         % *****   ADJUSTED DATA   *****
-%         t_bio = LR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
-%         %tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
-%         tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 |...
-%                   LR.PRES_ADJUSTED_QC == 4; 
-%         
-%         t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
-%             LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST); 
-%         t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio & ...
-%             (LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2) | ...
-%             IK < RC.IK(1) | IK > RC.IK(2));
-%         %t_chk3 = t_bio & (LRQF_S | LRQF_T);
-%         t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
-%             & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
-%             IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
-%         
-%         %LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk1 | t_chk2 |t_chk3) = 4;
-%         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk2) = 3;  % set pH with out of range Ik/Ib to questionable, unless pH is also out of range (then set to bad)
-% 		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk5) = 4;
-%         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk1) = 4;
-% 		
-% 		% double check fill value QC flags - 9634 returns fv's from
-% 		qc_adjustmet   
-% 		% due to bad gps date bug - jp 10/04/19
-% 		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_bio)  = fv.QC;
-%  
-% 		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) =  ...
-%             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        
+        
+        %         % *****   ADJUSTED DATA   *****
+        %         t_bio = LR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
+        %         %tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect pH
+        %         tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 |...
+        %                   LR.PRES_ADJUSTED_QC == 4;
+        %
+        %         t_chk1 = t_bio & (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
+        %             LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST);
+        %         t_chk2 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio & ...
+        %             (LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2) | ...
+        %             IK < RC.IK(1) | IK > RC.IK(2));
+        %         %t_chk3 = t_bio & (LRQF_S | LRQF_T);
+        %         t_chk5 = t_bio & LR.IB_PH ~= fv.bio.*1e9 & LR.IB_PH ~= fv.bio ...
+        %             & (LR.IB_PH < RCR.IB(1).*25 | LR.IB_PH > RCR.IB(2).*25 | ...
+        %             IK < RCR.IK(1).*25 | IK > RCR.IK(2).*25); % DIAGNOSTIC
+        %
+        %         %LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk1 | t_chk2 |t_chk3) = 4;
+        %         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk2) = 3;  % set pH with out of range Ik/Ib to questionable, unless pH is also out of range (then set to bad)
+        % 		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk5) = 4;
+        %         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk1) = 4;
+        %
+        % 		% double check fill value QC flags - 9634 returns fv's from
+        % 		qc_adjustmet
+        % 		% due to bad gps date bug - jp 10/04/19
+        % 		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_bio)  = fv.QC;
+        %
+        % 		LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) =  ...
+        %             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         
         
         % 04/07/2020 JP - Now that the BSL flag can be 3 or 4 it has the
         % potential to overwrite a 4 with a 3 so don't let this happen
-        t_bio = LR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;  
+        t_bio = LR.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
         tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
         tSTP  = (LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | ....
-                LR.PRES_ADJUSTED_QC == 4)*4; % Bad STP will affect nitrate
+            LR.PRES_ADJUSTED_QC == 4)*4; % Bad STP will affect nitrate
         tRC   = (LR.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1) | ...
-                LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2))*4; % Range check
+            LR.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2))*4; % Range check
         tVRS  = (LR.VRS_PH < RC.PHV(1) | LR.VRS_PH > RC.PHV(2))*4;
-
+        
         % double check fill value QC flags - 9634 returns fv's from qc_adjustmet
-		% due to bad gps date bug - jp 10/04/19
+        % due to bad gps date bug - jp 10/04/19
         LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_bio)  = fv.QC;
         
-         tALL  = max([LR.PH_IN_SITU_TOTAL_ADJUSTED_QC, tBSL, tSTP, tRC, ...
-                 tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
-        LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) = tALL(t_bio);               
-			
-					% 09/30/20 TM - EXCLUSION BLOCK FOR NEWER EQPAC FLOATS EXHIBITING THE ERRONEOUS RAILED DIAG VALUES
-		if strcmp(MBARI_ID_str,'17534EqPacE') ~= 1 && strcmp(MBARI_ID_str,'18601EqPacE') ~=1 && strcmp(MBARI_ID_str,'18114EqPacE')~=1
-        if ~isempty(dura.data) && ph_filesize> 10000 && ... % usually > 10000 bytes for full profile...
-                any(LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2))
-            disp([pH_file,' has out of range pH Ib values. pH ', ...
-                'QF''s for these samples will be set to bad or questionable'])
-        end
-        if ~isempty(dura.data) && ph_filesize> 10000 && ... % usually > 10000 bytes for full profile...
-                any(IK < RC.IK(1) | IK > RC.IK(2))
-            disp([pH_file,' has out of range pH Ik values. pH ', ...
-                'QF''s for these samples will be set to bad or questionable'])
-        end
-		end
+        tALL  = max([LR.PH_IN_SITU_TOTAL_ADJUSTED_QC, tBSL, tSTP, tRC, ...
+            tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
+        LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) = tALL(t_bio);
         
-        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
+        % 09/30/20 TM - EXCLUSION BLOCK FOR NEWER EQPAC FLOATS EXHIBITING
+        % THE ERRONEOUS RAILED DIAG VALUES
+        if regexp(MBARI_ID_str, skip_ph_diag, 'once')
+            if ~isempty(dura.data) && ph_filesize> 10000 && ... % usually > 10000 bytes for full profile...
+                    any(LR.IB_PH < RC.IB(1) | LR.IB_PH > RC.IB(2))
+                disp([pH_file,' has out of range pH Ib values. pH ', ...
+                    'QF''s for these samples will be set to bad or questionable'])
+            end
+            if ~isempty(dura.data) && ph_filesize> 10000 && ... % usually > 10000 bytes for full profile...
+                    any(IK < RC.IK(1) | IK > RC.IK(2))
+                disp([pH_file,' has out of range pH Ik values. pH ', ...
+                    'QF''s for these samples will be set to bad or questionable'])
+            end
+        end
+        
+        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         % FINALLY DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
         % (BAD).  BGC_spiketest screens for nans and fill values.
         %
@@ -1575,8 +1593,8 @@ for msg_ct = 1:size(msg_list,1)
             %LR.PH_INSITU_FREE_QC(spike_inds(spikeQF)) = quality_flags(spikeQF);
             LR.PH_IN_SITU_TOTAL_QC(spike_inds) = quality_flags;
             disp(['LR.PH_IN_SITU_TOTAL QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
-%         else
-%             disp(['NO LR.PH_IN_SITU_TOTAL SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+            %         else
+            %             disp(['NO LR.PH_IN_SITU_TOTAL SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
         end
         %
         % RUN TEST ON QC PH_IN_SITU_TOTAL_ADJUSTED
@@ -1585,13 +1603,15 @@ for msg_ct = 1:size(msg_list,1)
         if ~isempty(spike_inds)
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(spike_inds) = quality_flags;
             disp(['LR.PH_IN_SITU_TOTAL_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
-%         else
-%             disp(['NO LR.PH_IN_SITU_TOTAL_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+            %         else
+            %             disp(['NO LR.PH_IN_SITU_TOTAL_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
         end
-        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
-
+        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
+        
         clear phfree phtot QCD dura t_chk1 t_chk2 t_chk3 QCscreen_phF QCscreen_phT QCscreen_phTadj QCscreen_O QCscreenOadj spike_inds quality_flags
-
+        
+        %if INFO.cast == 30,pause,end % TESTING
+        
     end
     
     % ****************************************************************
@@ -1729,7 +1749,7 @@ for msg_ct = 1:size(msg_list,1)
                 LR.NITRATE_ADJUSTED_ERROR = (abs(LR.NITRATE - ...
                     LR.NITRATE_ADJUSTED)) * 0.1 + 0.5;
                 LR.NITRATE_ADJUSTED_ERROR(t_nan) = fv.bio;
-               
+                
                 
                 INFO.NITRATE_SCI_CAL_EQU  = ['NITRATE_ADJUSTED=', ...
                     '[NITRATE-SUM(OFFSET(S)+DRIFT(S))]/GAIN'];
@@ -1744,20 +1764,20 @@ for msg_ct = 1:size(msg_list,1)
             clear QCD UV_INTEN
         end
         
-%         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
-%         % RAW
-%         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'N');
-%         t_bio   = LR.NITRATE ~= fv.bio;
-%         %tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect nitrate
-%         tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4; % Bad STP will affect nitrate
-%         LR.NITRATE_QC(t_bio) = LR.NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-%         LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) = ...
-%             LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-%         
-%         t_chk1 = t_bio &(LR.NITRATE < RCR.NO3(1)| LR.NITRATE > RCR.NO3(2)); % RANGE
-%         t_chk2 = t_bio & tST; % SALT
-%         LR.NITRATE_QC(t_chk1 | t_chk2) = 4;
-%         LR.UV_INTENSITY_DARK_NITRATE_QC(t_chk1)  = 4;
+        %         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
+        %         % RAW
+        %         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'N');
+        %         t_bio   = LR.NITRATE ~= fv.bio;
+        %         %tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4; % Bad S or T will affect nitrate
+        %         tST     = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4; % Bad STP will affect nitrate
+        %         LR.NITRATE_QC(t_bio) = LR.NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        %         LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) = ...
+        %             LR.UV_INTENSITY_DARK_NITRATE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        %
+        %         t_chk1 = t_bio &(LR.NITRATE < RCR.NO3(1)| LR.NITRATE > RCR.NO3(2)); % RANGE
+        %         t_chk2 = t_bio & tST; % SALT
+        %         LR.NITRATE_QC(t_chk1 | t_chk2) = 4;
+        %         LR.UV_INTENSITY_DARK_NITRATE_QC(t_chk1)  = 4;
         
         % DO A FINAL RANGE CHECK BASED ON BSL & OTHER DEPENDANT PARAMETERS
         % MODIFIED 04/07/2020 BY JP BECAUSE BSL FLAG OF 3 COULD OVERWRITE A 4
@@ -1776,32 +1796,32 @@ for msg_ct = 1:size(msg_list,1)
         
         
         % *****  ADJUSTED  *****
-%         t_bio   = LR.NITRATE_ADJUSTED ~= fv.bio;
-%         %tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect nitrate
-%         tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | ...
-%                   LR.PRES_ADJUSTED_QC == 4;         
-%         LR.NITRATE_ADJUSTED_QC(t_bio) = LR.NITRATE_ADJUSTED_QC(t_bio) ...
-%             * ~BSLflag + BSLflag*theflag;
-%         
-%         t_chk1 = t_bio & (LR.NITRATE_ADJUSTED < RC.NO3(1)| ...
-%                  LR.NITRATE_ADJUSTED > RC.NO3(2));
-%         t_chk2 = t_bio & tST;
-%         LR.NITRATE_ADJUSTED_QC(t_chk1 | t_chk2) = 4;
+        %         t_bio   = LR.NITRATE_ADJUSTED ~= fv.bio;
+        %         %tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4; % Bad S or T will affect nitrate
+        %         tST     = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | ...
+        %                   LR.PRES_ADJUSTED_QC == 4;
+        %         LR.NITRATE_ADJUSTED_QC(t_bio) = LR.NITRATE_ADJUSTED_QC(t_bio) ...
+        %             * ~BSLflag + BSLflag*theflag;
+        %
+        %         t_chk1 = t_bio & (LR.NITRATE_ADJUSTED < RC.NO3(1)| ...
+        %                  LR.NITRATE_ADJUSTED > RC.NO3(2));
+        %         t_chk2 = t_bio & tST;
+        %         LR.NITRATE_ADJUSTED_QC(t_chk1 | t_chk2) = 4;
         
         t_bio = LR.NITRATE_ADJUSTED ~= fv.bio;
         tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
         tSTP  = (LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | ...
-                  LR.PRES_ADJUSTED_QC == 4)*4; 
+            LR.PRES_ADJUSTED_QC == 4)*4;
         tRC   = (LR.NITRATE_ADJUSTED < RC.NO3(1)| LR.NITRATE_ADJUSTED > RC.NO3(2))*4;
         
         tALL  = max([LR.NITRATE_ADJUSTED_QC, tBSL, tSTP, tRC],[],2); % get highest flag
         LR.NITRATE_ADJUSTED_QC(t_bio) = tALL(t_bio);
-              
+        
         % double check fill value QC flags - 9634 returns fv's from qc_adjustmet
         % due to bad gps date bug - jp 10/04/19
         LR.NITRATE_ADJUSTED_QC(~t_bio)  = fv.QC;
         
-% -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
+        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         % DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
         % (BAD).  BGC_spiketest screens for nans and fill values.
         %
@@ -1811,8 +1831,8 @@ for msg_ct = 1:size(msg_list,1)
         if ~isempty(spike_inds)
             LR.NITRATE_QC(spike_inds) = quality_flags;
             disp(['LR.NITRATE QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
-%         else
-%             disp(['NO LR.NITRATE SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+            %         else
+            %             disp(['NO LR.NITRATE SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
         end
         %
         % RUN TEST ON QC NITRATE_ADJUSTED
@@ -1821,12 +1841,13 @@ for msg_ct = 1:size(msg_list,1)
         if ~isempty(spike_inds)
             LR.NITRATE_ADJUSTED_QC(spike_inds) = quality_flags;
             disp(['LR.NITRATE_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
-%         else
-%             disp(['NO LR.NITRATE_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
+            %         else
+            %             disp(['NO LR.NITRATE_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
         end
-% -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-  
+        % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         clear tchk tABS08 tABS11 NO3 QCscreen_N QCscreen_Nadj spike_inds quality_flags
     end
+    
     
     % ********************************************************************
     % INCORPORATE QUALITY FLAGS FROM EXISTING ODV FILES IF THEY ARE GREATER
@@ -1969,7 +1990,7 @@ for msg_ct = 1:size(msg_list,1)
         disp(['No high res data in message file for ', ...
             strtrim(msg_list(msg_ct,:))])
         HR.PRES = [];
-		HR.PRES_ADJUSTED = [];
+        HR.PRES_ADJUSTED = [];
         HR.PSAL = [];
         HR.PSAL_ADJUSTED = [];
         HR.TEMP = [];
@@ -2142,13 +2163,13 @@ for msg_ct = 1:size(msg_list,1)
     
     %-----------------------------------------------------------
     % Add LR.parameter_DATA_MODE for each parameter.  12/21/17
-
-%     cycdate = INFO.sdn;
+    
+    %     cycdate = INFO.sdn;
     cycdate = datenum(timestamps); %use date when file came in, not internal cycle date
-
+    
     % OXYGEN
-    if isfield(cal,'O') 
-    XEMPT_O = find(LR.DOXY ~= 99999,1); % if empty, then cycle has no data
+    if isfield(cal,'O')
+        XEMPT_O = find(LR.DOXY ~= 99999,1); % if empty, then cycle has no data
         if isempty(QC) || isempty(XEMPT_O) % no adjustments have been made yet, or all data is 99999
             INFO.DOXY_DATA_MODE = 'R';
         elseif ~isempty(QC) && isfield(QC,'O')
@@ -2160,7 +2181,7 @@ for msg_ct = 1:size(msg_list,1)
         end
     end
     % NITRATE
-    if isfield(cal,'N') 
+    if isfield(cal,'N')
         XEMPT_N = find(LR.NITRATE ~= 99999,1); % if empty, then cycle has no data
         if isempty(QC) || isempty(XEMPT_N) % no adjustments have been made yet, or all data is 99999
             INFO.NITRATE_DATA_MODE = 'R';
@@ -2173,8 +2194,8 @@ for msg_ct = 1:size(msg_list,1)
         end
     end
     % PH
-    if isfield(cal,'pH') 
-         XEMPT_PH = find(LR.PH_IN_SITU_TOTAL ~= 99999,1); % if empty, then cycle has no data       
+    if isfield(cal,'pH')
+        XEMPT_PH = find(LR.PH_IN_SITU_TOTAL ~= 99999,1); % if empty, then cycle has no data
         if isempty(QC) || isempty(XEMPT_PH) % no adjustments have been made yet, or all data is 99999
             INFO.PH_DATA_MODE = 'R';
         elseif ~isempty(QC) && isfield(QC,'pH')
@@ -2186,16 +2207,16 @@ for msg_ct = 1:size(msg_list,1)
         end
     end
     % BBP700
-    if isfield(cal,'BB') 
+    if isfield(cal,'BB')
         INFO.BBP700_DATA_MODE = 'R';
     end
     % CDOM
-    if isfield(cal,'CDOM') 
+    if isfield(cal,'CDOM')
         INFO.CDOM_DATA_MODE = 'R';
     end
     % CHL
     if isfield(cal,'CHL')
-%         if isfield(cal.CHL,'SWDC') && isfield(cal.CHL.SWDC,'DC') && sum(LR.CHLA_ADJUSTED<99999)>0  % median dark count has been quantified (and there is data for that profile) --> adjustment has been made
+        %         if isfield(cal.CHL,'SWDC') && isfield(cal.CHL.SWDC,'DC') && sum(LR.CHLA_ADJUSTED<99999)>0  % median dark count has been quantified (and there is data for that profile) --> adjustment has been made
         if sum(LR.CHLA_ADJUSTED<99999)>0  % median dark count has been quantified (and there is data for that profile) --> adjustment has been made
             INFO.CHLA_DATA_MODE = 'A';
         else
@@ -2203,7 +2224,7 @@ for msg_ct = 1:size(msg_list,1)
         end
     end
     %-----------------------------------------------------------
-
+    
     
     
     % *********************************************************************
@@ -2231,45 +2252,25 @@ for msg_ct = 1:size(msg_list,1)
     
     save_str = [dirs.mat, WMO,'\', WMO,'.', cast_num,'.mat'];
     save(save_str,'LR','HR','INFO');
-    if msg_ct == 1
-        copyfile(float_cal_path, [dirs.mat, WMO,'\']); % copy over cal file
-    end
+    %     if msg_ct == 1
+    %         copyfile(fp_cal, [dirs.mat, WMO,'\']); % copy over cal file
+    %     end
     
-    %         % CHECK FOR EXISTING WMO DIR, CREATE IF NOT THERE
-    %         if exist([dirs.mat,WMO,'\'],'dir')
-    %             save(save_str,'LR','HR','INFO');
-    %             if msg_ct == 1
-    %                 copyfile(float_cal_path, [dirs.mat, WMO,'\'])
-    %             end
-    %             tf_float.status = 1;
-    %         else
-    %             status = mkdir([dirs.mat,WMO,'\']);
-    %             if status
-    %                 save(save_str,'LR','HR','INFO');
-    %                 if msg_ct == 1
-    %                     copyfile(float_cal_path, [dirs.mat, WMO,'\'])
-    %                 end
-    %                 tf_float.status = 1;
-    %             else
-    %                 disp(['Directory could not be created at: ', ...
-    %                     [dirs.mat,WMO,'\']]);
-    %                 tf_float.status = 0;
-    %             end
-    %         end
 end
-    %fprintf('\r\n')
-    
-    % *********************************************************************
-    % CLEAN UP
-    if ~isempty(ls([dirs.temp,'*.msg']))
-        delete([dirs.temp,'*.msg']);
-    end
-    if ~isempty(ls([dirs.temp,'*.isus']))
-        delete([dirs.temp,'*.isus']);
-    end
-    if ~isempty(ls([dirs.temp,'*.dura']))
-        delete([dirs.temp,'*.dura']);
-    end
+copyfile(fp_cal, [dirs.mat, WMO,'\']) % copy over cal file
+%fprintf('\r\n')
+
+% *********************************************************************
+% CLEAN UP
+if ~isempty(ls([dirs.temp,'*.msg']))
+    delete([dirs.temp,'*.msg']);
+end
+if ~isempty(ls([dirs.temp,'*.isus']))
+    delete([dirs.temp,'*.isus']);
+end
+if ~isempty(ls([dirs.temp,'*.dura']))
+    delete([dirs.temp,'*.dura']);
+end
 %     tf_float.status = 1;
 %end
 

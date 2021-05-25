@@ -1,195 +1,103 @@
-function list = get_msg_list(flt_name,dirs,varargin)
-% PURPOSE: 
-%   This function returns a structure with the regular and alternate
-%   directory paths for the given float as well as msg file names within
-%   each directory. The default message file  is '*.msg' but an optional
-%   input string can change this. If files exist in the alternate
-%   directory, duplicate file sizes are compared and the smaller files are
-%   removed from a list. Designed for use with other functions / scripts
-%   processing float data
+function d = get_msg_list(cal_info, file_type)
 %
-% USAGE:
-%	list = get_msg_list(flt_name,dirs,'msg')
-%   list = get_msg_list(flt_name, [])
+% PURPOSE: 
+%    This function returns a structure of float msg file names, directories
+%    & file time stamps. If a secondary float directory exists and the two 
+%    directories share common files, only the most recent files are
+%    retained. If unique files in the secondary directory exist, they are
+%    merged with the primary directory file listing. 
 %
 % INPUTS:
-%   float name = a string with at least UW/MBARI float #
-%   dirs       = Either an empty variable or a structure with directory
-%                strings where files are located. It must contain these
-%                fields at a minimum or be empty. If dirs is empty default
-%                paths will be used.
-%
-%   dirs.msg       = path to float message file directories
-%   dirs.mat       = path to *.mat profile files for ARGO NETCDF
-%   dirs.cal       = path to *.cal (nitrate) and cal####.mat (working float cal) files
-%   dirs.config    = path to config.txt files
-%   dirs.NO3config = path to ####.cal nitrate calibration files
-%   dirs.temp      = path to temporary working dir
-%   dirs.FV        = path to FloatViz files served to web
-%   dirs.QCadj      = path to QC adjustment list for all floats
-%   dirs.FVlocal   = path to Floatviz file made by matlab go here
-%
-%   varargin = optional string defining msg type. Ex:
-%                   'msg'  APEX message file (DEFAULT)
-%                   'isus' ISUS message file
+%   cal_info  = cal.info structure from cal file which contains msg dir
+%   file_type = string identifying file type (i.e 'msg', 'isus', 'dura')
 %
 % OUTPUTS:
-%   list = a structure of the data.
-%       list.reg_dir  = main msg file diectory path
-%       list.alt_dir  = alternate message file directory path if it exists
-%       list.reg_list = main directory * msg file list
-%       list.alt_list = alternate directory message file list
-%       list.reg_sdn = main directory * msg file time stamp
-%       list.alt_sdn = alternate directory message file time stamp
+%   d.hdr  = cell array of column ID's (file name, dir path, file mod date)
+%   d.list = msg file listing
 %
 % EXAMPLES:
-%   jp = get_msg_list('7601StnP',dirs);
-%   jp = get_msg_list('7601',[]);
-%   jp = get_msg_list('7601StnP','dirs,'msg');
-%   jp = get_msg_list('7601StnP',[],'isus');
-
+% load(['C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\DATA\cal\',...
+%     'calua12551.mat']);
+% cal_info = cal.info;
+%   d        = get_msg_list(cal_info, 'msg')
 %
-% Compile a list of float *.msg files from reg and alt directories
-% use file size or date to choose which ones to keep
-
-% %flt_name = '7601StnP';
-% %flt_name ='9254SoOcn';
-% flt_name ='6966Hawaii';
-% %flt_name ='7593HAWAII';
-% flt_name ='8514SoOcn';
-% dirs =[];
-% varargin =[];
+% CHANGES:
+% 02/23/2021 JP - A complete overhaul in prep for GO-BGC file processing
 
 % ************************************************************************
-% CREATE REG & ALT DIR PATHS USING FLOAT NAME
 % ************************************************************************
-% **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
-if isempty(dirs)
-    user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
-    user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\'];
-    
-    dirs.mat       = [user_dir,'DATA\FLOATS\'];
-    dirs.cal       = [user_dir,'DATA\CAL\'];
-    dirs.FVlocal   = [user_dir,'DATA\FLOATVIZ\'];
-    dirs.FV        = [user_dir,'DATA\FLOATVIZ\'];
-    %dirs.FV        = '\\sirocco\wwwroot\lobo\Data\FloatVizData\';
-    
-    %dirs.QCadj     = '\\atlas\chem\ARGO_PROCESSING\DATA\CAL\';
-    dirs.QCadj     = [user_dir,'DATA\CAL\QC_LISTS\'];
-    dirs.temp      = 'C:\temp\';
-    dirs.msg       = '\\atlas\ChemWebData\floats\';
-    %dirs.msg       = 'C:\temp\';
-    %dirs.config    = '\\atlas\Chem\ISUS\Argo\';
-    
-    dirs.log = [user_dir,'DATA\Processing_logs\'];
-    dirs.bat = [user_dir,'batchfiles\'];
-elseif ~isstruct(dirs)
-    disp('Check "dirs" input. Must be an empty variable or a structure')
-    return
-end
+% TESTING
+% load(['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING_TESTDIR\DATA\cal\',...
+%     'calua12396.mat']);
+% cal_info = cal.info;
+% file_type = 'msg';
 
-duplicate_dir     = [dirs.msg,'duplicate\']; % A few older floats found here
+% ************************************************************************
+% ************************************************************************
+msg_path = cal_info.msg_dir;
 
-flt_str  = regexp(flt_name,'^\d{3}\d+(?=\w*)','match'); %#'s chars may follow
-if isempty(flt_str)
-    flt_str = regexp(flt_name,'^\d{3}\d+','match'); % try just numbers next
-end
-flt_num  = str2num(flt_str{1,1});
-
-% TEST FOR 'f' OR 'n' DIRS
-if isdir([dirs.msg,'f',flt_str{1,1},'\'])      % 'f' dir is APEX UW/MBARI
-    reg_dir = [dirs.msg,'f',flt_str{1,1},'\'];
-elseif isdir([dirs.msg,'n',flt_str{1,1},'\'])
-    reg_dir = [dirs.msg,'n',flt_str{1,1},'\']; % 'n' for NAVIS floats
-elseif isdir([duplicate_dir,'f',flt_str{1,1},'\']) 
-    disp('NON STANDARD DATA DIR!!')
-    disp(['DATA FOUND AT:  ',duplicate_dir,'f',flt_str{1,1},'\'])
-    reg_dir = [duplicate_dir,'f',flt_str{1,1},'\']; % SOME OLD DATA HERE
-elseif isdir([duplicate_dir,'n',flt_str{1,1},'\']) 
-    disp('NON STANDARD DATA DIR!!')
-    disp(['DATA FOUND AT:  ',duplicate_dir,'n',flt_str{1,1},'\'])
-    reg_dir = [duplicate_dir,'n',flt_str{1,1},'\']; % SOME OLD DATA HERE
+% GET PRIMARY DIRECTORY LISTING
+if isfolder(msg_path)
+    DirList1 = struct2cell(dir([msg_path,'*.', file_type]))';
 else
-    disp(['Could not find msg file directory for: ',flt_name])
-    list = [];
-    return
-end
-alt_dir = regexprep(reg_dir,'floats', 'floats\\alternate'); % need 2 \\
-
-% ************************************************************************
-% BUILD MESSSAGE FILE LISTS
-% NEED TO LOOK AT REG AND ALT DIRS - CHOOSE LARGER FILE
-% ************************************************************************
-
-if isempty(varargin) % USE DEFAULTS
-    end_str = 'msg';
-elseif length(varargin) == 1 && ischar(varargin{1}) % USER DEFINED
-    end_str = varargin{1};
-else
-    disp('Too many inputs')
-    return   
-end
-msg_list1 = dir([reg_dir,'*.',end_str]);
-msg_list2 = dir([alt_dir,'*.',end_str]);
-    
-
-if isempty(msg_list1) && isempty(msg_list2) % files to process?
-    disp(['No  *.',end_str, ' files found for: ', flt_name])
-    list = [];
+    disp(['Could not find msg file directory for: ',cal_info.name])
+    d.hdr  = {'msg file', 'directory' ,'file SDN'};
+    d.list = {};
     return
 end
 
-reg_list = {msg_list1.name}; % reg list names only
-reg_sdn  = {msg_list1.datenum}; % reg list modification date only
+% CHECK FOR SECONDARY (ALTERNATE) DIRECTORY LISTING.
+inst      = regexp(msg_path,'(?<=floats\\)\w+','match','once'); % institute
+msg_path2 = regexprep(msg_path, inst,[inst,'\\alternate']);
+DirList2  = {};
+if isfolder(msg_path2)
+    DirList2 = struct2cell(dir([msg_path2,'*.', file_type]))';
+end
 
-if ~isempty(msg_list2) % COMPARE ALT FILE TO FILES IN MAIN DIR
-%     disp(['Comparing *.',end_str, ' files in regular and ', ...
-%         'alternate directories.......'])
-     alt_list = {msg_list2.name}; % alt list names only
-     alt_sdn  = {msg_list2.datenum}; % alt list modification date only
-    
-    % IF SAME FILE IN BOTH DIRS CHOOSE LARGER (COULD DO BY DATE INSTEAD?)
-    reg_ct = []; alt_ct =[];
-    for i = 1:length(alt_list)
-        ind = find(strcmp(alt_list{i},reg_list)==1); %index in reg for alt file
-        if isempty(ind) % alt file is not in reg dir so keep
-            continue
-        elseif msg_list1(ind).bytes < msg_list2(i).bytes % alt file bigger
-            reg_ct = [reg_ct ,ind]; % index of files to remove from reg list
+% IF SECONDARY (ALTERNATE) DIRECTORY LISTING EXISTS, COMPARE AND MERGE
+% USE FILE MODIFICATION SIZE TO DECIDE
+if ~isempty(DirList2)
+    DirListApnd = cell(size(DirList2)); % predim for appending list
+    alt_ct = 0;
+    for fct = 1:size(DirList2,1) % step through alternate dir files
+        t1 = strcmp(DirList1(:,1),DirList2{fct,1});
+        if sum(t1) == 1 % file exists in both directories 
+            if DirList2{fct,4} > DirList1{t1,4} % alt file is larger - keep
+                alt_ct = alt_ct + 1;
+                DirList1(t1,:) = DirList2(fct,:); 
+            end
+        elseif sum(t1) == 0 % file exists only in alternate - append
+            DirListApnd(fct,:) = DirList2(fct,:);
         else
-            alt_ct = [alt_ct ,i];   % index of files to remove from alt list
+            disp(['Trouble with primary & secondary directory ', ....
+                'comparison for: ',DirList2{fct,1}]);
         end
     end
-    % REMOVE *.000.msg from lists if it exists
-    reg_list(reg_ct) =[]; % Remove files specified by index
-    reg_sdn(reg_ct) =[];
-    ind = strcmp([flt_str{1,1},'.000.',end_str], reg_list);
-    reg_list(ind)=[]; % Make sure no 000.msg in the list
-    reg_sdn(ind) =[];
-    ind = strcmp(['all.',end_str], reg_list);
-    reg_list(ind)=[]; % Make sure no 000.msg in the list
-    reg_sdn(ind) =[];
-    
-    alt_list(alt_ct) =[];
-    alt_sdn(alt_ct) =[];
-    ind = strcmp([flt_str{1,1},'.000.',end_str], alt_list);
-    alt_list(ind)=[]; % Make sure no 000.msg in the list
-    alt_sdn(ind)=[]; 
-    ind = strcmp(['all.',end_str], alt_list);
-    alt_list(ind)=[]; % Make sure no 000.msg in the list
-    alt_sdn(ind) =[]; 
-else
-    disp(['No alternate directory found for: ',flt_name])
-    alt_list ={};
-    alt_sdn  =[];
+    % Add any file only in secondary listing to primary listing
+    tg = ~cellfun(@isempty, DirListApnd(:,1));
+    if sum(alt_ct) > 0
+        fprintf(['%0.0f newer %s file(s) in the secondary directory ', ...
+            'listing have replaced older files in the primary ', ...
+            'listing\n'],sum(alt_ct), file_type);
+    end
+    if sum(tg) > 0
+        DirList1 = [DirList1; DirListApnd(tg,:)];
+        fprintf(['%0.0f %s file(s) from the secondary directory ', ...
+            'listing have been appended to the primary listing\n'], ...
+            sum(tg), file_type);
+        [~,IX]   = sort(DirList1(:,1));
+        DirList1 = DirList1(IX,:);
+    end
 end
 
-% BUILD OUPUT STRUCTURE
-list.reg_dir  = reg_dir;
-list.alt_dir  = alt_dir;
-list.reg_list = reg_list;
-list.alt_list = alt_list;
-list.reg_sdn = reg_sdn;
-list.alt_sdn = alt_sdn;
+d.hdr  = {'msg file', 'directory' ,'file SDN'};
+d.list = DirList1(:,[1,2,6]);
+clearvars -except d
 
-%clearvars -except list
+
+
+
+
+
+
+

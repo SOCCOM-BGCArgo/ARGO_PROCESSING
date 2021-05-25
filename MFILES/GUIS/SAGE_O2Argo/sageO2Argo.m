@@ -436,7 +436,7 @@ function gui = createInterface( ~ )
         end
         %get QC adjustment data
         inputs.qc_path = [dirs.QCadj,DATA.floatNAME,'_FloatQCList.txt'];
-        DATA.QCA = get_QCA(inputs.qc_path,DATA.floatNAME);
+        DATA.QCA = get_QCA(inputs.qc_path);
         %Calculate WOA data and surface o2 sat for all floats
         set( gui.Fbutton,'String','Loading WOA ...');
         set(gui.Fbutton,'BackgroundColor','y');
@@ -1063,11 +1063,31 @@ function gui = createInterface( ~ )
     function on_applyO2gain( source, ~ ) 
          handlesODVQC.info.Mprof = 1;
          handlesODVQC.info.float_name = ['ODV',inputs.floatID];
+         handlesODVQC.info.WMO_ID = inputs.floatID; %this is redundant for Argo with WMO; code could be cleaned.
+         handlesODVQC.info.QCadj_file = [inputs.floatID,'_FloatQCList.txt'];
          % Calling Make_Sprof_ODVQC which also gets used in Sage. 
          %Maintain QCA structure, as called in this function
-         handlesODVQC.QCA.NO3 = [];
-         handlesODVQC.QCA.PH_OFFSET = [];
-         handlesODVQC.QCA.PH = [];
+         %NO3
+         if isfield(DATA.QCA,'NO3') ~=1
+             handlesODVQC.QCA.NO3 = [];
+         else
+             handlesODVQC.QCA.NO3 = DATA.QCA.NO3;
+         end
+         handlesODVQC.info.NO3_sensor=DATA.isNO3;
+         if isfield(DATA.QCA,'PH_OFFSET') ~=1
+             handlesODVQC.QCA.PH_OFFSET = [];
+         else
+             handlesODVQC.QCA.PH_OFFSET = DATA.QCA.PH_OFFSET;
+         end
+         if isfield(DATA.QCA,'PH') ~=1
+             handlesODVQC.QCA.PH = [];
+         else
+             handlesODVQC.QCA.PH = DATA.QCA.PH;
+         end
+         handlesODVQC.info.PH_sensor=DATA.isPH;
+         
+         handlesODVQC.info.CHL_sensor = DATA.isCHL;
+
          
          handlesODVQC.QCA.O2 = [DATA.tableDATA(:,1:2) zeros(size(DATA.tableDATA,1),1) DATA.tableDATA(:,3)]; %add placeholder for offset (not used in O2 QC, only gain and drift for now)
          gui.wrk_color = gui.doQCbutton.BackgroundColor;
@@ -1075,6 +1095,8 @@ function gui = createInterface( ~ )
              set( gui.doQCbutton,'String','Writing QC to file...','fontsize',14);
              set(gui.doQCbutton,'BackgroundColor','y');
              drawnow
+             handlesODVQC.info.O2_sensor = 1; %required!
+             tf = NewFloatQCList_GLT(handlesODVQC,dirs); % Make New QC list
              tf = Make_Sprof_ODVQC(handlesODVQC);
              set( gui.doQCbutton,'String','Write ODV*QC.TXT','fontsize',16)
              set(gui.doQCbutton,'BackgroundColor',gui.wrk_color);

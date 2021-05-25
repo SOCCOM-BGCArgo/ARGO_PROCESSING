@@ -29,6 +29,19 @@ function [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA)
             d.data(:,6),d.data(:,8),d.data(:,10),O2data,{'NO3'});
         canyonB_ph = CANYONB(d.data(:,1),d.data(:,4),d.data(:,3), ...
             d.data(:,6),d.data(:,8),d.data(:,10),O2data,{'pH'});
+        %%%Tanya Maurer, June26,2020.  Tested this adjustment to canyon-b
+        %%%briefly on 1 float and was VERY MINIMAL! (ie 0.05 millipH)  This
+        %%%was at depth, for 1 float.  We should still apply it, and likely
+        %%%add as a different variable to the structure (ie
+        %%%canyonB_ph.pHspec).
+% %         % CANYON-B pH is not 'in-line' with pH calculated from Alk and DIC,
+% %         % not pH that was spec measured (LIPHR is consistent with pH spec).
+% %         %  So, for consistency, apply adjustment using eqn 1 in Carter et
+% %         %  al, 2018.
+         CBspec = canyonB_ph.pH + (canyonB_ph.pH*0.0404 - 0.3168); % TM 040821, uncommented
+         canyonB_ph.pH = CBspec;
+        
+        
         canyon_no3 = CANYON_jp(dirs,d.data(:,1),d.data(:,4),d.data(:,3), ...
             d.data(:,6),d.data(:,8),d.data(:,10),O2data,'NO3');
         canyon_ph = CANYON_jp(dirs,d.data(:,1),d.data(:,4),d.data(:,3), ...
@@ -92,7 +105,9 @@ function [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA)
         %
         handles.LIR.hdr  = [d.hdr([1,2,6]),'LIR_no3','LIR_ph'];
 %         handles.LIR.data = [d.data(:,[1,2,6]), NO3_Est, PH_Est, N_Uncert_Est, PH_Uncert_Est];
-      handles.LIR.data = [d.data(:,[1,2,6]), NO3_Est, PH_Est];
+      handles.LIR.data = [d.data(:,[1,2,6]), NO3_Est, PH_Est]
+%LIROUTPUTwUncrt = [d.data(:,[1,2,6]), NO3_Est, PH_Est, N_Uncert_Est, PH_Uncert_Est];
+%save('9631test.mat','LIROUTPUTwUncrt');
 
     else
 %                 set(handles.recumpute_text,'Visible','on')

@@ -16,9 +16,10 @@ tf = 1;
 % Make new  FloatQcList.txt locally from float_qc GUI data table changes
 fname        = [dirs.QCadj,handles.info.QCadj_file]; % Existing adjustment file
 new_fname    = [dirs.temp,filesep,'new_FloatQCList.txt'];  %file that will be updated
-float_name   = handles.info.float_name;
+%float_name   = handles.info.float_name;
+float_wmo   = handles.info.WMO_ID;
 
-if exist(fname) == 0 %does not exist (ie new float), create file
+if exist(fname,'file') == 0 %does not exist (ie new float), create file
     fid = fopen(fname,'w+');
     wasempty = 1;
 else
@@ -32,8 +33,11 @@ QCA = handles.QCA;
 field_names = fieldnames(QCA);
 %cal = handles.info.cal; %used to check sensors on float
 
+% fprintf(fid_new,['%s\t',datestr(now,'mm/dd/yy HH:MM'),'\r\n'],...
+%                  float_name); % Update date on existing float line
 fprintf(fid_new,['%s\t',datestr(now,'mm/dd/yy HH:MM'),'\r\n'],...
-                 float_name); % Update date on existing float line
+                 float_wmo); % Update date on existing float line
+             
 if isfield(QCA,'O2') && handles.info.O2_sensor == 1
     rr = size(QCA.O2,1);
     if rr == 0 % no adjustments yet

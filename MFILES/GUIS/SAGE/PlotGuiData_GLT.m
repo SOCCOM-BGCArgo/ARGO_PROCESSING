@@ -189,6 +189,8 @@ s1 = sprintf(['Float trend =   %0.4f  ', txt_units], ...
     dfloat_reg(1)*365);
 s2 = sprintf([DATA.reftag,'  trend =   %0.4f  ', txt_units], ...
     dMLR_reg(1)*365);
+s2 = regexprep(s2,'CANYON_B','CANYON\\_B'); %JP 04/22/21 stop subscripting of B
+
 tstr1 = sprintf('\\fontsize{12}\\color[rgb]{%f, %f, %f}%s', float_color, s1);
 tstr2 = sprintf('\\fontsize{12}\\color[rgb]{%f, %f, %f}%s', MLR_color, s2);
 if strcmp(DATA.paramtag,'NO3')==1 || strcmp(DATA.paramtag,'PH')==1
@@ -196,6 +198,7 @@ if strcmp(DATA.paramtag,'NO3')==1 || strcmp(DATA.paramtag,'PH')==1
 else
     title({tstr1,' '},'parent',gui.whichAX(1),'FontWeight', 'normal')
 end
+
 % T1 = text(0,0.98,s1,'parent',gui.whichAX(1),'Units', 'Normalized', 'HorizontalAlignment', ...
 %     'Left','Color',float_color,'FontSize', 12);
 % T2 = text(0,0.96,s2,'parent',gui.whichAX(1),'Units', 'Normalized', 'HorizontalAlignment', ...
@@ -212,13 +215,17 @@ xlim(gui.whichAX(2),DATA.xlims{2});
 % ylim auto
 xlabel(gui.whichAX(2),'Cycle #')
 ylabel(gui.whichAX(2),inputs.y_label)
-title(gui.whichAX(2),inputs.data_str)
+%title(gui.whichAX(2),inputs.data_str) % JP 04/22/2021 inputs.data_str is empty
+ax2_tstr = [handles.info.WMO_ID,'   (',handles.info.float_name,')'];
+title(gui.whichAX(2), ax2_tstr, 'FontSize', 12)
 
 hold(gui.whichAX(2),'on')
 plot(DATA.datasub(:,2),DATA.refsub,'o','Parent',gui.whichAX(2),'MarkerSize',4, ...
     'MarkerEdgeColor','k','MarkerFaceColor', MLR_color);
 hold(gui.whichAX(2),'on')
-            
+
+inputs.data_str
+
 % PLOT ANY GLODAP CROSSOVER DATA IF IT EXISTS
 if ~isempty(DATA.GIND)
     %[handles.deep_figs.UserData(1) handles.deep_figs.UserData(2)]

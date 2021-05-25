@@ -1,4 +1,4 @@
-function sdn = get_QCstep_dates(flt_name,QC_data,dirs)
+function sdn = get_QCstep_dates(WMO,QC_data,dirs)
 % PURPOSE: 
 %   This function parses an APEX biochemical float *.msg file(s) to get the
 %   date(s) corresponding to the profile number(s) in the QC data. Only
@@ -6,10 +6,10 @@ function sdn = get_QCstep_dates(flt_name,QC_data,dirs)
 %   infrequently)
 %
 % USAGE:
-%	sdn = get_QCstep_dates(flt_str,cal_struct)
+%	sdn = get_QCstep_dates(WMO,cal_struct)
 %
 % INPUTS:
-%	flt_name   = UW/MBARI Float ID # as a string
+%	WMO   = WMO ID # as a string
 %   cal_struct = An n x 4 matrix of QC data [cast # Gain Offset Drift]
 %   dirs       = Either an empty variable ora structure with directory
 %                strings where files are located. It must contain these
@@ -30,16 +30,13 @@ function sdn = get_QCstep_dates(flt_name,QC_data,dirs)
 %       SDN =  Matlab sdn's corresponding to profile #'s
 %               on data flag.
 % EXAMPLES:
-%   sdn = get_QCstep_dates(flt_str,cal_struct)
+%   sdn = get_QCstep_dates(WMO,cal_struct)
 % CHANGES
 %   05/11/2020 JP Added code to correct gps weekday rollover bug if found
 %      9634SOOCN is the only float we have with this problem
 %
-% TESTING
-% flt_name = cal.info.UW_ID; % TESTING
-% QC_data = QC.steps(:,2:end);       % TESTING
-% QC_data = QC.O.steps;
-% flt_name = '8501';
+%   03/08/2021 TM Modifications to bring in line with the new MBARI master
+%        float list and switch to WMO for processed file names.
 % ************************************************************************
 % CREATE REG & ALT DIR PATHS USING FLOAT NAME
 % ************************************************************************
@@ -69,25 +66,40 @@ elseif ~isstruct(dirs)
     return
 end
 
-%#'s but chars follow
-flt_num_str  = regexp(flt_name,'^\d{3}\d+(?=\w*)','match'); 
-if isempty(flt_num_str) % try just numbers next
-    flt_num_str = regexp(flt_name,'^\d{3}\d+','match'); 
-end
-
-
-% TEST FOR 'f' OR 'n' DIRS
-if isdir([dirs.msg,'f',flt_num_str{1,1},'\'])      % 'f' dir is APEX UW/MBARI
-    reg_dir = [dirs.msg,'f',flt_num_str{1,1},'\'];
-elseif isdir([dirs.msg,'n',flt_num_str{1,1},'\'])
-    reg_dir = [dirs.msg,'n',flt_num_str{1,1},'\']; % 'n' for NAVIS floats
+% LOAD FLOAT LIST FOR MSG FILE LOCATION
+% LOAD MBARI FLOAT LIST
+list_path  = [dirs.cal, 'MBARI_float_list.mat']; % file path
+if exist(list_path, 'file') % load list variables
+    load(list_path);
+    FLOAT_LIST = d.list;
 else
-    disp(['Could not find msg file directory for: ',flt_name])
+    disp('BUILDING FLOAT ID LIST ...')
+    %[float_name, UW_ID, WMO_ID, float type]
+    d = MBARI_float_list(dirs);
+    FLOAT_LIST = d.list;
+end
+iMSG =find(strcmp('msg dir', d.hdr)  == 1);
+iWMO = find(strcmp('WMO',d.hdr) == 1);
+iMB  = find(strcmp('MBARI ID',d.hdr) == 1);
+iINST = find(strcmp('INST ID',d.hdr) == 1);
+IndexC = strfind(d.list(:,iWMO),WMO);
+Index = find(not(cellfun('isempty',IndexC)));
+MSGloc = FLOAT_LIST{Index,iMSG};
+MBARI_ID_str = FLOAT_LIST{Index,iMB};
+INST_ID_str = FLOAT_LIST{Index,iINST};
+
+if isdir(MSGloc)      % from float list specification
+    reg_dir = MSGloc;
+else
+    disp(['Could not find msg file directory for: ',WMO])
     rows            = size(QC_data,1);
     sdn             = ones(rows,1)* NaN;
     return
 end
-alt_dir = regexprep(reg_dir,'floats', 'floats\\alternate');
+
+% CHECK FOR SECONDARY (ALTERNATE) DIRECTORY LISTING.
+inst      = regexp(reg_dir,'(?<=floats\\)\w+','match','once'); % institute
+alt_dir = regexprep(reg_dir, inst,[inst,'\\alternate']);
 
 % ************************************************************************
 % OPEN MESSSAGE FILES CORRESPONDING TO CASTS IN QC_DATA & GET DATE
@@ -97,7 +109,7 @@ rows            = size(QC_data,1);
 sdn             = ones(rows,1)* NaN;
 for i = 1:rows
     tline = ' ';
-    msg_file = [flt_num_str{1,1},'.',sprintf('%03.0f',QC_data(i,1)),'.msg'];
+    msg_file = [INST_ID_str,'.',sprintf('%03.0f',QC_data(i,1)),'.msg'];
     % TRY REGULAR DIR FIRST
     if exist([reg_dir,msg_file],'file')
         fid = fopen([reg_dir,msg_file]);

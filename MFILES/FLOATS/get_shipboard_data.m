@@ -40,6 +40,7 @@ function d = get_shipboard_data(file_path)
 %   03/05/2019 Added CTDOXY to wanted vars list
 %   04/10/2019 Added NITRIT TO variable list, added range limits to wanted
 %       vars cell structure - jp.
+% 12/30/2020 - JP - forced all fopen r/w to UTF-8
 
 % TESTING             
 % file_path = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\', ...
@@ -55,7 +56,7 @@ function d = get_shipboard_data(file_path)
 
 %file_path = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\74JC20151217_hy1.csv';
 
-%file_path = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\320620161224.exc.csv';
+% file_path = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\320620161224.exc.csv';
 
 % ************************************************************************
 % LIST OF DESIRED VARIBLES AND FORMAT STRING
@@ -107,13 +108,33 @@ wanted_vars ={'SECT_ID'          '%s'  [NaN NaN]; ...
 % OPEN FILE, STEP DOWN TO 1st HEADER LINE, BUILD FORMAT STRING
 % *************************************************************************
 
-fid = fopen(file_path);
+fid = fopen(file_path,'r','n','UTF-8');
 if fid == -1
     d= [];
     return
 end
 tline = ' ';
+EXPOCODE = '';
+
+% ***********************************************
+% GET EXPOCODE FROM FILE NAME
+t1 = regexp(file_path,filesep);
+if ~isempty(t1)
+    str = file_path(max(t1)+1:end);
+else
+    str = file_path;
+end
+t2 = regexp(str,'\.|_','once');
+EXPOCODE = str(1:t2-1);
+clear t1 t2 str
+% ***********************************************
+
+
 while ischar(tline)
+%     if regexp(tline,'^#.*EXPOCODE','once') % .* to deal with diff meta line starts
+%         EXPOCODE = regexp(tline,'(?<=EXPOCODE:\s*)\w+', 'once', 'match');
+%     end
+    
     if regexp(tline,'^EXPOCODE,\w+', 'once') % stop at 1st header line
         break
     end
@@ -257,8 +278,8 @@ iALK  = find(strcmp('ALKALI',hdr)  == 1);
 iPH   = find(strcmp('PH_TOT',hdr)  == 1);
 iPHSW = find(strcmp('PH_SWS',hdr)  == 1);
 iPHT  = find(strcmp('PH_TMP',hdr)  == 1);
-iSI   = find(strcmp('SILCAT',hdr)  == 1)
-iPO4  = find(strcmp('PHSPHT',hdr)  == 1)
+iSI   = find(strcmp('SILCAT',hdr)  == 1);
+iPO4  = find(strcmp('PHSPHT',hdr)  == 1);
 iNO3  = find(strcmp('NITRAT',hdr)  == 1);
 
 
@@ -380,6 +401,7 @@ clear nan_SI nan_PO4
 end
 clear nan_SI nan_PO4
 % ***********************
+
 if ~isempty(iALK) && ~isempty(iPH) % check first: Alkalinity & pH exist
     PAR1 = data(:,iALK);
     PAR1(PAR1 < 0) = NaN;
@@ -527,9 +549,10 @@ end
 % *************************************************************************
 % ASSIGN TO STRUCTURE AND CLEAN UP
 % *************************************************************************
-d.hdr    = hdr;
-d.data   = data;
-d.cruise = cruise_ID;
+d.hdr      = hdr;
+d.data     = data;
+d.cruise   = cruise_ID;
+d.expocode = EXPOCODE;
 %d.units  = units;
 
 %clearvars -except d

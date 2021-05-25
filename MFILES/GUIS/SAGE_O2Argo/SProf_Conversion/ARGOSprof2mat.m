@@ -122,8 +122,9 @@ LAT   = double(ds.data('LATITUDE'));
 LON   = double(ds.data('LONGITUDE'));
 
 szWMO = ds.size('PLATFORM_NUMBER');
-INFO.WMO   = ds.data('PLATFORM_NUMBER',[1,1],[1,szWMO(2)]); % this is an m x 8 char array to start
-INFO.WMO   = strtrim(INFO.WMO); % sometimes a trailing space
+tmpwmo  = ds.data('PLATFORM_NUMBER',[1,1],[1,szWMO(2)]); % this is an m x 8 char array to start
+% INFO.WMO   = strtrim(INFO.WMO); % sometimes a trailing space
+INFO.WMO = regexp(tmpwmo,'\d*','match','once'); %sometimes a trailing space; strtrim was not working for some floats (trailing space not an empty char space??)
 WMO = ones(szWMO(1),1) * str2double(INFO.WMO(1,:));
 sztype = ds.size('PLATFORM_TYPE');
 INFO.type   = strtrim(ds.data('PLATFORM_TYPE',[1,1],[1,sztype(2)]));

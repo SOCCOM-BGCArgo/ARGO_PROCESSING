@@ -132,6 +132,11 @@ while ischar(tline)
         if  regexp(tline,'CalTemp','once') % ISUS or SUNA cal temp
             cal.CalTemp = sscanf(tline,'H,CalTemp,%f',1);
         end
+        
+        %JP 05/04/2021
+        if isempty(cal.CalTemp) & regexp(tline,'^H,T_CAL','once') 
+            cal.CalTemp = sscanf(tline,'H,T_CAL%f',1);
+        end
 
         % GET PIXEL BASE, 1 (1-256), 0 (0-255)
         if  regexp(tline,'Pixel base','once') 

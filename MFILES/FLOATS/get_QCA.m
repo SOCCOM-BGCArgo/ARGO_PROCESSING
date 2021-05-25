@@ -1,4 +1,4 @@
-function QCA = get_QCA(qc_path,float_name)
+function QCA = get_QCA(qc_path)
 % RETURN QC ADJUSTMENTS FOR A GIVEN PARAMETER
 %
 % INPUTS:
@@ -11,19 +11,23 @@ function QCA = get_QCA(qc_path,float_name)
 %      .offset - for pH only
 %      .data   - a matrix [CYLE GAIN OFFSET DRIFT]
 
-
+% *************************************************************************
 % TESTING
-% float_name = '0507SoOcn';
-% qc_path = 'C:\Users\jplant\Documents\MATLAB\ARGO\DATA\TEST\Cal_files\FloatQCList.txt';
-% float_name = '12380SOOCN';
-% qc_path = 'C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\QC_LISTS\\12380SOOCN_FloatQCList.txt';
+% qc_path = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\', ...
+%            'CAL\QC_LISTS\5905107_FloatQCList.txt'];
 
-%CHANGES:
+% qc_path = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\', ...
+%            'CAL\QC_LISTS\NO_WMO_un0948_FloatQCList.txt'];
+       
+% *************************************************************************
+% CHANGES:
 % 08/02/2017 - modified code to now use float-specific FloatQCList files, located in DATA\CAL\QC_LISTS\
 % 10/30/2017 - get CHL correction if it exists
+% 04/03/2021 - updated for GOBGC name changes, removed 2nd input. Get WMO
+%              from file name
 
 
-
+% *************************************************************************
 % predim ouput
 QCA.O2  = [];
 QCA.NO3 = [];
@@ -31,15 +35,21 @@ QCA.PH_OFFSET = [];
 QCA.PH  = [];
 QCA.CHL = [];
 
+% GET FILE NAME & WMO FROM FILE NAME (\w get underscore too)
+fn  = regexp(qc_path,'\w+\.txt','once','match');
+wmo = regexp(fn,'\w+(?=_)','once','match');
+
 fid = fopen(qc_path);
 if fid < 0 %invalid file identifier
+    disp('QC LIST FILE NOT FOUND!');
+    disp(qc_path);
     return
 end
 
 % FIND SPECIFIC SECTION
 tline = '';
 while ischar(tline) % get to Section for float
-    if regexpi(tline,float_name,'once')
+    if regexpi(tline, wmo,'once')
         break
     end
     tline = fgetl(fid);

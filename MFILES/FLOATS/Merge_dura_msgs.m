@@ -1,28 +1,16 @@
 function d = Merge_dura_msgs(MBARI_ID_str, dirs)
 % ************************************************************************
 % PURPOSE:
-%    This function processes raw message files for a given APEX float
-%    (.msg, .isus, .dura), calculates useful values from the raw signals
-%    (P, T, S, O2, NO3, pH, CHl, Bbp, CDOM) and then merges these results
-%    for a given profile.
-%
-%    Each profile is saved as a *.mat file with the following format:
-%    WMO_ID.PROFILE_#.mat (Ex 5904683.006.mat) in a directory using the
-%    WMO_ID for its name. Each file contains 3 structures with variables
-%    inside named using ARGO definitions:
-%       LR   - Low resolution data
-%       HR   - High resolution data
-%       INFO - Some information about the profile and float
+%    This function processes raw dura message files for a given APEX float
+%    (*.dura), calculates useful values from the raw signals and then
+%    merges data for all profiles.
 %
 % USAGE:
-%	tf_float = Process_APEX_float(UW_ID_str, dirs, update_str)
+%	d = Merge_dura_msgs(MBARI_ID_str, dirs)
 %
 % INPUTS:
 %   UW_ID_str  = UW/MBARI Float ID # as a string
 %
-%   update_str = "all" or "update"
-%                 all    - to process all available msg files
-%                 update - only process new msg files
 %
 %   dirs       = Either an empty variable ora structure with directory
 %                strings where files are located. It must contain these
@@ -30,27 +18,19 @@ function d = Merge_dura_msgs(MBARI_ID_str, dirs)
 %                paths will be used.
 %
 % OUTPUTS:
-%   tf_float =  1 if processing was a success, 0 otherwise
 %
 % REVISONS:
 % 12/13/20 - jp - Forced all fopen writes to UTF-8, because that is the
 %     new default for Matlab 2020 and better cross platform sharing
 % 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
-%
-plot_flag = 1;
+% 03/202021 - JP - updated code for new GOBGC naming conventions
+plot_flag = 0;
 print_flag = 1;
 d = [];
 % ************************************************************************
 % FOR TESTING
 
-% MBARI_ID_str  = '9757SOOCN';
-% MBARI_ID_str  = '8374HOT';
-%MBARI_ID_str  = '9761SOOCN';
-% MBARI_ID_str  = '8501CALCURRENT';
-% MBARI_ID_str  = '8374HOT';
-% MBARI_ID_str  = '17267HOT';
-% 
-% MBARI_ID_str  = '12537SOOCN';
+% MBARI_ID_str  = 'ua19719';
 % dirs =[];
 
 % ************************************************************************
@@ -66,16 +46,20 @@ MVI_str = '-1e10';
 
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
 if isempty(dirs)
-    dirs.msg   = '\\atlas\ChemWebData\floats\';
+    user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+    user_dir = [user_dir, '\Documents\MATLAB\'];
+    dirs.msg   = '\\seaecho.shore.mbari.org\floats\';
     %dirs.mat   = 'C:\Users\jplant\Documents\MATLAB\ARGO\DURA\';
-    dirs.cal   = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\';
+    dirs.cal   = [user_dir,'ARGO_PROCESSING\DATA\CAL\'];
     dirs.temp  = 'C:\temp\';
 %     dirs.FV    = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\', ...
 %                   'DATA\FLOATVIZ\'];
     dirs.FV    = '\\atlas\chem\ARGO_PROCESSING\DATA\FLOATVIZ\';
                              
-    dirs.save = ['C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\', ...
+    dirs.save = [user_dir,'ARGO_PROCESSING\', ...
                   'DATA\PH_DIAGNOSTICS\'];
+    load('\\atlas\Chem\ARGO_PROCESSING\DATA\PH_DIAGNOSTICS\MBARI_pHsensor_versions.mat')
+    dirs.ph_ver = d;
 elseif ~isstruct(dirs)
     disp('Check "dirs" input. Must be an empty variable or a structure')
     return
@@ -98,8 +82,11 @@ if ~isfield(cal,'pH')
     return
 end
     
-
-INFO.UW     = cal.info.UW_ID; % a string
+INFO.INST_ID = cal.info.INST_ID; % a string
+INFO.WMO     = cal.info.WMO_ID; % a string
+INFO.Program = cal.info.Program; % a string
+INFO.Region  = cal.info.Region; % a string
+INFO.msg_dir = cal.info.msg_dir; % a string
 % use regexp to strip any letters out (Seabird SN sometimes)
 INFO.DF_num = str2double(regexp(cal.pH.SN,'\d+','once','match'));
 INFO.k0     = cal.pH.k0;
@@ -112,12 +99,11 @@ INFO.VER    = NaN;
 % if 1 ==1 % TESTING
 if isfield(dirs,'ph_ver')
    ph_ver = dirs.ph_ver;
-   
     %{'DF ID','UW ID','MSC','K2','K0_pON','sensor version','verion notes','Build notes'}
     vUW  = find(strcmp(ph_ver.hdr,'UW ID') == 1);
     VUW  = cell2mat(ph_ver.data(:,vUW));
     vVER = find(strcmp(ph_ver.hdr,'sensor version') == 1);
-    t1   = VUW == str2double(INFO.UW); % dup float will flag twice
+    t1   = VUW == str2double(INFO.INST_ID); % dup float will flag twice
     if sum(t1) == 1
         INFO.VER = cell2mat(ph_ver.data(t1,vVER));
     elseif sum(t1) > 1
@@ -132,43 +118,32 @@ end
 % ************************************************************************
 % BUILD *.DURA LIST
 % ************************************************************************
-dlist = get_msg_list(MBARI_ID_str, dirs,'dura'); % isus file list
+dlist = get_msg_list(cal.info,'dura'); % dura file list
+
+% CHECK FOR ODD FILE NEMES & REMOVE (i.e. 19719 has "._19719.001.dura"
+t1 = cellfun(@isempty,regexp(dlist.list(:,1),'^\d','once'));
+if sum(t1) > 0 % non standard dura files
+    dlist.list = dlist.list(~t1,:);
+    disp(['Odd dura file removed from list for ',MBARI_ID_str])
+end
 
 % ************************************************************************
 % COPY FLOAT MESSAGE FILES TO LOCAL TEMPORARY DIRECTORY
 % Three file groups *.msg, *.isus, *.dura
 % ************************************************************************
-if isempty(dlist)
+if isempty(dlist.list)
     disp(['No float dura files found to process for float ',MBARI_ID_str]);
     return
-elseif isempty(dlist.reg_list) && isempty(dlist.alt_list)
-    disp(['No float dura files found to process for float ',MBARI_ID_str]);
-    return
-else
-    disp(['Copying dura message files to ', dirs.temp, '  .......'])
-    % CHECK FLOAT TYPE
-    if regexp(dlist.reg_dir,'floats\\f','once') % APEX
-        float_type = 'APEX';
-        disp([MBARI_ID_str,' is an APEX float'])
     end
     
-    % COPY *.dura files
+% COPY *.DURA files
     if ~isempty(ls([dirs.temp,'*.dura']))
         delete([dirs.temp,'*.dura']) % Clear any message files in temp dir
     end
-    if ~isempty(dlist)
-        if ~isempty(dlist.reg_list)
-            for i = 1:length(dlist.reg_list)
-                copyfile([dlist.reg_dir, dlist.reg_list{1,i}],dirs.temp);
-            end
-        end
-        if ~isempty(dlist.alt_list)
-            for i = 1:length(dlist.alt_list)
-                copyfile([dlist.alt_dir, dlist.alt_list{1,i}],dirs.temp);
-            end
-        end
-        clear dlist i
-    end
+
+for i = 1:size(dlist.list,1)
+    fp = fullfile(dlist.list{i,2}, dlist.list{i,1});
+    copyfile(fp, dirs.temp);
 end
 
 % ************************************************************************
@@ -179,6 +154,7 @@ msg_list   = ls([dirs.temp,'*.dura']); % get list of file names to process
 disp(['Processing ARGO float ',MBARI_ID_str, '.........'])
 
 merge_pH =[];
+pH_hdr_chk = 0;
 for msg_ct = 1:size(msg_list,1)
     pH_file = strtrim(msg_list(msg_ct,:));
     % find block of numbers then look ahead to see if '.dura' follows
@@ -197,12 +173,15 @@ for msg_ct = 1:size(msg_list,1)
         continue
     end
     
-    if msg_ct == 1
+    if pH_hdr_chk == 0
         pH_hdr  = dura.hdr;
         pH_hdr  = ['Cast #', pH_hdr, 'pH_tot'];
         MSC_ver = dura.MSC_FW_ver;
+        pH_hdr_chk = 1;
     end
     pH_data = dura.data;
+    
+   
     
     % CHECK FOR NAN's IN TIME & REMOVE - INCOMPLETE FILE ISSUE with pH
     % msg parser. I SHould really fix there eventually
@@ -219,7 +198,6 @@ for msg_ct = 1:size(msg_list,1)
             MBARI_ID_str,  cast_num)
         pH_data(:,1) = pH_data(:,1) + 1024*7;
     end
-    
     
     % LOOK FOR REALLY BAD SALINITY VALUES & EXCLUDE FROM PH CALC
     % otherwise imaginary number land
@@ -279,8 +257,6 @@ if plot_flag == 1 && size(unique(merge_pH(:,1)),1) > 1 % need >1 profiles for co
     % {'Cast #','Date/Time','CTD Pres','CTD Temp','CTD Sal','Internal Temp',
     %     'Internal Humidity','System Power, V','System Power, I','Backup Batt, V',
     %     'Vrs','std Vrs','Vk','std Vk','Ik','Ib'}
-    
-
     
     P          = [0:5:100,110:10:400,450:50:1000,1100:100:2000]';
     rP         = size(P,1);
@@ -544,7 +520,7 @@ if print_flag ==1
     hstr  = datestr(pdata(:,iSDN),'HH:MM');
     
     % GET LAT AND LON FROM FLOATVIZ FILES
-    d = get_FloatViz_data([dirs.FV, MBARI_ID_str,'.TXT']);
+    d = get_FloatViz_data([dirs.FV, INFO.WMO,'.TXT']);
     uC = unique(pdata(:,iC)); % merge file cycle #'s
     LL = ones(size(pdata,1),3)*NaN; % predim lon lat QF
     
@@ -566,7 +542,7 @@ if print_flag ==1
     end
 
     % PRINT HEADER FIRST
-    out_name = [MBARI_ID_str,'_DURA.TXT'];
+    
     
 %     print_hdr ={'Cruise' 'Station' 'Type' 'yyyy-mm-dd hh:mm' ...
 %         'Longitude [degrees_east]' 'Latitude [degrees_north]' 'QF'...
@@ -612,15 +588,21 @@ if print_flag ==1
         end
     end
             
-    disp(['Printing ph diagnostic data data to: ',dirs.save,out_name]);
-    %fid  = fopen([dirs.save,'DATA\', out_name],'W');
+    out_name = [INFO.WMO,'_DURA.TXT'];
+    save_fp  = [dirs.save,'DATA\', out_name];
+    disp(['Printing ph diagnostic data data to: ', save_fp]);
     fid  = fopen([dirs.save,'DATA\', out_name],'W','n','UTF-8');
     
     fprintf(fid,'//0\r\n');
     fprintf(fid,'//<Encoding>UTF-8</Encoding>\r\n');
     fprintf(fid,['//File updated on ',datestr(now,'mm/dd/yyyy HH:MM'), ...
         '\r\n']);
-    fprintf(fid,['//MBARI ID: ',MBARI_ID_str,'\r\n//\r\n']);
+    
+    fprintf(fid,['//WMO ID: ',INFO.WMO,'\r\n']);
+    fprintf(fid,['//Institution ID: ',INFO.INST_ID,'\r\n']);
+    fprintf(fid,['//MBARI ID: ',MBARI_ID_str,'\r\n']);
+    fprintf(fid,['//Project Name: ',INFO.Program,'\r\n']);
+    fprintf(fid,['//Region: ',INFO.Region,'\r\n//\r\n']);
     
     fprintf(fid,'//STEM VERSION DEFINITIONS:\r\n');
     fprintf(fid,'//1.0 = Ag wire, thinner ISFET cover (SN 1-127)\r\n');
@@ -662,12 +644,14 @@ if print_flag ==1
             fstr =[fstr,'%d\t'];
         elseif regexp(print_hdr{i},'Cruise|Type|^mon|^hh','once')
             fstr =[fstr,'%s\t'];
-        elseif regexp(print_hdr{i},'^Lon|^Lat|','once')
-            fstr =[fstr,'%0.4f\t'];
-        elseif regexp(print_hdr{i},'^Pressure','once')
+        elseif regexp(print_hdr{i},'^Vrs|^Vk','once')
+            fstr =[fstr,'%0.6f\t'];
+        elseif regexp(print_hdr{i},'^std|Ik|Ib|K2','once')
+            fstr =[fstr,'%0.4e\t'];    
+        elseif regexp(print_hdr{i},'^Pres|Humid|System_Volts','once')
             fstr =[fstr,'%0.2f\t'];
         else
-            fstr =[fstr,'%0.4g\t'];
+            fstr =[fstr,'%0.4f\t'];
         end
         fprintf(fid,'%s\t',print_hdr{i});
     end
@@ -709,7 +693,7 @@ end
 %             dstr(ct,:), hstr(ct,:), pos_fix, pdata(ct,iP:end), ...
 %             DF_info);
         
-        fprintf(fid, fstr_txt, MBARI_ID_str, pdata(ct,iC), 'B', ...
+        fprintf(fid, fstr_txt, INFO.WMO, pdata(ct,iC), 'B', ...
             dstr(ct,:), hstr(ct,:));
         
         str = sprintf(fstr_num, pos_fix, pdata(ct,iP:end), DF_info);
