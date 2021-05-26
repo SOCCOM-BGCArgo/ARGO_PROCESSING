@@ -372,7 +372,7 @@ if isfield(cal,'BB')
     RESOLUTION.BBP700 = 'NA';
     if strcmp(cal.BB.type,'FLBBAP2') == 1
         khi = 1.097;
-        thedeg = 124;
+        thedeg = 142;
     elseif ~isempty(strfind(cal.BB.type,'MCOMS'))
         khi = 1.142;
         thedeg = 150;
