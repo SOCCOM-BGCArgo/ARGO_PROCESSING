@@ -1438,7 +1438,7 @@ clear d
         end
         
         if numnans/length(anoms) > .5
-            msgbox('WARNING: TOO MANY NANS IN RECORD.  RECOMMENDATION IS TO CALCULATE CHPTS MANUALLY.')
+            msgbox('WARNING: OVER 50% OF THE DATA SERIES ARE NANS.  CONSIDER CALCULATING CHPTS MANUALLY.')
         else
             
             %last check for nans.  If at end of record, interp won't replace
