@@ -232,7 +232,9 @@ if ~isempty(DATA.GIND)
     %[min(G.data(:,GIND)) max(G.data(:,GIND))]
     if ~isempty(DATA.glosub)
         [G_YRS,~,~,~,~,~] = datevec(DATA.glosub(:,DATA.iGSDN));% Years only
-        YRS = unique(G_YRS);
+        YRS = unique(G_YRS); %NaN are considered unique...don't want these in the vector, so identify and remove.
+        yrnonan = find(isnan(YRS));
+        YRS(yrnonan) = [];
         ct = 0; ct2 = 1;
         legend_cell ={};
         for i = 1: size(YRS,1)
