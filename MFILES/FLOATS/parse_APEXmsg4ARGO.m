@@ -49,7 +49,8 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %              profile terminted time line in msg file. Get time from
 %              SBE cp header line
 %  05/13/21 - TM added check for hi-res pressure level of 0; exists in msg
-%             file 12892.064.msg but bad data, should be removed (AOML screening for this) 
+%             file 12892.064.msg but bad data, should be removed (AOML screening for this)
+%  06/03/21 - TM added code in support of SBE83 optode on APEX test float (air-cal format spec)
 
 % ************************************************************************
 % FORMATS & VARIABLES
@@ -101,6 +102,7 @@ data.CTDsn   = '';
 data.EOT     = 0; % complete message file flag
 
 f_aircal = '%*s%s%s%s%s%*f%f%f%f%f%f';
+f83_aircal = '%*s%s%s%s%s%*f%f%f%f%f';
 
 % ************************************************************************
 % GET HEADER ROW & COLUMN INDICES FOR FLOAT VARS
@@ -170,7 +172,7 @@ FlbbMode   = NaN;
 % AND START OF LOW RES SAMPLES
 while ischar(tline)
     tline     = strtrim(tline); % at top so while catches tline = -1
-
+    
     % GET SOME INFOR FOR ANNIE
     FwRev_ind = regexp(tline,'FwRev', 'once');
     if ~isempty(FwRev_ind) % Firmware version
@@ -198,28 +200,28 @@ while ischar(tline)
         %if ~isreal(SDN), pause, end % WHY DID I PUT THIS HERE?? -jp
         clear d_str s1
         data_chk = 1;
-    
-    % 04/28/2021 12712 61 & 111 strange msg files no "profile terminated line"
-    % to get time from - try and  get time from SBE CP header line
+        
+        % 04/28/2021 12712 61 & 111 strange msg files no "profile terminated line"
+        % to get time from - try and  get time from SBE CP header line
     elseif data_chk == 0 && ~isempty(regexp(tline,'^\$ Discrete samples', 'once'))
         disp(['WARNING: Profile terminated line not found for ' ,msg_file]);
         disp('Attempt to estimate termination time from SBE CP header.')
         data_chk = 1;
         alt_sdn_chk = 1;
         
-    % LOOK FOR PRESSURE VALUE AT BEGINING OF LOW RES DATA LINE ^(\d+\.\d+)
+        % LOOK FOR PRESSURE VALUE AT BEGINING OF LOW RES DATA LINE ^(\d+\.\d+)
     elseif data_chk == 1
         ind1 = regexp(tline,'^(\d+\.\d+)|^(-\d+\.\d+)','once');
         if ~isempty(ind1)
             msg_task   = 'profile data';
             break
         end
-    % 04/28/2021 JP - this test is never reached becuase the while statement
-    % catches the -1 before the last elseif block
-%     elseif isnumeric(tline) % tline = -1, end of file w/o termination time
-%         disp(['No termination time found for ',file_name, ' NO DATA!'])
-%         data = [];
-%         return
+        % 04/28/2021 JP - this test is never reached becuase the while statement
+        % catches the -1 before the last elseif block
+        %     elseif isnumeric(tline) % tline = -1, end of file w/o termination time
+        %         disp(['No termination time found for ',file_name, ' NO DATA!'])
+        %         data = [];
+        %         return
     end
     tline = fgetl(fid);
 end
@@ -293,6 +295,17 @@ while ischar(tline)
                     end
                     clear ac_tmp d_str
                 end
+                if (regexp(tline,'^Sbe83AirCal','once'))
+                    ac_tmp = textscan(tline,f83_aircal,1,'collectoutput',1);
+                    d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
+                        ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
+                    if ~isempty(ac_tmp{1,2})
+                        data.aircal =[data.aircal; ...
+                            datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+                            ac_tmp{1,2}];
+                    end
+                    clear ac_tmp d_str
+                end
                 msg_task = 'GPS data';
             end
             
@@ -350,41 +363,20 @@ while ischar(tline)
             end
             
             
-            
-            
-            %                 if size(ind,2) >= 3 % make sure data line complete
-            %                     str = strtrim(tline(ind(2)+1:ind(3)-1)); %O2 data string
-            %                     nct = length(regexp(str,'\d+\.')); % how many #'s in str
-            %                     T_pos = ~isempty(regexp(str,'^\d+\.\d+C|^-\d+\.\d+C','once')); % T 1st
-            %                     if nct == 3 % 4330 optode
-            %                         if T_pos == 1 % 3 #'s, T at begining
-            %                             tmp = sscanf(str,'%fC %f %f')'; % T TPh RPh
-            %                         else % 3 #'s, T at end
-            %                             tmp = sscanf(str,'%f %f %fC')'; % TPh RPh T
-            %                             tmp = tmp([3,1,2]);             % T TPh RPh
-            %                         end
-            %                         data.air =[data.air; tmp];
-            %                     elseif nct == 2 % 4330 optode or older optode
-            %                         if T_pos == 1 % 2 #'s, T at begining
-            %                             tmp = sscanf(str,'%fC %f')'; % temp, phase
-            %                         else          % 2 #'s, T at end
-            %                             tmp = sscanf(str,'%f %fC')'; % phase, temp
-            %                             tmp = tmp([2,1]);            % temp, phase
-            %                         end
-            %                         data.air =[data.air; tmp];
-            %                     else
-            %                         disp('Could not parse surf obs')
-            %                     end
-            %                 else
-            %                     disp('Partial Surf Obs line - could not parse')
-            %                 end
-            %                 pause
-            %             else
-            %                 disp('Partial Surf Obs line was not parses')
-            %             end
-            
             if (regexp(tline,'^OptodeAirCal','once'))
                 ac_tmp = textscan(tline,f_aircal,1,'collectoutput',1);
+                d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
+                    ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
+                if ~isempty(ac_tmp{1,2})
+                    data.aircal =[data.aircal; ...
+                        datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+                        ac_tmp{1,2}];
+                end
+                clear ac_tmp d_str
+            end
+            
+            if (regexp(tline,'^Sbe83AirCal','once'))
+                ac_tmp = textscan(tline,f83_aircal,1,'collectoutput',1);
                 d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
                     ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
                 if ~isempty(ac_tmp{1,2})

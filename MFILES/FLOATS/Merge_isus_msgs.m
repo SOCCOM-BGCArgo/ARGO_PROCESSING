@@ -27,6 +27,7 @@ function d = Merge_isus_msgs(MBARI_ID_str, dirs)
 %     new default for Matlab 2020 and better cross platform sharing
 % 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
 % 03/23/21 - JP/TM modifications to bring in line with new WMO-based file naming system (GOBGC!)
+% 06/21/21 - JP updated code to deal with gps week nuber roll over bug
 print_flag = 1;
 d = [];
 % ************************************************************************
@@ -34,6 +35,7 @@ d = [];
 %MBARI_ID_str  = 'ua6966';
 % MBARI_ID_str  = 'ua7622';
 %MBARI_ID_str  = 'ua19719';
+% MBARI_ID_str  = 'ua8482';
 % dirs =[];
 
 % ************************************************************************
@@ -137,6 +139,9 @@ merge_NO3 = ones(300*70,size(merge_NO3_hdr,2))*NaN;
 line_ct = 1;
 INST_ID_num = str2double(INFO.INST_ID);
 
+tf_first_sdn = 0;
+first_sdn    = [];
+
 for msg_ct = 1:size(msg_list,1)
     NO3_file = strtrim(msg_list(msg_ct,:));
     % find block of numbers then look ahead to see if '.isus' follows
@@ -147,14 +152,42 @@ for msg_ct = 1:size(msg_list,1)
     % CALCULATE NO3 (µmol / kg scale)
     % ****************************************************************
     spec = parse_NO3msg([dirs.temp,NO3_file]); % return struct
-    if ~isempty(spec.UV_INTEN)
-        
-        % FIX GPS TIME STAMP BUG IN 9634
-        if strcmp(MBARI_ID_str,'9634SOOCN') && cast_num > 137
-            fprintf('%s Cycle %0.0f GPS time bug has been corrected\n', ...
-                MBARI_ID_str,  cast_num)
+    
+    % *****************************************************************
+    % DEAL WITH GPS week day number rollover bug in ua8482 & ua9634
+    % JP 06/21/21
+    if ~isempty(spec.SDN) && ~all(isnan(spec.SDN)) && tf_first_sdn == 0
+        tf_first_sdn = 1;
+        first_sdn    = spec.SDN(1);
+    end
+    
+    % CORRECT spec.sdn
+    if ~isempty(first_sdn) && ~isempty(spec.SDN)
+        dvec = datevec(spec.SDN);
+        if spec.SDN(1) > first_sdn + 365*20 && dvec(1,1) == 2099 % 20 yrs from start?
+            disp(['GPS time for this profile is > 20 years past start ', ...
+                '- gps week day number bug?!!'])
+            %dvec = datevec(INFO.sdn); % I think this should be moved above 2nd IF? jp 06/20/21
+            dvec(:,1)  = 1999; % per aoml suggestion don't quite understand jump to 2099
+            spec.SDN = datenum(dvec) + 1024*7;
+        elseif spec.SDN(1) < first_sdn % bad gps time fix 10/30/19
+            disp('GPS time for this profile is unreasonable - gps week day number bug!!')
+            disp(['days since first profile = ',num2str((spec.SDN(1) - ...
+                first_sdn),'%0.0f')]);
             spec.SDN = spec.SDN + 1024*7;
         end
+    end
+    
+    
+    
+    if ~isempty(spec.UV_INTEN)
+        
+%         % FIX GPS TIME STAMP BUG IN 9634
+%         if strcmp(MBARI_ID_str,'9634SOOCN') && cast_num > 137
+%             fprintf('%s Cycle %0.0f GPS time bug has been corrected\n', ...
+%                 MBARI_ID_str,  cast_num)
+%             spec.SDN = spec.SDN + 1024*7;
+%         end
         
         if strcmp(cal.info.float_type, 'APEX')
             if size(spec.pix_fit_win,2) == 2

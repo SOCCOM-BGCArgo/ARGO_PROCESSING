@@ -1,8 +1,8 @@
 function cal = get_float_cals(MBARI_ID_str, dirs)
-% PURPOSE: 
+% PURPOSE:
 %   This function tries to parse all the calibration data for the
 %   biogoechemical sensors on a given float from a *FloatConfig.txt file
-%   and from a *cal nitrate file if it exists. If a sensor is detected in 
+%   and from a *cal nitrate file if it exists. If a sensor is detected in
 %   the config or cal text files a stucture field with calibration data
 %   will be created.
 %   FUNCTION ASSUMES ONLY ONE SENSOR TYPE PER FLOAT (no good for 3xO2 floats)
@@ -24,7 +24,7 @@ function cal = get_float_cals(MBARI_ID_str, dirs)
 %       cal =   a structure of calibration info. Structure fields change
 %               depending on the sensors detectd in the cal file and float
 %               type (APEX or NAVIS).
-%       
+%
 %       cal.O       Oxygen calibration coefficients
 %                   (Aanderaa 3830&4330, SBE63)
 %       cal.CHL     biooptics calibration coefficients (FLBBAP2 or MCOMS
@@ -37,7 +37,7 @@ function cal = get_float_cals(MBARI_ID_str, dirs)
 %                                      FILE CREATION DATE, ETC)
 %
 % REQUIRES: MBARI_float_list.m
-%           
+%
 % EXAMPLES:
 %   jp = get_float_cals('ua8501S', dirs)
 %   jp = get_float_cals('ua8501S', [])
@@ -53,7 +53,7 @@ function cal = get_float_cals(MBARI_ID_str, dirs)
 %
 % 02/28/21 JP, Rebuilt for GO-BGC. Function is no longer float type
 %              dependant. Now sensor type dependant.
-
+% 06/03/21 TM, Enhancement in support of OCR sensor (and SBE83 optode)
 
 % ************************************************************************
 % FOR TESTING
@@ -91,7 +91,7 @@ if isempty(dirs)
     dirs.MasterDir  = [dirs.cal,'FLOAT_CONFIG\']; % MBARI master list source
     dirs.msg        = '\\seaecho.shore.mbari.org\floats\';
     dirs.bfile      = [getenv('USERPROFILE'),'\Documents\MATLAB\ARGO_MBARI2AOML\'];
-    dirs.temp      = 'C:\temp\';   
+    dirs.temp      = 'C:\temp\';
 elseif ~isstruct(dirs)
     disp('Check "dirs" input. Must be an empty variable or a structure')
     return
@@ -110,7 +110,7 @@ if exist([dirs.cal, master_list], 'file') == 2 % load master list
     load([dirs.cal, master_list]);
 else
     disp('Master list not found, building a new list ....')
-    d = MBARI_float_list(dirs); 
+    d = MBARI_float_list(dirs);
 end
 
 I.MBA  = strcmp(d.hdr,'MBARI ID'); % Define lookup indices
@@ -137,7 +137,7 @@ if sum(t1) == 0
             disp(['Please build ',config_file,' and try again'])
         end
         return
-    end     
+    end
 end
 
 info.name       = MBARI_ID_str;
@@ -170,10 +170,10 @@ if exist([dirs.cal,'FLOAT_CONFIG\', config_file],'file') ~= 2
     disp(['Calibration *.txt file not found for ',MBARI_ID_str, ...
         ' - stopping script']);
     cal = [];
-    return    
+    return
 end
 
-% CHECK FOR EXISTING ISUS CAL FILE 
+% CHECK FOR EXISTING ISUS CAL FILE
 info.isus_flag  = 1;
 if exist([dirs.cal,'NO3_CAL\',NO3_calfile],'file') ~= 2
     disp([MBARI_ID_str,': ',NO3_calfile,' not found - nitrate spectra',...
@@ -197,22 +197,22 @@ if fid == -1
     return
 end
 
-while ischar(tline)   
+while ischar(tline)
     if regexp(tline,'OptodeSn =','once') % APEX
         optode_info = regexp(tline, '\d+', 'match'); % parse any numbers from SN line
         break
-    elseif regexp(tline,'^O2 sensor','once') % NAVIS SBE63 or SBE83 
+    elseif regexp(tline,'^O2 sensor','once') % NAVIS SBE63 or SBE83
         optode_info = regexp(tline,'(?<=\()\w+|\w+(?=\))','match');
         break
     end
     tline = fgetl(fid);
-
+    
 end
 
 if ~ischar(tline) % -1 (end of file reached - no O2)
     disp(['NO oxygen sensor detected for float ',MBARI_ID_str])
     
-% NEWER STYLE AANDERAA OXYGEN CALIBRATION FORMAT (4330)    p02 = f(Phase)
+    % NEWER STYLE AANDERAA OXYGEN CALIBRATION FORMAT (4330)    p02 = f(Phase)
 elseif length(optode_info) == 2 && strcmp(optode_info{1},'4330')
     info.O2_flag = 1;
     O.type       = optode_info{1};
@@ -273,8 +273,8 @@ elseif length(optode_info) == 2 && strcmp(optode_info{1},'4330')
     
     clear FCoefA FCoefB opt_info ind t1
     
-% ************************************************************************
-% NAVIS SBE63 / SBE83 OXYGEN CALIBRATION FORMAT
+    % ************************************************************************
+    % NAVIS SBE63 / SBE83 OXYGEN CALIBRATION FORMAT
 elseif length(optode_info) == 2 && strncmp(optode_info{1},'SBE63',3)
     info.O2_flag = 1;
     O.type       = optode_info{1};
@@ -292,11 +292,11 @@ elseif length(optode_info) == 2 && strncmp(optode_info{1},'SBE63',3)
         tline =fgetl(fid);
     end
     clear TC PC
-% ************************************************************************
-% OLD STYLE AANDERAA OXYGEN CALIBRATION FORMAT (3830)    02 = f(Phase)
+    % ************************************************************************
+    % OLD STYLE AANDERAA OXYGEN CALIBRATION FORMAT (3830)    02 = f(Phase)
 elseif length(optode_info) == 1 % NO senser type just S/N
-info.O2_flag = 1;
- 
+    info.O2_flag = 1;
+    
     info.O2_flag = 1;
     O.type       = '3830';
     O.SN         = optode_info{1};
@@ -312,7 +312,7 @@ info.O2_flag = 1;
         O.(['p',coef_srch{i}]) = coef{1,2}(ind1);
     end
     
-    clear coef_format coef_path coef_srch calfile ind1 i opt_info 
+    clear coef_format coef_path coef_srch calfile ind1 i opt_info
     
 end
 
@@ -347,8 +347,8 @@ while ischar(tline)
         BB.BetabDC = sscanf(tline,'%f',1);
     elseif regexp(tline,'^\d+.+BetabScale','once') % FLBB CHL DC
         BB.BetabScale = sscanf(tline,'%f',1);
-    
-    % MCOMS BLOCK
+        
+        % MCOMS BLOCK
     elseif regexp(tline,'^MCOM.+Chl','once') % MCOMS  CHL
         tmp          = regexp(tline,',','split');
         CHL.type     = regexp(tmp{1,1},'(?<=\()\w+','once','match');
@@ -362,20 +362,20 @@ while ischar(tline)
         BB.type       = regexp(tmp{1,1},'(?<=\()\w+','once','match');
         BB.SN         = regexp(tmp{1,1},'\d+(?=\))','once','match');
         BB.BetabDC    = str2double(tmp{1,2});
-        BB.BetabScale = str2double(tmp{1,3});        
+        BB.BetabScale = str2double(tmp{1,3});
     elseif regexp(tline,'^MCOM.+DOM|^MCOM.+Backscatter532','once')
         % MCOMS CDOM or BBP532
         tmp             = regexp(tline,',','split');
         CDOM.type       = regexp(tmp{1,1},'(?<=\()\w+','once','match');
         CDOM.SN         = regexp(tmp{1,1},'\d+(?=\))','once','match');
         CDOM.CDOMDC    = str2double(tmp{1,2});
-        CDOM.CDOMScale = str2double(tmp{1,3});         
+        CDOM.CDOMScale = str2double(tmp{1,3});
     end
     
     tline = fgetl(fid);
 end
 
-if info.chl_flag == 0 
+if info.chl_flag == 0
     disp(['No bio optics detected for float ',MBARI_ID_str])
 else    % ADD CALIBRATION DATA TO STRUCTURE
     cal.CHL = CHL;
@@ -412,8 +412,8 @@ while ischar(tline)
         pH.k0     = tmp(1);
         pH.k2     = tmp(2);
         pH.pcoefs = tmp(3:coef_ct);
-    
-    % SBE PRIMARY pH CALIBRATION BLOCK
+        
+        % SBE PRIMARY pH CALIBRATION BLOCK
     elseif regexp(tline,'^pH sensor coefficients','once') % SBE Calibration
         tmp       = regexp(tline,',','split');
         pH.type   = regexp(tmp{1,1},'(?<=\()\w+','once','match');
@@ -423,8 +423,8 @@ while ischar(tline)
         pH.pcoefs = str2double(tmp(4:end))';
         disp(['SBE pH sensor detected (',pH.type,' ',pH.SN,')'])
         info.pH_flag = 1;
-    % SBE SECONDARY pH CALIBRATION LINE (NAVIS 0690, others?)
-    elseif regexp(tline,'^pH sensor secondary','once') % SBE Calibration 
+        % SBE SECONDARY pH CALIBRATION LINE (NAVIS 0690, others?)
+    elseif regexp(tline,'^pH sensor secondary','once') % SBE Calibration
         tmp = regexp(tline,',','split');
         pH.secondary_Zlimits = str2double(tmp(2:3));
         pH.secondary_pcoefs  = str2double(tmp(4:end))';
@@ -435,6 +435,97 @@ end
 if info.pH_flag == 1 % ADD CALIBRATION DATA TO STRUCTURE
     cal.pH = pH;
 end
+
+% ************************************************************************
+% PARSE config FILE TO CHECK FOR OCR SENSOR CAL COEFFICIENTS
+% ************************************************************************
+frewind(fid)
+info.ocr_flag   = 0;
+tline = ' ';% initialize some variables
+while ischar(tline)
+    
+    % OCR DOWNWELLING IRRADIANCE BLOCK
+    if regexp(tline,'DOWN_IRR','once') % OCR SN
+        OCR.type = regexp(tline,'OCR\w+','match','once');
+        OCR.SN   = regexp(tline,'\d+$','match','once');
+        disp(['OCR sensor detected (',OCR.type,' ',OCR.SN,')'])
+        info.ocr_flag   = 1;
+    elseif regexp(tline,'optical channel 1','once') %OCR CH 1 -- down irrad 380nm
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'a0:','once'))
+            ind = regexp(tline,'a0:','once','end');
+            OCR.DOWN_IRR380.a0 = sscanf(tline(ind+1:end),'%f',1);
+        end
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'a1:','once'))
+            ind = regexp(tline,'a1:','once','end');
+            OCR.DOWN_IRR380.a1 = sscanf(tline(ind+1:end),'%f',1);           
+        end
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'im:','once'))
+            ind = regexp(tline,'im:','once','end');
+            OCR.DOWN_IRR380.im = sscanf(tline(ind+1:end),'%f',1);              
+        end
+    elseif regexp(tline,'optical channel 2','once') %OCR CH 2 -- down irrad 412nm
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'a0:','once'))
+            ind = regexp(tline,'a0:','once','end');
+            OCR.DOWN_IRR412.a0 = sscanf(tline(ind+1:end),'%f',1);
+        end
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'a1:','once'))
+            ind = regexp(tline,'a1:','once','end');
+            OCR.DOWN_IRR412.a1 = sscanf(tline(ind+1:end),'%f',1);           
+        end
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'im:','once'))
+            ind = regexp(tline,'im:','once','end');
+            OCR.DOWN_IRR412.im = sscanf(tline(ind+1:end),'%f',1);              
+        end
+    elseif regexp(tline,'optical channel 3','once') %OCR CH 3 -- down irrad 490nm
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'a0:','once'))
+            ind = regexp(tline,'a0:','once','end');
+            OCR.DOWN_IRR490.a0 = sscanf(tline(ind+1:end),'%f',1);
+        end
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'a1:','once'))
+            ind = regexp(tline,'a1:','once','end');
+            OCR.DOWN_IRR490.a1 = sscanf(tline(ind+1:end),'%f',1);           
+        end
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'im:','once'))
+            ind = regexp(tline,'im:','once','end');
+            OCR.DOWN_IRR490.im = sscanf(tline(ind+1:end),'%f',1);              
+        end
+    elseif regexp(tline,'optical channel 4','once') %OCR CH 4 -- PAR
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'a0:','once'))
+            ind = regexp(tline,'a0:','once','end');
+            OCR.PAR.a0 = sscanf(tline(ind+1:end),'%f',1);
+        end
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'a1:','once'))
+            ind = regexp(tline,'a1:','once','end');
+            OCR.PAR.a1 = sscanf(tline(ind+1:end),'%f',1);           
+        end
+        tline = fgetl(fid);
+        if ~isempty(regexp(tline,'im:','once'))
+            ind = regexp(tline,'im:','once','end');
+            OCR.PAR.im = sscanf(tline(ind+1:end),'%f',1);              
+        end
+    end
+    
+    tline = fgetl(fid);
+end
+
+if info.ocr_flag == 0
+    disp(['No OCR detected for float ',MBARI_ID_str])
+else    % ADD CALIBRATION DATA TO STRUCTURE
+    cal.OCR = OCR;
+end
+
+clear tmp tline OCR
 
 % ************************************************************************
 % LOOK FOR ANY SPECIAL NOTES / COMMENTS
@@ -476,7 +567,7 @@ if exist('cal','var') ~= 1
     cal = [];
     return
 end
-    
+
 cal.info = info;
 
 s1 = [dirs.cal,'cal',MBARI_ID_str,'.mat'];
@@ -490,7 +581,7 @@ if exist(s1,'file')
         save(s1, 'cal');
     end
 else
-     save(s1, 'cal');
+    save(s1, 'cal');
 end
 
 if exist(s2,'file')
@@ -503,4 +594,4 @@ disp(' ')
 
 clear info MBARI_ID_str ind ans fid tline
 %clear s1 s2 s3
-    
+

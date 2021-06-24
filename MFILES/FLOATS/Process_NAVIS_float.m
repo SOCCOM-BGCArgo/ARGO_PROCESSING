@@ -109,7 +109,12 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 % 03/11/2021 JP, modified for GOBGC file name change and updates to some
 % other functions. Still could use a thourough clean up when time permits
 % 4/29/21 TM modified the call to getTRUE_SUNAtemp -- this used to be an exception for the 2 OSP Fassbender floats; now applying to all SUNAs.
-%
+% 6/2/21 TM format to Calc_SBE63_O2 changed in support of new SBE83 in-air
+%        optode (first deployed on APEX float, but calls to this routine also in
+%        Process_NAVIS_float).
+% 6/22/21 TM, Added code to transfer BBP700 to BBP700_ADJUSTED in real time
+%       (same for BBP532).  Also included are slight modifications to the
+%       specification of DOXY SCIENTIFIC_CALIB fields.
 % ************************************************************************
 
 % FOR TESTING
@@ -817,7 +822,7 @@ for msg_ct = 1:size(msg_list,1)
         
         lr_nan = isnan(lr_d(:,iPhase)); % missing data?
         lr_O2_matrix           = lr_d(:,[iP,iT,iS,iPhase,iTo]); % LR & HR
-        [lr_O2_umolL, lr_O2_T] = Calc_SBE63_O2(lr_O2_matrix, cal.O);
+        [ppoxdoxy, lr_O2_umolL, lr_O2_T] = Calc_SBE63_O2(lr_O2_matrix, cal.O);
         lr_O2_umolkg           = lr_O2_umolL ./ lr_den *1000;
         
         LR.PHASE_DELAY_DOXY(~lr_nan)     = lr_d(~lr_nan, iPhase); % predim
@@ -839,7 +844,7 @@ for msg_ct = 1:size(msg_list,1)
         if r_hr > 0 % HR DATA SHOULD EXIST TOO
             hr_nan = isnan(hr_d(:,iPhase)); % missing data?
             hr_O2_matrix           = hr_d(:,[iP,iT,iS,iPhase,iTo]); % HR
-            [hr_O2_umolL, hr_O2_T] = Calc_SBE63_O2(hr_O2_matrix, cal.O);
+            [ppoxdoxy, hr_O2_umolL, hr_O2_T] = Calc_SBE63_O2(hr_O2_matrix, cal.O);
             hr_O2_umolkg           = hr_O2_umolL ./ hr_den *1000;
             
             HR.PHASE_DELAY_DOXY(~hr_nan)     = hr_d(~hr_nan, iPhase); % predim
@@ -881,9 +886,19 @@ for msg_ct = 1:size(msg_list,1)
                 HR.DOXY_ADJUSTED_ERROR(~hr_nan) = HR.DOXY_ADJUSTED(~hr_nan) * 0.01;
             end
             
-            INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G';
-            INFO.DOXY_SCI_CAL_COEF = ['G=', ...
-                num2str(QC.O.steps(1,3),'%0.4f')];
+            %             INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G';
+            %             INFO.DOXY_SCI_CAL_COEF = ['G=', ...
+            %                 num2str(QC.O.steps(1,3),'%0.4f')];
+            INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G; G = G_INIT + G_DRIFT*(JULD_PROF - JULD_INIT)/365';
+            % QC matrix entry relevant to current cycle.
+            steptmp = find(QC.O.steps(:,2)<=INFO.cast,1,'last');
+            juld_prof = INFO.sdn-datenum(1950,01,01); %convert to JULD
+            juld_init = QC.O.steps(steptmp,1)-datenum(1950,01,01); %convert to JULD
+            INFO.DOXY_SCI_CAL_COEF = ['G_INIT = ', ...
+                num2str(QC.O.steps(steptmp,3),'%0.4f'),...
+                '; G_DRIFT = ',num2str(QC.O.steps(steptmp,5),'%0.4f'),...
+                '; JULD_PROF = ',num2str(juld_prof,'%9.4f'),...
+                '; JULD_INIT = ',num2str(juld_init,'%9.4f')];
             if ~isempty(d.air)
                 INFO.DOXY_SCI_CAL_COM  = ['G determined from float' ...
                     ' measurements in air. See Johnson et al.,2015,', ...
@@ -1216,8 +1231,7 @@ for msg_ct = 1:size(msg_list,1)
             end
             LR.BBP700(~lr_nan)    = (LR_VSF(~lr_nan) - ...
                 LR_BETA_SW(~lr_nan)) * X; %b_bp m^-1
-            LR.BBP700_QC(~lr_nan) = 3; % 3 do not use w/o adjusting
-            
+            LR.BBP700_QC(~lr_nan) = 2;
             if r_hr > 0 % CP data exists
                 % VOLUME SCATTERING FUNCTION (VSF) (m^-1 sr^-1)
                 HR_VSF(~hr_nan) = (hr_d(~hr_nan, iBb) - cal.BB.BetabDC) ...
@@ -1233,31 +1247,45 @@ for msg_ct = 1:size(msg_list,1)
                 end
                 HR.BBP700(~hr_nan) = (HR_VSF(~hr_nan) - ...
                     HR_BETA_SW(~hr_nan)) * X; %b_bp m^-1
-                HR.BBP700_QC(~hr_nan) = 3; % 3 do not use w/o adjusting
+                HR.BBP700_QC(~hr_nan) = 2;
             end
             
             % CALCULATE ADJUSTED DATA
-            if isfield(QC,'BB')
-                QCD = [LR.PRES, LR.TEMP, LR.PSAL, LR.BBP700];
-                LR.BBP700_ADJUSTED(~lr_nan) = ...
-                    apply_QC_corr(QCD(~lr_nan,:), d.sdn, QC.BB);
-                LR.BBP700_ADJUSTED_QC(~lr_nan) =  2;
-                LR.BBP700_ADJUSTED_ERROR(~lr_nan) = fv.bio; % PLACE HOLDER FOR NOW
-                INFO.BBP700_SCI_CAL_EQU  = 'BBP700_ADJUSTED=BBP700*A-B';
-                INFO.BBP700_SCI_CAL_COEF = ['A=', ...
-                    num2str(QC.BB.steps(3),'%0.4f'),',B=',...
-                    num2str(QC.BB.steps(4),'%0.4f')];
-                INFO.BBP700_SCI_CAL_COM  =['A and B determined by comparison', ...
-                    ' to discrete samples from post deployment calibration',...
-                    ' rosette cast'];
-                if r_hr > 0
-                    QCD = [HR.PRES, HR.TEMP, HR.PSAL, HR.BBP700];
-                    HR.BBP700_ADJUSTED(~hr_nan) = ...
-                        apply_QC_corr(QCD(~hr_nan,:), d.sdn, QC.BB);
-                    HR.BBP700_ADJUSTED_QC(~hr_nan) =  2;
-                    HR.BBP700_ADJUSTED_ERROR(~hr_nan) = fv.bio; % PLACE HOLDER FOR NOW
-                end
+            % ...6/10/21 START POPULATING BBP700_ADJUSTED WITH BBP
+            % DIRECTLY!!!  KEEP ORIGINAL BLOCK IN CASE AN ACTUAL ADJUSTMENT
+            % GETS IMPLEMENTED/STORED IN THE QC MATRIX.
+            LR.BBP700_ADJUSTED(~lr_nan) = LR.BBP700(~lr_nan);
+            LR.BBP700_ADJUSTED_QC(~lr_nan) = 1;
+            LR.BBP700_ADJUSTED_ERROR(~lr_nan) = fv.bio; % PLACE HOLDER FOR NOW
+            if r_hr > 0
+                HR.BBP700_ADJUSTED(~hr_nan) = HR.BBP700(~hr_nan);
+                HR.BBP700_ADJUSTED_QC(~hr_nan) = 1;
+                HR.BBP700_ADJUSTED_ERROR(~hr_nan) = fv.bio; % PLACE HOLDER FOR NOW
             end
+            INFO.BBP700_SCI_CAL_EQU  = 'BBP700_ADJUSTED=BBP700';
+            INFO.BBP700_SCI_CAL_COEF = [''];
+            INFO.BBP700_SCI_CAL_COM  =['BBP700_ADJUSTED is being filled with BBP700 directly in real time.  Adjustment method may be enhanced in the future.'];
+            %             if isfield(QC,'BB')
+            %                 QCD = [LR.PRES, LR.TEMP, LR.PSAL, LR.BBP700];
+            %                 LR.BBP700_ADJUSTED(~lr_nan) = ...
+            %                     apply_QC_corr(QCD(~lr_nan,:), d.sdn, QC.BB);
+            %                 LR.BBP700_ADJUSTED_QC(~lr_nan) =  2;
+            %                 LR.BBP700_ADJUSTED_ERROR(~lr_nan) = fv.bio; % PLACE HOLDER FOR NOW
+            %                 INFO.BBP700_SCI_CAL_EQU  = 'BBP700_ADJUSTED=BBP700*A-B';
+            %                 INFO.BBP700_SCI_CAL_COEF = ['A=', ...
+            %                     num2str(QC.BB.steps(3),'%0.4f'),',B=',...
+            %                     num2str(QC.BB.steps(4),'%0.4f')];
+            %                 INFO.BBP700_SCI_CAL_COM  =['A and B determined by comparison', ...
+            %                     ' to discrete samples from post deployment calibration',...
+            %                     ' rosette cast'];
+            %                 if r_hr > 0
+            %                     QCD = [HR.PRES, HR.TEMP, HR.PSAL, HR.BBP700];
+            %                     HR.BBP700_ADJUSTED(~hr_nan) = ...
+            %                         apply_QC_corr(QCD(~hr_nan,:), d.sdn, QC.BB);
+            %                     HR.BBP700_ADJUSTED_QC(~hr_nan) =  2;
+            %                     HR.BBP700_ADJUSTED_ERROR(~hr_nan) = fv.bio; % PLACE HOLDER FOR NOW
+            %                 end
+            %             end
         end
         
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
@@ -1270,14 +1298,12 @@ for msg_ct = 1:size(msg_list,1)
         LR.BETA_BACKSCATTERING700_QC(t_chk) = 4;
         LR.BBP700_QC(t_chk) = 4;
         
-        
         t_bio = LR.BBP700_ADJUSTED ~= fv.bio;
         t_chk = t_bio & (LR.BBP700_ADJUSTED < RC.BB700(1)| ...
             LR.BBP700_ADJUSTED > RC.BB700(2));
         LR.BBP700_ADJUSTED_QC(t_bio) = LR.BBP700_ADJUSTED_QC(t_bio) * ...
             ~BSLflag + BSLflag*theflag;
         LR.BBP700_ADJUSTED_QC(t_chk) = 4;
-        
         if r_hr > 0
             t_bio = HR.BBP700 ~= fv.bio;
             t_chk = t_bio & ...
@@ -1464,7 +1490,7 @@ for msg_ct = 1:size(msg_list,1)
             end
             LR.BBP532(~lr_nan)    = (LR_VSF(~lr_nan) - ...
                 LR_BETA_SW(~lr_nan)) * X; %b_bp m^-1
-            LR.BBP532_QC(~lr_nan) = 3; % 3 do not use w/o adjusting
+            LR.BBP532_QC(~lr_nan) = 2;
             
             if r_hr > 0 % CP data exists
                 % VOLUME SCATTERING FUNCTION (VSF) (m^-1 sr^-1)
@@ -1481,31 +1507,45 @@ for msg_ct = 1:size(msg_list,1)
                 end
                 HR.BBP532(~hr_nan) = (HR_VSF(~hr_nan) - ...
                     HR_BETA_SW(~hr_nan)) * X; %b_bp m^-1
-                HR.BBP532_QC(~hr_nan) = 3; % 3 do not use w/o adjusting
+                HR.BBP532_QC(~hr_nan) = 2;
             end
             
             % CALCULATE ADJUSTED DATA
-            if isfield(QC,'CDOM')
-                QCD = [LR.PRES, LR.TEMP, LR.PSAL, LR.BBP532];
-                LR.BBP532_ADJUSTED(~lr_nan) = ...
-                    apply_QC_corr(QCD(~lr_nan,:), d.sdn, QC.CDOM);
-                LR.BBP532_ADJUSTED_QC(~lr_nan) =  2;
-                LR.BBP532_ADJUSTED_ERROR(~lr_nan) = fv.bio; % PLACE HOLDER FOR NOW
-                INFO.BBP532_SCI_CAL_EQU  = 'BBP532_ADJUSTED=BBP532*A-B';
-                INFO.BBP532_SCI_CAL_COEF = ['A=', ...
-                    num2str(QC.CDOM.steps(3),'%0.4f'),',B=',...
-                    num2str(QC.CDOM.steps(4),'%0.4f')];
-                INFO.BBP532_SCI_CAL_COM  =['A and B determined by comparison', ...
-                    ' to discrete samples from post deployment calibration',...
-                    ' rosette cast'];
-                if r_hr > 0
-                    QCD = [HR.PRES, HR.TEMP, HR.PSAL, HR.BBP532];
-                    HR.BBP532_ADJUSTED(~hr_nan) = ...
-                        apply_QC_corr(QCD(~hr_nan,:), d.sdn, QC.CDOM);
-                    HR.BBP532_ADJUSTED_QC(~hr_nan) =  2;
-                    HR.BBP532_ADJUSTED_ERROR(~hr_nan) = fv.bio; % PLACE HOLDER FOR NOW
-                end
+            % ...6/10/21 START POPULATING BBP700_ADJUSTED WITH BBP
+            % DIRECTLY!!!  KEEP ORIGINAL BLOCK IN CASE AN ACTUAL ADJUSTMENT
+            % GETS IMPLEMENTED/STORED IN THE QC MATRIX.
+            LR.BBP532_ADJUSTED(~lr_nan) = LR.BBP532(~lr_nan);
+            LR.BBP532_ADJUSTED_QC(~lr_nan) = 1;
+            LR.BBP532_ADJUSTED_ERROR(~lr_nan) = fv.bio; % PLACE HOLDER FOR NOW
+            if r_hr > 0
+                HR.BBP532_ADJUSTED(~hr_nan) = HR.BBP532(~hr_nan);
+                HR.BBP532_ADJUSTED_QC(~hr_nan) = 1;
+                HR.BBP532_ADJUSTED_ERROR(~hr_nan) = fv.bio; % PLACE HOLDER FOR NOW
             end
+            INFO.BBP532_SCI_CAL_EQU  = 'BBP532_ADJUSTED=BBP532';
+            INFO.BBP532_SCI_CAL_COEF = [''];
+            INFO.BBP532_SCI_CAL_COM  =['BBP532_ADJUSTED is being filled with BBP532 directly in real time.  Adjustment method may be enhanced in the future.'];
+            %             if isfield(QC,'CDOM')
+            %                 QCD = [LR.PRES, LR.TEMP, LR.PSAL, LR.BBP532];
+            %                 LR.BBP532_ADJUSTED(~lr_nan) = ...
+            %                     apply_QC_corr(QCD(~lr_nan,:), d.sdn, QC.CDOM);
+            %                 LR.BBP532_ADJUSTED_QC(~lr_nan) =  2;
+            %                 LR.BBP532_ADJUSTED_ERROR(~lr_nan) = fv.bio; % PLACE HOLDER FOR NOW
+            %                 INFO.BBP532_SCI_CAL_EQU  = 'BBP532_ADJUSTED=BBP532*A-B';
+            %                 INFO.BBP532_SCI_CAL_COEF = ['A=', ...
+            %                     num2str(QC.CDOM.steps(3),'%0.4f'),',B=',...
+            %                     num2str(QC.CDOM.steps(4),'%0.4f')];
+            %                 INFO.BBP532_SCI_CAL_COM  =['A and B determined by comparison', ...
+            %                     ' to discrete samples from post deployment calibration',...
+            %                     ' rosette cast'];
+            %                 if r_hr > 0
+            %                     QCD = [HR.PRES, HR.TEMP, HR.PSAL, HR.BBP532];
+            %                     HR.BBP532_ADJUSTED(~hr_nan) = ...
+            %                         apply_QC_corr(QCD(~hr_nan,:), d.sdn, QC.CDOM);
+            %                     HR.BBP532_ADJUSTED_QC(~hr_nan) =  2;
+            %                     HR.BBP532_ADJUSTED_ERROR(~hr_nan) = fv.bio; % PLACE HOLDER FOR NOW
+            %                 end
+            %             end
         end
         
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
@@ -2149,9 +2189,13 @@ for msg_ct = 1:size(msg_list,1)
                     ODV_QF  = [FV_cast(:,6),FV_cast(:,8), ...
                         FV_cast(:,indQF(QF_ct))]; % P, T & QC
                     % CONVERT BACK TO ARGO VALUES
-                    ODV_QF(ODV_QF(:,3) == 4,3) = 3;
-                    ODV_QF(ODV_QF(:,3) == 8,3) = 4;
-                    
+                    if strcmp(QCvars{ind,2},'BBP700') == 1 || strcmp(QCvars{ind,2},'BBP532') == 1 
+                        ODV_QF(ODV_QF(:,3) == 4,3) = 2;
+                        ODV_QF(ODV_QF(:,3) == 8,3) = 4;
+                    else
+                        ODV_QF(ODV_QF(:,3) == 4,3) = 3;
+                        ODV_QF(ODV_QF(:,3) == 8,3) = 4;
+                    end
                     % LR (NEED TO DO LR & HR FOR NAVIS)
                     ARGO_QF = [LR.PRES, LR.TEMP, LR.([QCvars{ind,2},'_QC'])];
                     ct = 0;
@@ -2226,8 +2270,13 @@ for msg_ct = 1:size(msg_list,1)
                 if sum(ind) > 0 && isfield(LR,[QCvars{ind,2},'_ADJUSTED'])
                     ODV_QF  = [FVQC_cast(:,6), FVQC_cast(:,8), ...
                         FVQC_cast(:,indQF(QF_ct))];% P&T&QC
-                    ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
-                    ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                    if strcmp(QCvars{ind,2},'BBP700') == 1 || strcmp(QCvars{ind,2},'BBP532') == 1 
+                        ODV_QF(ODV_QF(:,3) == 4,3) = 2;
+                        ODV_QF(ODV_QF(:,3) == 8,3) = 4;
+                    else
+                        ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
+                        ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                    end
                     % FLOAVIZ VAR MATCHES LIST, LR VAR EXISTS, GET MATCHING QF's
                     
                     % LR ADJUSTED
@@ -2340,13 +2389,24 @@ for msg_ct = 1:size(msg_list,1)
     
     % BBP700
     if isfield(cal,'BB')
-        INFO.BBP700_DATA_MODE = 'R';
+        if sum(LR.BBP700_ADJUSTED<99999)>0 || sum(HR.BBP700_ADJUSTED<99999)>0 % there is data for that profile --> adjustment has been made
+            INFO.BBP700_DATA_MODE = 'A';
+        else
+            INFO.BBP700_DATA_MODE = 'R';
+        end
     end
+    %     if isfield(cal,'BB')
+    %         INFO.BBP700_DATA_MODE = 'R';
+    %     end
     % CDOM (or BBP532)
     if isfield(cal,'CDOM') && strcmp(UW_ID_str,'0565')~=1
         INFO.CDOM_DATA_MODE = 'R';
     elseif isfield(cal,'CDOM') && strcmp(UW_ID_str,'0565')==1
-        INFO.BBP532_DATA_MODE = 'R';
+        if sum(LR.BBP532_ADJUSTED<99999)>0 || sum(HR.BBP532_ADJUSTED<99999)>0 % there is data for that profile --> adjustment has been made
+            INFO.BBP532_DATA_MODE = 'A';
+        else
+            INFO.BBP532_DATA_MODE = 'R';
+        end
     end
     % CHL
     if isfield(cal,'CHL')

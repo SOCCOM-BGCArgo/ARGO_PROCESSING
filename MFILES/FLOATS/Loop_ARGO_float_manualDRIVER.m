@@ -1271,10 +1271,14 @@
 
 % 5/3/21 A few more floats with updated QC!! somehow missed initial qc on
 % 17328.
-Loop_ARGO_float('all','ua17328|ua17307|ua12892|ua12758|ua12786|ua12787|ua12878',{' '})
+% Loop_ARGO_float('all','ua17328|ua17307|ua12892|ua12758|ua12786|ua12787|ua12878',{' '})
 
 %5/17/21 Wrong Fdom & chla dark counts from Ryan's API -- he was notified, and cals fixed on our end.  Reprocess:
 %Loop_ARGO_float('all','wn1203',{' '})
 
+%6.22.21 TM, global reprocess to implement 2 upgrades:
+%(1) fill BBP700_ADJUSTED with BBP700
+%(2) revise how DOXY SCIENTIFIC_CALIB_* fields are specified.
+Loop_ARGO_float('all','','')
 
 

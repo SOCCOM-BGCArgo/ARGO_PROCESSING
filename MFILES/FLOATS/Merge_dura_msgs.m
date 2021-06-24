@@ -24,6 +24,7 @@ function d = Merge_dura_msgs(MBARI_ID_str, dirs)
 %     new default for Matlab 2020 and better cross platform sharing
 % 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
 % 03/202021 - JP - updated code for new GOBGC naming conventions
+% 06/21/21 - JP updated code to deal with gps week nuber roll over bug
 plot_flag = 0;
 print_flag = 1;
 d = [];
@@ -31,6 +32,7 @@ d = [];
 % FOR TESTING
 
 % MBARI_ID_str  = 'ua19719';
+% MBARI_ID_str  = 'ua8482';
 % dirs =[];
 
 % ************************************************************************
@@ -153,8 +155,10 @@ msg_list   = ls([dirs.temp,'*.dura']); % get list of file names to process
 
 disp(['Processing ARGO float ',MBARI_ID_str, '.........'])
 
-merge_pH =[];
-pH_hdr_chk = 0;
+merge_pH     =[];
+pH_hdr_chk   = 0;
+tf_first_sdn = 0;
+first_sdn    = [];
 for msg_ct = 1:size(msg_list,1)
     pH_file = strtrim(msg_list(msg_ct,:));
     % find block of numbers then look ahead to see if '.dura' follows
@@ -193,11 +197,39 @@ for msg_ct = 1:size(msg_list,1)
     %             'Backup Batt, V','Vrs','std Vrs','Vk','std Vk','Ik','Ib'}
     
     % FIX GPS TIME STAMP BUG IN 9634
-    if strcmp(MBARI_ID_str,'9634SOOCN') && cast_num > 137
-        fprintf('%s Cycle %0.0f GPS time bug has been corrected\n', ...
-            MBARI_ID_str,  cast_num)
-        pH_data(:,1) = pH_data(:,1) + 1024*7;
+%     if strcmp(MBARI_ID_str,'9634SOOCN') && cast_num > 137
+%         fprintf('%s Cycle %0.0f GPS time bug has been corrected\n', ...
+%             MBARI_ID_str,  cast_num)
+%         pH_data(:,1) = pH_data(:,1) + 1024*7;
+%     end
+
+    % *****************************************************************
+    % DEAL WITH GPS week day number rollover bug in ua8482 & ua9634
+    % JP 06/21/21
+    if ~isempty(pH_data) && ~all(isnan(pH_data(:,1))) && tf_first_sdn == 0
+        tf_first_sdn = 1;
+        first_sdn    = pH_data(1,1);
     end
+    
+    % CORRECT spec.sdn
+    if ~isempty(first_sdn) && ~isempty(pH_data)
+        dvec = datevec(pH_data(:,1));
+        if pH_data(1,1) > first_sdn + 365*20 && dvec(1,1) == 2099 % 20 yrs from start?
+            disp(['GPS time for this profile is > 20 years past start ', ...
+                '- gps week day number bug?!!'])
+            %dvec = datevec(INFO.sdn); % I think this should be moved above 2nd IF? jp 06/20/21
+            dvec(:,1)  = 1999; % per aoml suggestion don't quite understand jump to 2099
+            pH_data(:,1) = datenum(dvec) + 1024*7;
+        elseif pH_data(1,1) < first_sdn % bad gps time fix 10/30/19
+            disp('GPS time for this profile is unreasonable - gps week day number bug!!')
+            disp(['days since first profile = ',num2str((pH_data(1,1) - ...
+                first_sdn),'%0.0f')]);
+            pH_data(:,1) = pH_data(:,1) + 1024*7;
+        end
+    end
+
+
+
     
     % LOOK FOR REALLY BAD SALINITY VALUES & EXCLUDE FROM PH CALC
     % otherwise imaginary number land

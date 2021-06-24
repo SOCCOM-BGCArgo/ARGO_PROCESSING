@@ -328,6 +328,12 @@ for loop_ctr = start_num : stop_num % TM 3/3/21 - why is this a separate loop?
         MBARI_ID_str = FLOAT_LIST{loop_ctr,iMB}; % MBARI ID str
         WMO_ID       = FLOAT_LIST{loop_ctr,iWMO};
         
+        %TM 6/14/21 temporary(?) exclusion for OCR-test float.  Don't yet
+        %write ODV files.
+        if strcmp(WMO_ID,'5906446')==1
+            continue
+        end
+        
         if ~isempty(exclude_floats) && ...
                 any(strcmp(FLOAT_LIST{loop_ctr,iMB},exclude_floats)) || any(strcmp(FLOAT_LIST{loop_ctr,iWMO},exclude_floats))
             continue

@@ -1,4 +1,4 @@
-function [O2_uM, O2_T] = Calc_SBE63_O2(data, cal)
+function [pO2, O2_uM, O2_T] = Calc_SBE63_O2(data, cal)
 % This function is intended to calculate SBE63 oxygen concentration for 
 % NAVIS profiling float message files. given the required raw data as a
 % matrix and a calibration structure. Data is corrected for salt and
@@ -17,6 +17,8 @@ function [O2_uM, O2_T] = Calc_SBE63_O2(data, cal)
 %   05/30/2017 - Implemented Henry Bittig's (2015) pressure correction
 %       scheme. This makes  a correction in raw phase and in [O2].
 %       http://dx.doi.org/10.1175/JTECH-D-15-0108.1
+%  06/02/21 TM - minor mod to O2 temperature handling for the SBE83 sensors
+%  06/03/21 TM - added pO2 as fx output
 
 
 % TESTING
@@ -46,9 +48,14 @@ E    = 0.009; % Reassesed value in Processing ARGO O2 V2.2
 % ************************************************************************
 % CALCULATE OPTODE WINDOW TEMPERATURE (code from Dan Quittman)
 % Volts to resistance, % "log" is natural log in Matlab
-L      = log(100000 * OTV  ./ (3.3 - OTV ));
-denom  = (Tcf(1) + Tcf(2).*L + Tcf(3).*L.^2 + Tcf(4).*L.^3);
-O2_T   = 1./denom - 273.15; % window temperature (degrees C)
+% Note that the SBE83 returns temperature in C, not Volts! TM 6/2/21
+if strcmp(cal.type,'SBE83') ~=1
+	L      = log(100000 * OTV  ./ (3.3 - OTV ));
+	denom  = (Tcf(1) + Tcf(2).*L + Tcf(3).*L.^2 + Tcf(4).*L.^3);
+	O2_T   = 1./denom - 273.15; % window temperature (degrees C)
+else
+	O2_T = OTV;
+end
 
 % ************************************************************************
 % CALCULATE OXYGEN FROM PHASE, ml/L (modified from Dan Quittman)
@@ -65,7 +72,8 @@ O2     = (A./B -1) ./ Ksv; % ml/L, Salinity = 0, pressure = 0
 
 % ************************************************************************
 % CALCULATE SALT CORRECTION
-Ts    = log((298.15 - CALC_T) ./ (273.15 + CALC_T)); % Scaled T
+TK     = CALC_T + 273.15;
+Ts    = log((298.15 - CALC_T) ./ TK); % Scaled T
 % Descending powers for Matlab polyfit
 SolB  = [-8.17083e-3 -1.03410e-2 -7.37614e-3 -6.24523e-3];
 C0    = -4.88682e-7;
@@ -84,5 +92,19 @@ pcorr = (0.00022*T + 0.0419) .* P/1000 + 1;
 % FINAL OUTPUT
 O2_uM = O2 .* Scorr .* pcorr .* 44.6596; % OXYGEN µM/L
 
+% NOW COMPUTE pO2
+% Benson & Krause (cm^3/dm^3) *** USE THESE COEFFICIENTS (for all floats except Aanderaa 4330 exceptions)!!!! ***
+pA = [3.88767 -0.256847 4.94457 4.05010 3.22014 2.00907]; % Temperature Coeff
+pB = [-8.17083e-3 -1.03410e-2 -7.37614e-3 -6.24523e-3]; % Salinity coff
+Co = -4.88682e-7;
+O2_volume =  22.3916;
+part1  = polyval(pB,Ts);
+S_corr = S.*part1 + S.^2 * Co;
+L      = polyval(pA,Ts) + S_corr;
+O2sol  = (1000/O2_volume) * exp(L); % Oxygen solubility real gas, mmol/m^3 =uM/L
+theExp = (0.317.*P)./(8.314.*TK); % TM 5/25/21; in accordance with Argo O2 cookbook (for aircal pO2, P=0, this exp term does nothing)
+% CALCULATE VAPOR PRESSURE H2O
+pH2O = exp(52.57 -(6690.9./TK) - 4.681 .* log(TK));
+pO2 = (O2_uM ./ O2sol) .* ((1013.25- pH2O) * 0.20946) .* exp(theExp);  
 
 

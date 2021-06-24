@@ -117,6 +117,13 @@ function tf_float = Process_APEX_float(MBARI_ID_str, dirs, update_str)
 % 99999*1e9 or 99999(if no dura file)
 % 03/11/2021 JP, modified for GOBGC file name change and updates to some
 % other functions. Still could use a thourough clean up when time permits
+% 6/3/21 TM, Modifications in DOXY section in support of new SBE83 sensor
+% 6/21/21 JP, Modifications for weekday rollover bug to fix values for
+%             INFO.sdn & INFO.gps(:,1). Fixed small bug I found for dealing
+%             with year = 2099. ua8482 & ua9634 are the floats affected
+% 6/22/21 TM, Added code to transfer BBP700 to BBP700_ADJUSTED in real time
+%       (same for BBP532).  Also included are slight modifications to the
+%       specification of DOXY SCIENTIFIC_CALIB fields.
 % ************************************************************************
 
 % ************************************************************************
@@ -139,6 +146,10 @@ fclose all; % CLOSE ANY OPEN FILES
 tf_float.status = 0; % Default flag for float processing success 0 = no good
 tf_float.new_messages = {};
 tf_float.bad_messages = {};
+
+% THIS IS AN EXCEPTION FOR FLOAT 19314, TEST APEX WITH OCR - OCR DATA IS
+% RETURNED ON SEPARATE PRES AXIS (ONLY THIS FLOAT!)
+ocr_testflt = 'ua19314';
 
 % THIS IS A LIST OF FLOATS WITH BAD NO3 FROM THE START OR NO3 LISTED IN THE
 % MSG HEADER BUT NO SENSOR ON BOARD
@@ -212,6 +223,7 @@ RCR.P     = [0 12000];
 RCR.S     = [26 38]; % from argo parameter list
 RCR.T     = [-2.5 40]; % from argo parameter list
 RCR.O     = [-5 550]; % from argo parameter list
+RCR.PO2   = [-5 5000]; % from argo parameter list; added to this code 5/25/21, TM: is this range right?  Should be max 500??
 RCR.OP    = [10 70]; % optode phase, from argo parameter list
 RCR.OT    = [-2.5 40]; % optode temperature, from argo parameter list
 RCR.CHL   = [-0.1 150]; % argoBGC QC manual 09July2016
@@ -566,9 +578,11 @@ for msg_ct = 1:size(msg_list,1)
     pH_file  = regexprep(msg_file,'msg','dura');
     % find block of numbers then look ahead to see if '.msg' follows
     cast_num = regexp(msg_file,'\d+(?=\.msg)','once','match');
-    
-    d = parse_APEXmsg4ARGO([dirs.temp,msg_file]);
-    
+    if strcmp(MBARI_ID_str,ocr_testflt)==1
+        d = parse_APEXmsg4ARGO_OCR([dirs.temp,msg_file]);
+    else
+        d = parse_APEXmsg4ARGO([dirs.temp,msg_file]);
+    end
     %     % IF MSG FILE EXIST BUT NO LR DATA REMOVE FROM NEW LIST AND
     %     % PUT IN BAD LIST
     %     if isempty(d.lr_d) || size(d.lr_d,1)<=3
@@ -586,17 +600,19 @@ for msg_ct = 1:size(msg_list,1)
     
     % IF MSG FILE EXIST BUT NO LR DATA REMOVE FROM NEW LIST AND
     % PUT IN BAD LIST. IF NOTHING GOOD LEFT, EXIT
-    if isempty(d.lr_d) || size(d.lr_d,1)<=3
-        t1 = ~cellfun(@isempty,regexp(tf_float.new_messages, msg_file,'once'));
-        tf_float.bad_messages = [tf_float.bad_messages; ...
-            tf_float.new_messages(t1)];
-        tf_float.new_messages(t1) =[];
-        if isempty(tf_float.new_messages)
-            tf_float.status = 0; % NO VALID MESSAGES LEFT TO PROCESS
-            disp(['No complete float message files found to process', ...
-                'for float ',MBARI_ID_str]);
-            disp(['Last processed cast: ',sprintf('%03.0f',last_cast)])
-            return
+    if ~strcmp(MBARI_ID_str,ocr_testflt)==1
+        if isempty(d.lr_d) || size(d.lr_d,1)<=3
+            t1 = ~cellfun(@isempty,regexp(tf_float.new_messages, msg_file,'once'));
+            tf_float.bad_messages = [tf_float.bad_messages; ...
+                tf_float.new_messages(t1)];
+            tf_float.new_messages(t1) =[];
+            if isempty(tf_float.new_messages)
+                tf_float.status = 0; % NO VALID MESSAGES LEFT TO PROCESS
+                disp(['No complete float message files found to process', ...
+                    'for float ',MBARI_ID_str]);
+                disp(['Last processed cast: ',sprintf('%03.0f',last_cast)])
+                return
+            end
         end
     end
     
@@ -688,10 +704,11 @@ for msg_ct = 1:size(msg_list,1)
     % CHECK FOR BAD GPS TIME 10/30/19 -jp
     % WE ARE GETTING TIME FROM PROFILE TERMINATION TIME NOT GPS FIX TIME!!!
     if ~isempty(first_sdn) && ~isempty(INFO.sdn)
+        dvec = datevec(INFO.sdn);
         if INFO.sdn > first_sdn + 365*20 && dvec(1) == 2099 % 20 yrs from start?
             disp(['GPS time for this profile is > 20 years past start ', ...
                 '- gps week day number bug?!!'])
-            dvec = datevec(INFO.sdn);
+            %dvec = datevec(INFO.sdn); % I think this should be moved above 2nd IF? jp 06/20/21
             dvec(1)  = 1999; % per aoml suggestion don't quite understand jump to 2099
             INFO.sdn = datenum(dvec) + 1024*7;
         elseif INFO.sdn < first_sdn % bad gps time fix 10/30/19
@@ -704,6 +721,23 @@ for msg_ct = 1:size(msg_list,1)
     INFO.cast     = d.cast;
     INFO.gps      = d.gps;
     
+    % NEED TO CORRECT GPS SDN FOR WEEK DAY ROLLOVER BUG TOO (ua9634 & ua8482)
+    if ~isempty(first_sdn) && ~isempty(INFO.gps)
+        dvec = datevec(INFO.gps(:,1));
+        if INFO.gps(1,1) > first_sdn + 365*20 && dvec(1,1) == 2099 % 20 yrs from start?
+            disp(['GPS time for this profile is > 20 years past start ', ...
+                '- gps week day number bug?!!'])
+            dvec(:,1)  = 1999; % per aoml suggestion don't quite understand jump to 2099
+            INFO.gps(:,1)= datenum(dvec) + 1024*7;
+        elseif INFO.gps(1,1) < first_sdn % bad gps time fix 10/30/19
+            disp('GPS time for this profile is unreasonable - gps week day number bug!!')
+            disp(['days since first profile = ',num2str((INFO.gps(1,1) - ...
+                first_sdn),'%0.0f')]);
+            INFO.gps(:,1) = INFO.gps(:,1) + 1024*7;
+        end
+        
+    end
+    
     INFO.INST_ID  = cal.info.INST_ID;
     INFO.name   = cal.info.name;
     INFO.WMO_ID = cal.info.WMO_ID;
@@ -714,7 +748,8 @@ for msg_ct = 1:size(msg_list,1)
     % ****************************************************************
     % DEAL WITH LOW RESOLUTION DATA FIRST
     % ****************************************************************
-    if isempty(d.lr_d) || size(d.lr_d,1)<=3 % CHECK FOR DATA; sometimes incomplete msg files will come through with minimal LR data (ie 12633.127.msg).
+    
+    if ~strcmp(MBARI_ID_str,ocr_testflt)==1 && (isempty(d.lr_d) || size(d.lr_d,1)<=3) % CHECK FOR DATA; sometimes incomplete msg files will come through with minimal LR data (ie 12633.127.msg).
         disp(['No low res data in message file for ', ...
             strtrim(msg_list(msg_ct,:))])
         continue
@@ -734,6 +769,8 @@ for msg_ct = 1:size(msg_list,1)
         iP   = find(strcmp('p',      d.lr_hdr) == 1); % CTD P
         iT   = find(strcmp('t',      d.lr_hdr) == 1); % CTD T
         iS   = find(strcmp('s',      d.lr_hdr) == 1); % CTD S
+        iPh83  = find(strcmp('Phase',   d.lr_hdr) == 1); % SBE83 O2 phase delay
+        iT83 = find(strcmp('T83', d.lr_hdr) == 1); % SBE83 Temp (degC)
         iTo  = find(strcmp('Topt',   d.lr_hdr) == 1); % optode temp
         iTPh = find(strcmp('TPhase', d.lr_hdr) == 1); % T Phase 4330
         iRPh = find(strcmp('RPhase', d.lr_hdr) == 1); % R Phase 4330
@@ -747,13 +784,21 @@ for msg_ct = 1:size(msg_list,1)
         iCdm = find(strcmp('Cdm',   d.lr_hdr) == 1); % CDOM, NAVIS
         
         % CHECK AANDERAA OPTODE INDICE TYPE & SET TO COMMON NAME
-        if strcmp(cal.O.type,'3830')
-            iPhase = iBPh;
-        elseif strcmp(cal.O.type,'4330')
-            iPhase = iTPh;
+        if isfield(cal,'O')
+            if strcmp(cal.O.type,'3830')
+                iPhase = iBPh;
+            elseif strcmp(cal.O.type,'4330')
+                iPhase = iTPh;
+            elseif strcmp(cal.O.type,'SBE83')
+                iPhase = iPh83;
+                iTo    = iT83;
+            else
+                iPhase = [];
+            end
         else
             iPhase = [];
         end
+        
         
         
         
@@ -863,6 +908,11 @@ for msg_ct = 1:size(msg_list,1)
             LR.TPHASE_DOXY_QC         = fill0 + fv.QC;
             LR.TPHASE_DOXY(~t_nan)    = lr_d(~t_nan,iTPh);
             LR.TPHASE_DOXY_QC(~t_nan) =  fv.QC;
+        elseif strcmp(cal.O.type,'SBE83')
+            LR.PHASE_DELAY_DOXY            = fill0 + fv.bio;
+            LR.PHASE_DELAY_DOXY_QC         = fill0 + fv.QC;
+            LR.PHASE_DELAY_DOXY(~t_nan)    = lr_d(~t_nan,iPh83);
+            LR.PHASE_DELAY_DOXY_QC(~t_nan) =  fv.QC;
         end
         LR.DOXY                = fill0 + fv.bio;
         LR.DOXY_QC             = fill0 + fv.QC;
@@ -876,12 +926,16 @@ for msg_ct = 1:size(msg_list,1)
         INFO.DOXY_SCI_CAL_COM  = 'not applicable';
         INFO.DOXY_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
         
-        %[S, T, P, Phase, CalPhase, [O2], O2sol, pO2]
-        O2 = calc_O2_4ARGO(LR.PSAL(~t_nan), LR.TEMP(~t_nan), ...
-            LR.PRES(~t_nan),lr_d((~t_nan),iPhase), cal.O); % O2 in µmol/L + more
-        
-        LR.DOXY(~t_nan) = O2(:,6) ./ lr_den(~t_nan) .* 1000; % µmol/kg
-        
+        if strcmp(cal.O.type,'SBE83')
+            myOdata = [LR.PRES(~t_nan) LR.TEMP(~t_nan) LR.PSAL(~t_nan) lr_d((~t_nan),iPhase),lr_d((~t_nan),iTo)];
+            [ppoxdoxy, O2_uM, O2_T] = Calc_SBE63_O2(myOdata, cal.O);
+            LR.DOXY(~t_nan) = O2_uM ./ lr_den(~t_nan) .* 1000; % µmol/kg
+        else
+            %[S, T, P, Phase, CalPhase, [O2], O2sol, pO2]
+            O2 = calc_O2_4ARGO(LR.PSAL(~t_nan), LR.TEMP(~t_nan), ...
+                LR.PRES(~t_nan),lr_d((~t_nan),iPhase), cal.O); % O2 in µmol/L + more
+            LR.DOXY(~t_nan) = O2(:,6) ./ lr_den(~t_nan) .* 1000; % µmol/kg
+        end
         tDOXY = abs(LR.DOXY) > crazy_val & ~t_nan; % Unrealistic bad value
         LR.DOXY(tDOXY) = crazy_val; % SET TO crazy bad value
         LR.DOXY_QC(~t_nan)      = 3;
@@ -904,11 +958,18 @@ for msg_ct = 1:size(msg_list,1)
             % JP: QC assignment below not needed - crazy value greater than range limits
             %LR.DOXY_ADJUSTED_QC(tDOXY_ADJ) = 4; %set crazy val QF to bad
             LR.DOXY_ADJUSTED_ERROR(~t_nan) = LR.DOXY_ADJUSTED(~t_nan) * 0.01;
-            INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G';
-            INFO.DOXY_SCI_CAL_COEF = ['G=', ...
-                num2str(QC.O.steps(1,3),'%0.4f')];
+            INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G; G = G_INIT + G_DRIFT*(JULD_PROF - JULD_INIT)/365';
+            % QC matrix entry relevant to current cycle.
+            steptmp = find(QC.O.steps(:,2)<=INFO.cast,1,'last');
+            juld_prof = INFO.sdn-datenum(1950,01,01); %convert to JULD
+            juld_init = QC.O.steps(steptmp,1)-datenum(1950,01,01); %convert to JULD
+            INFO.DOXY_SCI_CAL_COEF = ['G_INIT = ', ...
+                num2str(QC.O.steps(steptmp,3),'%0.4f'),...
+                '; G_DRIFT = ',num2str(QC.O.steps(steptmp,5),'%0.4f'),...
+                '; JULD_PROF = ',num2str(juld_prof,'%9.4f'),...
+                '; JULD_INIT = ',num2str(juld_init,'%9.4f')];
             
-            if isfield(cal.O,'SVUFoilCoef')
+            if isfield(cal.O,'SVUFoilCoef') && ~strcmp(cal.O.type,'SBE83')
                 O2_cal_str = 'SVU Foil calibration coeficients were used. ';
             else
                 O2_cal_str = 'Polynomial calibration coeficients were used. ';
@@ -924,26 +985,72 @@ for msg_ct = 1:size(msg_list,1)
             end
         end
         
+        % NEED TO STILL CONVERT O2 OUTPUT FROM SBE83 TO PO2 FOR INAIR
+        % 6/2/21
         if ~isempty(d.air) & sum(d.air(:)) ~= 0 % 0 means ice detection on
             zero_fill = d.air(:,1) * 0; % make array of zeros
-            O2 = calc_O2_4ARGO(zero_fill, d.air(:,1), zero_fill, ...
-                d.air(:,2), cal.O);
-            AIR_O2 = O2; % µmol/L still NOT USED YET
-            clear O2
+            if strcmp(cal.O.type,'SBE83')
+                myadata = [zero_fill d.air(:,2) zero_fill d.air(:,1) d.air(:,2)]; %use optode T here for CTD T input?
+                [ppoxdoxy, O2_uM, O2_T] = Calc_SBE63_O2(myadata, cal.O);
+            else
+                O2 = calc_O2_4ARGO(zero_fill, d.air(:,1), zero_fill, ...
+                    d.air(:,2), cal.O);
+                ppoxdoxy = O2(:,end);
+            end
+            %             AIR_O2 = O2; % µmol/L still NOT USED YET
+            AIR_O2.RAW = d.air; %raw in-air measurements associated with the telemetry cycle (NOT the in-air "series")
+            AIR_O2.PPOX_DOXY = ppoxdoxy; %last column is pO2
+            AIR_O2.PPOX_DOXY_QC = ones(size(AIR_O2.PPOX_DOXY))* 0 + fv.bio;
+            po2BAD = AIR_O2.PPOX_DOXY < RCR.PO2(1) | AIR_O2.PPOX_DOXY > RCR.PO2(2);
+            AIR_O2.PPOX_DOXY_QC(po2BAD)=4;
+            AIR_O2.PPOX_DOXY_QC(~po2BAD)=1;
+            clear O2 po2BAD
         end
         
         % NEW AIR CAL MEASUREMEMTS 4 just below surf and 8 above
         % 0 for phase means ice detection on
         % aircal = [sdn, bladder(?), pres, temperature, Tphase, Rphase]
-        if ~isempty(d.aircal) & sum(d.aircal(:,5)) ~= 0
+        if ~isempty(d.aircal) % Not sure why the second part of this was needed?  When would all phase meas be zero??  & sum(d.aircal(:,5)) ~= 0
             zero_fill = d.aircal(:,1) * 0; % make array of zeros
-            tpress    = d.aircal(:,3) > 0; % find poss press
+            %             tpress    = d.aircal(:,3) > 0; % find poss press
             tzmin     = lr_d(:,iP) == min(lr_d(:,iP)); % shallowest value
-            S0 = zero_fill + nanmean(lr_d(tzmin,iS)); % surface salinity
-            O2 = calc_O2_4ARGO(S0.*tpress, d.aircal(:,4), ...
-                d.aircal(:,3).*tpress, d.aircal(:,5), cal.O);
-            AIRCAL_O2 = [d.aircal(:,1:3),O2]; % µmol/L still NOT USED YET
-            clear O2
+            S0 = zero_fill + nanmean(lr_d(tzmin,iS)); % surface salinity.  Needed in O2 calc for near sfc in-air sequence samples
+            % TM 5/25/21; reorganize the in-air data structures for Annie
+            % to access.  The in-air PPOX_DOXY will be used for populating
+            % the Dtraj files.  The variables will require QC as well.
+            %AIRCAL_O2 = [d.aircal(:,1:3),O2]; % µmol/L still NOT USED YET.
+            
+            %run the check on nearsfc & in-air based on pneumatic pressure
+            diffPneuPres = abs(diff(d.aircal(:,2)));
+            Xmax = find(diffPneuPres == nanmax(diffPneuPres));
+            MAXind = Xmax+1; %index of end of near sfc data  Should reflect a large shift in pneumatic pressure.
+            Bdef_s = Xmax; %indices of air-cal surface samples
+            Bdef_a = Xmax+1:size(d.aircal,1);
+            inair_bin = zeros(size(d.aircal,1),1); %inair_bin is the last column in the raw_inair_series and will serve as a logical indicator of true "in-air" part of the series (1=inair; 0=nearsurface)
+            inair_bin(Bdef_a) = 1;
+            raw_inair_series = [d.aircal inair_bin];
+            if strcmp(cal.O.type,'SBE83')
+                myadata = [zero_fill d.aircal(:,4) S0.*~logical(inair_bin) d.aircal(:,5) d.aircal(:,4)]; %use optode T here for CTD T input?
+                [ppoxdoxy, O2_uM, O2_T] = Calc_SBE63_O2(myadata, cal.O);
+            else
+                O2 = calc_O2_4ARGO(zero_fill, d.aircal(:,4), zero_fill, ...
+                    d.aircal(:,5), cal.O);
+                ppoxdoxy = O2(:,end);
+            end
+            AIRCAL_O2.RAW = raw_inair_series; %store the raw data;
+            AIRCAL_O2.PPOX_DOXY = ppoxdoxy; %This is pO2 returned from calc_O2_4ARGO (or Calc_SBE63_O2 for the SBE83s)
+            AIRCAL_O2.PPOX_DOXY_QC = ones(size(AIRCAL_O2.PPOX_DOXY))* 0 + fv.bio;
+            po2BAD = AIRCAL_O2.PPOX_DOXY < RCR.PO2(1) | AIRCAL_O2.PPOX_DOXY > RCR.PO2(2);
+            %             save('tanyatemp.mat','AIRCAL_O2')
+            if str2num(INFO.INST_ID)>18000 %cludgy for now until we get more guidance from Dana...Apex starting at 18000 series (Apf11) have valid pneumatic pres range for in-air data as
+                pneupresBAD = (AIRCAL_O2.RAW(:,end)==1 & AIRCAL_O2.RAW(:,2)>160) | (AIRCAL_O2.RAW(:,end)==1 & AIRCAL_O2.RAW(:,2)<150); %column 2 is pneumpres.  Only due this check on the "inair" part of the series.
+            else
+                pneupresBAD = false(size(AIRCAL_O2.PPOX_DOXY));
+            end
+            AIRCAL_O2.PPOX_DOXY_QC(po2BAD)=4;
+            AIRCAL_O2.PPOX_DOXY_QC(~po2BAD)=1;
+            AIRCAL_O2.PPOX_DOXY_QC(pneupresBAD)=4;
+            clear O2 diffPneuPres inair_bin raw_inair_series po2BAD pneupresBAD Xmax MAXind Bdef_s Bdef_a
         end
         
         
@@ -1185,23 +1292,33 @@ for msg_ct = 1:size(msg_list,1)
             LR.BETA_BACKSCATTERING700(~t_nan) = lr_d(~t_nan,iBb); % counts
             LR.BETA_BACKSCATTERING700_QC(~t_nan) = fv.QC; % counts
             LR.BBP700(~t_nan)    = (VSF(~t_nan) - BETA_SW(~t_nan)) * X; %b_bp m^-1
-            LR.BBP700_QC(~t_nan) = 3; % 3 do not use w/o adjusting
+            LR.BBP700_QC(~t_nan) = 2; % 3 do not use w/o adjusting ... 6/10/21 modify qcraw flag from 3 to 2.
             
             % CALCULATE ADJUSTED DATA _ NO ADJUSTMENTS AT THIS TIME
-            if isfield(QC,'BB')
-                QCD = [LR.PRES, LR.TEMP, LR.PSAL, LR.BBP700];
-                LR.BBP700_ADJUSTED(~t_nan) = ...
-                    apply_QC_corr(QCD(~t_nan,:), INFO.sdn, QC.BB);
-                LR.BBP700_ADJUSTED_QC(~t_nan) =  2;
-                LR.BBP700_ADJUSTED_ERROR(~t_nan) = fv.bio; % PLACE HOLDER FOR NOW
-                INFO.BBP700_SCI_CAL_EQU  = 'BBP700_ADJUSTED=BBP700*A-B';
-                INFO.BBP700_SCI_CAL_COEF = ['A=', ...
-                    num2str(QC.BB.steps(3),'%0.4f'),',B=',...
-                    num2str(QC.BB.steps(4),'%0.4f')];
-                INFO.BBP700_SCI_CAL_COM  =['A and B determined by comparison', ...
-                    ' to discrete samples from post deployment calibration',...
-                    ' rosette cast'];
-            end
+            % BUT...6/10/21 START POPULATING BBP700_ADJUSTED WITH BBP
+            % DIRECTLY!!!  KEEP ORIGINAL BLOCK IN CASE AN ACTUAL ADJUSTMENT
+            % GETS IMPLEMENTED/STORED IN THE QC MATRIX.
+            LR.BBP700_ADJUSTED(~t_nan) = LR.BBP700(~t_nan);
+            LR.BBP700_ADJUSTED_QC(~t_nan) = 1;
+            LR.BBP700_ADJUSTED_ERROR(~t_nan) = fv.bio; % PLACE HOLDER FOR NOW
+            INFO.BBP700_SCI_CAL_EQU  = 'BBP700_ADJUSTED=BBP700';
+            INFO.BBP700_SCI_CAL_COEF = [''];
+            INFO.BBP700_SCI_CAL_COM  =['BBP700_ADJUSTED is being filled with BBP700 directly in real time.  Adjustment method may be enhanced in the future.'];
+            
+            %             if isfield(QC,'BB')
+            %                 QCD = [LR.PRES, LR.TEMP, LR.PSAL, LR.BBP700];
+            %                 LR.BBP700_ADJUSTED(~t_nan) = ...
+            %                     apply_QC_corr(QCD(~t_nan,:), INFO.sdn, QC.BB);
+            %                 LR.BBP700_ADJUSTED_QC(~t_nan) =  2;
+            %                 LR.BBP700_ADJUSTED_ERROR(~t_nan) = fv.bio; % PLACE HOLDER FOR NOW
+            %                 INFO.BBP700_SCI_CAL_EQU  = 'BBP700_ADJUSTED=BBP700*A-B';
+            %                 INFO.BBP700_SCI_CAL_COEF = ['A=', ...
+            %                     num2str(QC.BB.steps(3),'%0.4f'),',B=',...
+            %                     num2str(QC.BB.steps(4),'%0.4f')];
+            %                 INFO.BBP700_SCI_CAL_COM  =['A and B determined by comparison', ...
+            %                     ' to discrete samples from post deployment calibration',...
+            %                     ' rosette cast'];
+            %             end
         end
         
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
@@ -1893,8 +2010,13 @@ for msg_ct = 1:size(msg_list,1)
                 if sum(ind) > 0 && isfield(LR,QCvars{ind,2})
                     ODV_QF  = [FV_cast(:,6),FV_cast(:,8), ...
                         FV_cast(:,indQF(QF_ct))]; % P, T & QC
-                    ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
-                    ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                    if strcmp(QCvars{ind,2},'BBP700') == 1
+                        ODV_QF(ODV_QF(:,3) == 4,3) = 2;
+                        ODV_QF(ODV_QF(:,3) == 8,3) = 4;
+                    else
+                        ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
+                        ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                    end
                     
                     
                     ARGO_QF = [LR.PRES, LR.TEMP, LR.([QCvars{ind,2},'_QC'])];
@@ -1946,8 +2068,13 @@ for msg_ct = 1:size(msg_list,1)
                     
                     ODV_QF  = [FVQC_cast(:,6), FVQC_cast(:,8), ...
                         FVQC_cast(:,indQF(QF_ct))];% P&T&QC
-                    ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
-                    ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                    if strcmp(QCvars{ind,2},'BBP700') == 1
+                        ODV_QF(ODV_QF(:,3) == 4,3) = 2;
+                        ODV_QF(ODV_QF(:,3) == 8,3) = 4;
+                    else
+                        ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
+                        ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                    end
                     
                     ARGO_QF = [LR.PRES, LR.TEMP, ...
                         LR.([QCvars{ind,2},'_ADJUSTED_QC'])];
@@ -2071,8 +2198,13 @@ for msg_ct = 1:size(msg_list,1)
                     if sum(ind) > 0 && isfield(HR,QCvars{ind,2})
                         ODV_QF  = [FV_cast(:,6),FV_cast(:,8), ...
                             FV_cast(:,indQF(QF_ct))]; % P, T & QC
-                        ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
-                        ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                        if strcmp(QCvars{ind,2},'BBP700') == 1
+                            ODV_QF(ODV_QF(:,3) == 4,3) = 2;
+                            ODV_QF(ODV_QF(:,3) == 8,3) = 4;
+                        else
+                            ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
+                            ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                        end
                         
                         ARGO_QF = [HR.PRES, HR.TEMP, ...
                             HR.([QCvars{ind,2},'_QC'])];
@@ -2126,8 +2258,13 @@ for msg_ct = 1:size(msg_list,1)
                     if sum(ind) > 0 && isfield(HR,[QCvars{ind,2},'_ADJUSTED'])
                         ODV_QF  = [FV_cast(:,6),FV_cast(:,8), ...
                             FV_cast(:,indQF(QF_ct))]; % P, T & QC
-                        ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
-                        ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                        if strcmp(QCvars{ind,2},'BBP700') == 1
+                            ODV_QF(ODV_QF(:,3) == 4,3) = 2;
+                            ODV_QF(ODV_QF(:,3) == 8,3) = 4;
+                        else
+                            ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
+                            ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                        end
                         
                         ARGO_QF = [HR.PRES, HR.TEMP, ...
                             HR.([QCvars{ind,2},'_ADJUSTED_QC'])];
@@ -2158,6 +2295,82 @@ for msg_ct = 1:size(msg_list,1)
                 clear tFV FV_cast FV_QF_sum indQF QF_ct ODV_QF ARGO_QF ct i dP t1
                 clear min_dP min_dT dT
             end
+        end
+    end
+    
+    % ****************************************************************
+    % NOW DEAL WITH OCR DATA EXCEPTION - SEPARATE PRES AXIS
+    % ** This should probably go above the ultimate flagging check block? **
+    % ****************************************************************
+    if regexp(MBARI_ID_str, ocr_testflt, 'once')
+        iPocr   = find(strcmp('p', d.hr_hdr) == 1); % P
+        ich380  = find(strcmp('ocr380', d.ocr_hdr) == 1);
+        ich412   = find(strcmp('ocr412', d.ocr_hdr) == 1);
+        ich490   = find(strcmp('ocr490', d.ocr_hdr) == 1);
+        ichPAR   = find(strcmp('ocrPAR', d.ocr_hdr) == 1);
+        if isempty(d.ocr_d) % CHECK FOR DATA
+            disp(['No ocr axis data in message file for ', ...
+                strtrim(msg_list(msg_ct,:))])
+            OCR.PRES = [];
+            OCR.PRES_ADJUSTED = [];
+            OCR.DOWN_IRRADIANCE380 = [];
+            OCR.DOWN_IRRADIANCE380_ADJUSTED = [];
+            OCR.DOWN_IRRADIANCE412 = [];
+            OCR.DOWN_IRRADIANCE412_ADJUSTED = [];
+            OCR.DOWN_IRRADIANCE490 = [];
+            OCR.DOWN_IRRADIANCE490_ADJUSTED = [];
+            OCR.DOWNWELLING_PAR = [];
+            OCR.DOWNWELLING_PAR_ADJUSTED = [];
+        else % if data also header variable
+            OCR.PRES = d.ocr_d(:,iPocr);
+            fill0  = ones(size(OCR.PRES))* 0;
+            OCR.RAW_DOWNWELLING_IRRADIANCE380 = fill0 + fv.bio;
+            OCR.RAW_DOWNWELLING_IRRADIANCE412 = fill0 + fv.bio;
+            OCR.RAW_DOWNWELLING_IRRADIANCE490 = fill0 + fv.bio;
+            OCR.RAW_DOWNWELLING_PAR           = fill0 + fv.bio;
+            OCR.RAW_DOWNWELLING_IRRADIANCE380_QC = fill0 + fv.QC;
+            OCR.RAW_DOWNWELLING_IRRADIANCE412_QC = fill0 + fv.QC;
+            OCR.RAW_DOWNWELLING_IRRADIANCE490_QC = fill0 + fv.QC;
+            OCR.RAW_DOWNWELLING_PAR_QC           = fill0 + fv.QC;
+            OCR.DOWN_IRRADIANCE380               = fill0 + fv.bio;
+            OCR.DOWN_IRRADIANCE380_QC             = fill0 + fv.QC;
+            OCR.DOWN_IRRADIANCE412               = fill0 + fv.bio;
+            OCR.DOWN_IRRADIANCE412_QC             = fill0 + fv.QC;
+            OCR.DOWN_IRRADIANCE490               = fill0 + fv.bio;
+            OCR.DOWN_IRRADIANCE490_QC             = fill0 + fv.QC;
+            OCR.DOWNWELLING_PAR               = fill0 + fv.bio;
+            OCR.DOWNWELLING_PAR_QC             = fill0 + fv.QC;
+            OCR.DOWN_IRRADIANCE380_ADJUSTED               = fill0 + fv.bio;
+            OCR.DOWN_IRRADIANCE380_ADJUSTED_QC             = fill0 + fv.QC;
+            OCR.DOWN_IRRADIANCE412_ADJUSTED               = fill0 + fv.bio;
+            OCR.DOWN_IRRADIANCE412_ADJUSTED_QC             = fill0 + fv.QC;
+            OCR.DOWN_IRRADIANCE490_ADJUSTED               = fill0 + fv.bio;
+            OCR.DOWN_IRRADIANCE490_ADJUSTED_QC             = fill0 + fv.QC;
+            OCR.DOWNWELLING_PAR_ADJUSTED               = fill0 + fv.bio;
+            OCR.DOWNWELLING_PAR_ADJUSTED_QC             = fill0 + fv.QC;
+            t_nan380 = isnan(d.ocr_d(:,ich380)); % NaN's in data if any
+            t_nan412 = isnan(d.ocr_d(:,ich412)); % NaN's in data if any
+            t_nan490 = isnan(d.ocr_d(:,ich490)); % NaN's in data if any
+            t_nanPAR = isnan(d.ocr_d(:,ichPAR)); % NaN's in data if any
+            
+            
+            OCR.RAW_DOWNWELLING_IRRADIANCE380(~t_nan380) = d.ocr_d(~t_nan380,ich380);
+            OCR.RAW_DOWNWELLING_IRRADIANCE412(~t_nan412) = d.ocr_d(~t_nan412,ich412);
+            OCR.RAW_DOWNWELLING_IRRADIANCE490(~t_nan490) = d.ocr_d(~t_nan490,ich490);
+            OCR.RAW_DOWNWELLING_PAR(~t_nanPAR)           = d.ocr_d(~t_nanPAR,ichPAR);
+            % % OCR.RAW_DOWNWELLING_IRRADIANCE380_QC(~t_nan380) = 3;
+            % % OCR.RAW_DOWNWELLING_IRRADIANCE412_QC(~t_nan412) = 3;
+            % % OCR.RAW_DOWNWELLING_IRRADIANCE490_QC(~t_nan490) = 3;
+            % % OCR.RAW_DOWNWELLING_PAR_QC(~t_nanPAR)           = 3;
+            OCR.PRES_QC = fill0 + fv.QC;
+            OCR.DOWN_IRRADIANCE380(~t_nan380) = (OCR.RAW_DOWNWELLING_IRRADIANCE380-cal.OCR.DOWN_IRR380.a0).*cal.OCR.DOWN_IRR380.a1.*cal.OCR.DOWN_IRR380.im.*0.01; %units W/m2/nm
+            OCR.DOWN_IRRADIANCE380_QC(~t_nan380) = 3;
+            OCR.DOWN_IRRADIANCE412(~t_nan412) = (OCR.RAW_DOWNWELLING_IRRADIANCE412-cal.OCR.DOWN_IRR412.a0).*cal.OCR.DOWN_IRR412.a1.*cal.OCR.DOWN_IRR412.im.*0.01;
+            OCR.DOWN_IRRADIANCE412_QC(~t_nan412) = 3;
+            OCR.DOWN_IRRADIANCE490(~t_nan490) = (OCR.RAW_DOWNWELLING_IRRADIANCE490-cal.OCR.DOWN_IRR490.a0).*cal.OCR.DOWN_IRR490.a1.*cal.OCR.DOWN_IRR490.im.*0.01;
+            OCR.DOWN_IRRADIANCE490_QC(~t_nan490) = 3;
+            OCR.DOWNWELLING_PAR(~t_nanPAR) = (OCR.RAW_DOWNWELLING_PAR-cal.OCR.PAR.a0).*cal.OCR.PAR.a1.*cal.OCR.PAR.im.*0.01;
+            OCR.DOWNWELLING_PAR_QC(~t_nanPAR) = 3;
         end
     end
     
@@ -2208,7 +2421,11 @@ for msg_ct = 1:size(msg_list,1)
     end
     % BBP700
     if isfield(cal,'BB')
-        INFO.BBP700_DATA_MODE = 'R';
+        if sum(LR.BBP700_ADJUSTED<99999)>0  % there is data for that profile --> adjustment has been made
+            INFO.BBP700_DATA_MODE = 'A';
+        else
+            INFO.BBP700_DATA_MODE = 'R';
+        end
     end
     % CDOM
     if isfield(cal,'CDOM')
@@ -2251,7 +2468,11 @@ for msg_ct = 1:size(msg_list,1)
     %         end
     
     save_str = [dirs.mat, WMO,'\', WMO,'.', cast_num,'.mat'];
-    save(save_str,'LR','HR','INFO');
+    if regexp(MBARI_ID_str, ocr_testflt, 'once')
+        save(save_str,'OCR','LR','HR','INFO');
+    else
+        save(save_str,'LR','HR','INFO');
+    end
     %     if msg_ct == 1
     %         copyfile(fp_cal, [dirs.mat, WMO,'\']); % copy over cal file
     %     end

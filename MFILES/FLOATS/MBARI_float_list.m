@@ -42,6 +42,8 @@ function d = MBARI_float_list(dirs)
 %                 on board
 %    03/23/2021 - JP - changes due to changes in Sharon's stats table & set
 %                 tf_bfile for temporary WMO = -1
+%    06/03/2021 - TM added new APEX_type (for DOXY only SBE83 Apex test
+%                 float)
 
 % *************************************************************************
 % TESTING
@@ -122,7 +124,10 @@ special_case(4,:) = {'ua6966' , 'NO_WMO_' , 'duplicate\UW\f6966\' ,0};
 special_case(5,:) = {'un0948' , 'NO_WMO_' , 'duplicate\UW\n0948\', 0};
 special_case(6,:) = {'un0948B', 'NO_WMO_' , 'UW\n0948\', 0};
 special_case(7,:) = {'un1173' , 'NO_WMO_' , '\\atlas\chem\tripleO2float\n1173\', 0};
-
+special_case(8,:) = {'ua19727', '5906027' , 'UW\f19727\', 0}; %SBE83 test float. 6/2/21 TM; Wait on pushing to Argo; need to do some parameter & type template checking...
+special_case(9,:) = {'ua19065', '5906028' , 'UW\f19065\', 0}; %SBE83 test float. 6/2/21 TM; Wait on pushing to Argo; need to do some parameter & type template checking...
+special_case(10,:) = {'ua19314', '5906446' , 'UW\f19314\', 0}; %OCR test float. 6/14/21 TM; Wait on pushing to Argo; need to do some parameter & type template checking...
+% special_case(11,:) = {'ua8482', '5906041' , 'UW\f8482\', 0};
 
 % *************************************************************************
 % *************************************************************************
@@ -577,13 +582,17 @@ APEX_types(9,:) = {9,'Topt TPhase RPhase no3',-99, -99, ''};
 % Aanderaa 4330 & DURA (NO NO3 or FLBB, Example: 8374, uses type 4 skeleton)
 APEX_types(10,:) = {10,'TPhase Topt pH(V)',-99, -99, ''};
 
-% APEX TYPE 11: NO SKELETON YET - NOT GOING TO ARGO
+% APEX TYPE 11:
 % Aanderaa 4330 ONLY (NO NO3,FLBB or pH, Example: 12472)
 APEX_types(11,:) = {11,'Topt TPhase RPhase',-99, -99, ''};
 
-% APEX TYPE 12: NO SKELETON YET - NOT GOING TO ARGO
+% APEX TYPE 12: 
 % Aanderaa 4330, DURA, FLBB (NO NO3, Example: 12792, PAL sensor equiped)
 APEX_types(12,:) = {12,'Topt TPhase RPhase pH(V) FSig BbSig TSig',1, 1, ''};
+
+% APEX TYPE 13: 
+% SBE83 only (NO other BGCm Example: 19727 NPac test float off the Bluefin)
+APEX_types(13,:) = {13,'Phase T83',-99, -99, ''};
 
 % ************************************************************************
 % NAVIS FLOAT DEFINITIONS: annie type, hdr vars, FlbbMode, PalMode, flt filter
