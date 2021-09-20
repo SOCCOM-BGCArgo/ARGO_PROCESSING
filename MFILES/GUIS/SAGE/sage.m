@@ -596,7 +596,7 @@ clear d
             handles.info.float_name ={};
             handles.info.INST_ID    = {};
             handles.info.float_type = {};
-            if isfield(handles,'MasterList') % For MBARI floats
+            if isfield(handles,'MasterList') && ~isempty(handles.MasterList) % For MBARI floats
                 t1 = strcmp(handles.MasterList(:,3),WMO_ID);
                 if sum(t1) == 1
                      handles.info.float_name = handles.MasterList{t1,1};
