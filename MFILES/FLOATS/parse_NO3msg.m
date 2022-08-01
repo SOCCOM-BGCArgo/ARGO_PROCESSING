@@ -184,6 +184,11 @@ if data_ct == 0
 else
     hex_length      = mode(hex_len); % most common value
     spec_length     = hex_length /4;
+	if rem(spec_length,1) ~= 0 % each hex value described by 4 char 07/28/22 JP (12745.154.isus)
+        fprintf('File exists but limited, incomplete data line for: %s\n',...
+            isus_file);
+        return
+    end
     line_test       = hex_len ~= hex_length; % 1's are bad lines
     data_ct         = sum(~line_test); % Sum good lines
     
