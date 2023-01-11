@@ -9,12 +9,40 @@ function [phfree,phtot]= phcalc(Vrs, Press, Temp, Salt, k0, k2, Pcoefs)
 %   Temp    = Temperature in degrees C
 %   Salt    = Salinity (usually CTD salinity on the PSS)
 %   k0      = Sensor reference potential (intercept at Temp = 0C) 
-%   k2      = linear temperature coefficient (slope)
+%   k2      = constant or pressure dependant temperature response (slope)
 %   Pcoefs  = sensor dependent pressure coefficients
+
+% ************************************************************************
+% TESTING
+% % Vrs = -0.953799;
+% % 
+% % Press  = 4.71;
+% % Press  = 1000;
+% % Temp   = 16.3902;
+% % Salt   = 33.6131;
+% 
+% Vrs    = [-0.953799;-0.953799]; 
+% Press  = [4.71; 1000];
+% Salt   = [33.6131; 33.6131];
+% Temp   = [16.3902; 5.0];
+% 
+% k0     = -1.4131;
+% k2     = -0.0011416;
+% Pcoefs = [0 0 0 0 0 0]';
+% 
+% k2 = [-0.00100947,-5.85041e-08,3.83975e-11,-1.98141e-14];
+% %k2 = [-0.00100947];
+% ************************************************************************
+
+% CHANGE HISTORY:
+%02/03/2022 JP - Added compatibilty for using k2f(P)
 
 % ************************************************************************
 %  SET SOME CONSTANTS
 % ************************************************************************
+if max(size(k2)) > 1
+    disp('K2 input has pressure dependent terms!')
+end
 %Universal gas constant, (R) , http://physics.nist.gov/cgi-bin/cuu/Value?r
 R    = 8.31446; % J/(mol K) 
 F    = 96485; %Faraday constant Coulomb / mol
@@ -85,7 +113,17 @@ log10gammaHCLtP = log10gammaHCl + deltaVHCl.*(Press./10)./(R.*Tk.*ln10)./2./10;
 %  Sensor reference potential
 
 % ************************************************************************
-k0T = k0 + k2 * Temp; % Temp  in deg C
+% CHECK SIZE OF K2 VARIABLE
+if max(size(k2)) == 1
+    k0T = k0 + k2 * Temp; % Temp  in deg C
+elseif max(size(k2)) > 1 % polynomial pressure dependance
+%     k2pc = [flipud(Pcoefs);0]; TM: This was applying f(P) Pcoefs instead of k2??
+    k2pc = [flipud(k2)];
+    k0T  = k0 + polyval(k2pc,Press) .* Temp;
+else
+    disp('Max size should be >= 1 : Check k2 input!')
+    return
+end
 
 % CALCULATE PRESSURE CORRECTION (POLYNOMIAL FUNCTION OF PRESSURE)
 % ALL SENSORS HAVE A PRESSURE RESPONSE WHICH IS DETERMINED IN THE LAB

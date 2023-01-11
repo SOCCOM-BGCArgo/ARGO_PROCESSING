@@ -25,9 +25,13 @@ function d = parse_pHmsg(pH_file)
 %                   it as a field in the ouput structure. Also delt with
 %                   bogus time stamp issue (18110). If time stamp bogus
 %                   subsitute EOP date
+% 11/28/22 - JP - add code to deal with partial file case where one partial
+%                 data line exists but no data & no comma sepration in line
+%                 a brute force fix but should be Ok
 
+% TESTING:
 %pH_file ='C:\temp\8514.034.dura'; % TEST
-
+%pH_file ='C:\temp\19644.081.dura'; % TEST
 
 % ************************************************************************
 % SET FORMATS AND VARIABLES
@@ -109,6 +113,15 @@ end
 % check for data lines
 if data_ct < 1
     disp(['File exists but no data lines found for : ',pH_file]);
+    fclose(fid);
+    return
+end
+
+% Check total comma count. Error thrown by partial file 19644.081.dura
+% where only one partial data line & comma count  = 0
+if size(comma_ct,1) == 1 && comma_ct(1,1) == 0
+    fprintf(['File exists but only 1 partial data line with no data ', ...
+        'inside for %s\n'], pH_file)
     fclose(fid);
     return
 end
