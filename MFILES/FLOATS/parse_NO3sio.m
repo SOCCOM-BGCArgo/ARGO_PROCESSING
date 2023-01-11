@@ -36,6 +36,10 @@ function d = parse_NO3sio(filename, verbosity)
 %   jp = parse_NO3sio_jp('08666_000001_0042.no3')
 %
 % Modified by jg; Created 01/13/2016 by jp
+
+%      8/11/22     TM: If 'verbosity' is set to 1: ONLY remove NaN pressure lines
+%       that are beyond Max Press!  If there are missing pressures along the
+%       profile, preference is to record them as such).
 %
 % REVISONS:
 %
@@ -193,7 +197,7 @@ data           = data(1:line_ct,:);
 tFILL          = data == -999 | data == -99;
 data(tFILL)    = NaN; % replace fill values with NaN
 iP             = strncmp(hdr,'PRESSURE (dbar)',15);
-d.max_BGC_pres = max(data(:,iP),[],1,'omitnan');
+[d.max_BGC_pres,mpI] = max(data(:,iP),[],1,'omitnan');
 
 % APPLY PRESSURE OFFSET TO SENSOR PRESSURE (SUNA AT BOTTOM OF FLOAT)
 if d.tf_sensor_offset
@@ -210,8 +214,9 @@ end
 if verbosity == 1
     d.verbosity = 1;
     % REMOVE NaN PRESSURE LINES
-    tnan = isnan(data(:,iP'));
-    data = data(~tnan,:);
+        data = data(mpI:end,:);
+%     tnan = isnan(data(:,iP'));
+%     data = data(~tnan,:);
     
     % REMOVE RESOLUTION,INDEX COLUMNS
     % May need to divide data by gain 1st if not always 1
