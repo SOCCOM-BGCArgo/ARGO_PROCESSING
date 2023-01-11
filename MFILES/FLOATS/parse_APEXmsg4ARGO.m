@@ -1,7 +1,8 @@
-function data = parse_APEXmsg4ARGO(msg_file)
+function data = parse_APEXmsg4ARGO(msg_file) 
+
 % PURPOSE:
 %   This function parses an UW/MBARI APEX biochemical float *.msg file and
-%   returns a structure of raw data. The # of colums are determined from
+%   returns a structure of raw data. The # of columns are determined from
 %   the low resolution header line
 %
 % USAGE:
@@ -20,9 +21,14 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %           data.lr_d   = low res data matrix
 %           data.hr_hdr = high res header cell array
 %           data.hr_d   = high res data matrix
+%           data.pk_hdr = park sample header cell array               
+%           data.pk_d   = park sample data matrix                            
 %           data.cast   = profile number
 %           data.sdn    = profile termination date [matlab sdn]
+%           data.ice_flag = UnderIceEvasion y/n
+%           data.ice_hex = UnderIceEvasion status for the previous 8 cycles
 %           data.gps    = gps location fix [lon, lat]
+%			data.irid   = iridium location fix (newer floats)
 %           data.air    = Air oxygen measurements [Temp phase (Rphase)]
 %           data.EOT    = flag count of EOT occurances
 % EXAMPLES:
@@ -48,34 +54,36 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %   04/28/21 - JP fixed 12712 issue processing cyles 61 & 111 with no
 %              profile terminted time line in msg file. Get time from
 %              SBE cp header line
-%  05/13/21 - TM added check for hi-res pressure level of 0; exists in msg
+%   05/13/21 - TM added check for hi-res pressure level of 0; exists in msg
 %             file 12892.064.msg but bad data, should be removed (AOML screening for this)
-%  06/03/21 - TM added code in support of SBE83 optode on APEX test float (air-cal format spec)
+%   06/03/21 - TM added code in support of SBE83 optode on APEX test float (air-cal format spec)
+%
+%   02/07/22 - EC added parser section for ParkPt and ParkPtFLBB
+%   02/19/22 - EC added IceEvasionRecord in 8-digit and current status flag
+%   04/27/22 - TM; incorporated the iridium fix positioning into parser (newer floats).
+
+%----------------
+% FOR TESTING
+% msg_file = '\\atlas\chemwebdata\floats\alternate\f9095\9095.011.msg';
+
+% Full PkPt
+% msg_file = 'C:\Users\eclark\Documents\Matlab\ARGO_PROCESSING\MFILES\EKC commented tests\12878.054.msg'
+
+% Full ParkPtFLBB
+% wmo 5906471
+% msg_file = 'C:\Users\eclark\Documents\Matlab\ARGO_PROCESSING\MFILES\EKC commented tests\20532.003.msg'
+%msg_file = 'c:\temp\9031.003.msg'; % TESTING
+
+% 10/28/2020 JP testing
+% msg_file = 'c:\temp\12652.036.msg';
+%----------------
+
+
+
 
 % ************************************************************************
 % FORMATS & VARIABLES
 % ************************************************************************
-% FOR TESTING
-% msg_file = '\\atlas\chemwebdata\floats\alternate\f9095\9095.011.msg';
-
-%msg_file = 'c:\temp\9031.003.msg'; % TESTING
-%msg_file = 'c:\temp\9662.003.msg'; % TESTING
-%msg_file = 'c:\temp\7622.032.msg'; % TESTING
-%msg_file = 'c:\temp\9752.002.msg';
-%msg_file = 'c:\temp\6966.004.msg'; % TESTING
-%msg_file = 'c:\temp\9031.006.msg';
-
-% 10/28/2020 JP testing
-%msg_file = 'c:\temp\12652.036.msg';
-%msg_file = 'c:\temp\11090.003.msg';
-%msg_file = 'c:\temp\7614.003.msg';
-%msg_file = 'c:\temp\12878.006.msg'; % under ice surf obs values = 0
-%msg_file = 'c:\temp\5143.002.msg'; % no surf obs line data.air = [];
-%msg_file = 'c:\temp\6968.002.msg'; %T & Phase onle , no RPhase
-%msg_file = 'C:\temp\12712.061.msg';
-%msg_file = 'C:\temp\12712.016.msg';
-
-
 % HIGH RESOLUTION SAMPLES FOR UW / MBARI APEX FLOATS
 % The first 4-bytes of the encoded sample represents the pressure in
 % centibars.  The second 4-bytes represents the temperature in
@@ -84,14 +92,18 @@ function data = parse_APEXmsg4ARGO(msg_file)
 % the 2dbar pressure bin. 2's compliment
 
 
-% PREDIMENSION OUTPUT STRUCTURE (If no data this is the output)
+% PREDIMENSION OUTPUT STRUCTURE
+data.pk_hdr = {}; % park data header cell array                 % NEW NEW
+data.pk_d   = []; % park data matrix                                     % NEW NEW
 data.lr_hdr = {}; % low res header cell array
 data.lr_d   = []; % low res data matrix
 data.hr_hdr = {}; % high res header
 data.hr_d   = []; % high res data
 data.cast   = NaN; % profile #
 data.sdn    = NaN; % profile termination time
+data.sdni   = NaN; %iridium timestamp
 data.gps    = []; % gps location fix
+data.irid   = []; % iridium location fix (only some floats)
 data.air    = []; % Air oxygen measurements
 data.aircal = []; % air calibration measurements{ w/ & w/o air inflation
 data.FwRev  = [];
@@ -100,9 +112,12 @@ data.FlbbMode = NaN;
 data.CTDtype = '';
 data.CTDsn   = '';
 data.EOT     = 0; % complete message file flag
+data.ice_flag = [];                 % NEW
+data.ice_hex = [];                   % NEW
 
 f_aircal = '%*s%s%s%s%s%*f%f%f%f%f%f';
 f83_aircal = '%*s%s%s%s%s%*f%f%f%f%f';
+
 
 % ************************************************************************
 % GET HEADER ROW & COLUMN INDICES FOR FLOAT VARS
@@ -111,6 +126,7 @@ fid = fopen(msg_file);
 
 tline = '';
 % header line starts with '$       p        t        s '
+% find out if the file is complete/ whether or not to proceed
 while isempty(regexp(tline,'p\s+t\s+s\s+','once')) % # find header line
     tline = fgetl(fid);
     if isnumeric(tline)
@@ -121,7 +137,9 @@ while isempty(regexp(tline,'p\s+t\s+s\s+','once')) % # find header line
 end
 fclose(fid);
 
-ind1       = regexp(tline,'\$\s+p\s+t\s+s','once');
+
+ind1       = regexp(tline,'\$\s+p\s+t\s+s','once'); % label title line
+% extract headers in a cell array
 msg_hdr    = textscan(tline(ind1+1:end),'%s');
 float_vars = msg_hdr{1,1}; % r x 1 cell array with header variables
 
@@ -143,14 +161,15 @@ tline = fgetl(fid);% initialize with first line
 
 % FILE EXISTS BUT NO DATA OR NON STANDARD FILE FORMAT & FILE ENDED
 if tline == -1 % Go to next i
-    disp('File exist but empty inside - moving to next message file.')
+    disp('File exists but empty inside - moving to next message file.')
     fclose(fid);
     data = []; % function will return empty value if no msg data
     return;
 end
 
 % CAST # FROM MESSAGE FILE NAME
-str      = regexp(msg_file,'\d{3}(?=\.msg)','match');
+str      = regexp(msg_file,'\d{3}(?=\.msg)','match'); % pull the file name
+
 data.cast = str2double(str{1}); % cast # from file name
 clear str
 
@@ -167,20 +186,24 @@ high_res   = [];
 CpActP     = [];
 FwRev      = [];
 FlbbMode   = NaN;
+pk_data    = []; 
+ice_flag = 0;
+ice_hex = [];
 
 % STEP THROUGH PARK SAMPLES TO GET TO PROFILE TERMINATION TIME
 % AND START OF LOW RES SAMPLES
-while ischar(tline)
-    tline     = strtrim(tline); % at top so while catches tline = -1
-    
-    % GET SOME INFOR FOR ANNIE
+
+while ischar(tline)                                 % while each line starts w/ a character
+    tline     = strtrim(tline);                      % at top so while catches tline = -1
+ 
+    % GET SOME INFO FOR ANNIE
     FwRev_ind = regexp(tline,'FwRev', 'once');
     if ~isempty(FwRev_ind) % Firmware version
         FwRev = str2double(regexp(tline,'(?<=FwRev.+)\d+','once','match'));
         clear FwRev_ind
     end
     CpAct_ind = regexp(tline,'\$ CpAct', 'once');
-    if ~isempty(CpAct_ind) %contant profiling activation P ?
+    if ~isempty(CpAct_ind) %constant profiling activation P ?
         CpActP = str2double(regexp(tline,'\d+','once','match'));
         clear CpAct_ind
     end
@@ -190,10 +213,82 @@ while ischar(tline)
         FlbbMode = str2double(regexp(tline,'\d+','once','match'));
         clear FlbbMode_ind
     end
+    % ********************************************************************
+    % ********************************************************************
     
+    % GET PARK DATA
+    % PARKPT
+    if regexp(tline,'^ParkPt\:', 'once')            % If the line starts w ParkPt (APEX)
+        
+        data.pk_d = regexp(tline,'\s+', 'split');% chunk up ParkPt line by whitespace
+        
+        if size(data.pk_d, 2) == 9                     % check for standard col # for ParkPt
+            
+            data.pk_hdr  = {'Date', 'p', 't'};          % manually set headers
+            pkdat = data.pk_d;
+            
+            d_str = [pkdat{2},' ',pkdat{3},' ',pkdat{4},' ', pkdat{5}]; %collect date chunks
+            try
+                sdn = datenum(d_str,'mmm dd yyyy HH:MM:SS');       % format date
+            catch
+                sdn = nan;
+            end
+            
+            Pk_p = str2double(pkdat{8});
+            Pk_t = str2double(pkdat{9});
+            pk_keep = [Pk_p Pk_t];
+            
+            %                 pk_data = [pk_data; sdn pkdat{8}, pkdat{9}];     % fill pk data (empty matrix created before) with date&data
+            pk_data = [pk_data; sdn pk_keep];
+            
+        else
+            disp(['Uncharacteristic number of ParkPt columns, check for incomplete msg file'])
+        end
+        
+        % PARKPT FLBB
+    elseif regexp(tline,'^ParkPtFlbb\:', 'once')         % If the line starts w ParkPtFLBB (APEX)
+        
+        
+        %%%%%%%%%%%%%%%%%%%%%%%
+        data.pk_d = regexp(tline,'\s+', 'split');% chunk up ParkPt line by whitespace
+        
+        if size(data.pk_d, 2) == 12                     % check for standard col # for ParkPt
+            
+            data.pk_hdr  = {'Date', 'p', 't', 'Fsig', 'Bbsig', 'Tsig'};          % manually set headers
+            pkdat = data.pk_d;
+            
+            d_str = [pkdat{2},' ',pkdat{3},' ',pkdat{4},' ', pkdat{5}]; %collect date chunks
+            sdn = datenum(d_str,'mmm dd yyyy HH:MM:SS');       % format date
+            
+            Pk_p = str2double(pkdat{8});
+            Pk_t = str2double(pkdat{9});
+            Pk_Fs = str2double(pkdat{10});
+            Pk_Bbs = str2double(pkdat{11});
+            Pk_Ts = str2double(pkdat{12});
+            
+            pk_keep = [Pk_p Pk_t Pk_Fs Pk_Bbs Pk_Ts];  % assemble desired output vars
+            
+            pk_data = [pk_data; sdn pk_keep];  % assemble full output structure
+        else
+            disp(['Uncharacteristic number of ParkPt columns, check for incomplete msg file'])
+        end
+        
+        %%%%%%%%%%%%%%%%%
+        
+    end
+    
+    
+    % ********************************************************************
+    % ********************************************************************
+    
+    % this set of if statements is CONFUSING ME
     if data_chk == 0 && ~isempty(regexp(tline,'^\$ Profile', 'once'))
+        
+        %msg_time_format = Profile_#_terminated:_Day_Month_#_HH:MM:SS_year
         msg_time_format = '%*s %*s %*s %*s %*s %s %s %s %s';
-        d_str = textscan(tline,msg_time_format,'CollectOutput',1);
+        
+        d_str = textscan(tline,msg_time_format,'CollectOutput',1); 
+        
         d_str = d_str{1}; % cells: mmm dd hh:mm:ss 2008
         s1 = [d_str{2},'-',d_str{1},'-',d_str{4},' ',d_str{3}]; % = Malab format
         data.sdn = datenum(s1,0); % Profile end time as Matlab SDN
@@ -216,6 +311,8 @@ while ischar(tline)
             msg_task   = 'profile data';
             break
         end
+        
+        % ********************************************************************
         % 04/28/2021 JP - this test is never reached becuase the while statement
         % catches the -1 before the last elseif block
         %     elseif isnumeric(tline) % tline = -1, end of file w/o termination time
@@ -226,9 +323,25 @@ while ischar(tline)
     tline = fgetl(fid);
 end
 
+
 % EXTRACT PROFILE DATA
 while ischar(tline)
     tline = strtrim(tline);
+    
+    
+      % ICE INFO        
+    IceEvas_ind = regexp(tline,'IceEvasionRecord','once');
+    if ~isempty(IceEvas_ind) 
+        
+        ihex = regexp(tline,'(?<=IceEvasionRecord.+)\w+','once','match'); % extract hex
+        ice_hex = hex2bin(ihex, 8);                     % convert hex to binary
+        lastnum = str2double(ice_hex(8));          % extract last digit of hex 8
+        if lastnum == 1
+            ice_flag = 1               ;                          % change flag to 1 if under ice now
+        end
+                clear IceEvas_ind
+    end
+    
     
     % GET SOME INFO FOR ANNIE - Older float, found in footer
     FwRev_ind = regexp(tline,'FwRev', 'once');
@@ -276,6 +389,7 @@ while ischar(tline)
                     end
                 end
             elseif data_chk == 2 & regexp(tline,'0{14}\[\d+\]','once')
+%                  comment out this elseif/display when running through fleet to save time/power  
                 disp(['No data hex line in middle of cp data: ',tline, ...
                     ' for ', msg_file])
             elseif data_chk == 2 && length(tline) ~= 14 % end of cp
@@ -324,11 +438,26 @@ while ischar(tline)
                     data.gps = [data.gps; [data.sdn NaN NaN]];
                 end
             end
+
+            if ~isempty(regexp(tline,'^IridiumFix:','once'))
+                irid = sscanf(tline,'%*s %*s %f %f',2); %[lon; lat]
+                if ~isempty(irid)
+                    gps_sdni = char(sscanf(tline,'%*s %*s %*f %*f %*s %*s %19c',1))'; %[mm/dd/yyyy; hh:mm:ss]
+                    if size(gps_sdni,2) == 19
+                        Isdn = datenum(gps_sdni,'mm/dd/yyyy HH:MM:SS');
+                        data.irid = [data.irid; [Isdn irid']];
+                    else
+                        data.irid = [data.irid; [data.sdni NaN NaN]];
+                    end
+                else
+                    data.irid = [data.irid; [data.sdni NaN NaN]];
+                end
+            end			
             
             % complete surf line is bounded by curly braces, count to check
             if ~isempty(regexp(tline,'^(SurfaceObs)','once')) && ...
                     size(regexp(tline,'{|}'),2) == 2
-                
+
                 % use slash as delimiter to break up string
                 stmp = regexp(tline,'/','split');
                 if size(stmp,2) == 4 % count substrings (in cell array now)
@@ -349,6 +478,12 @@ while ischar(tline)
                 if num_ct == 3 && tf_endC % 3 #'s & "C" at end of string
                     tmp = sscanf(O2_str,'%f %f %fC')'; % TPh RPh T
                     tmp = tmp([3,1,2]);             % T TPh RPh
+                    
+                % This is a patch for surface obs typo in msg file, 19746
+                % find numberC in middle
+                elseif num_ct == 3 & regexp(O2_str,'\s[\d\.]+C\s', 'once')
+                    tmp = sscanf(O2_str,'%f %fC %f')'; % T TPh RPh
+                    
                 elseif num_ct == 3 % 3 #'s & "C" must be at begining
                     tmp = sscanf(O2_str,'%fC %f %f')'; % T TPh RPh
                 elseif num_ct == 2 && tf_endC % 2 #'s & "C" at end of string
@@ -403,7 +538,7 @@ if isempty(data.gps)
 end
 
 % ************************************************************************
-% CONVERT CP TO USEFULL NUMBERS  --  THIS IS A MODIFICATION AND CONDENSING
+% CONVERT CP TO USEFUL NUMBERS  --  THIS IS A MODIFICATION AND CONDENSING
 % OF Dan Quittman's hextop.m, hextot.m and hextos.m functions
 % for converting 16 bit 2's complement format to decimal
 % It appears this is also a way to deal with a 12 bit A/D board in a
@@ -440,6 +575,8 @@ else
     data.FwRev         = FwRev;
     data.CpActivationP = CpActP;
     data.FlbbMode      = FlbbMode;
+    data.ice_flag = ice_flag;                 % NEW
+    data.ice_hex = ice_hex;                   % NEW
     
     if ~isempty(low_res)
         tnan = all(isnan(low_res(:,1:3)),2); % MISSING PT&S?
@@ -460,8 +597,13 @@ else
     else
         disp(['No high resolution data found for ',msg_file])
     end
+    
+%     % Check ParkPt data status               TEST/UNCOMMENT
+%         if ~isempty(pk_data)                                      % is it full
+            data.pk_d = pk_data;
+%         else  disp([msg_file, ' park data is empty'])  % is it empty
+%         end
 end
-clearvars -except data
 
-
+clearvars -except data 
 

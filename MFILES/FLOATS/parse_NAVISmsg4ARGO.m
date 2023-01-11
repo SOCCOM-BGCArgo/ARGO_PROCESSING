@@ -42,6 +42,7 @@ function data = parse_NAVISmsg4ARGO(msg_file)
 %                example
 %    10/26/20 - TM, Modified gps fix extraction to carry over datetime.  Was not included in original code.
 %  10/27/20, TM/JP Modification for compatability with NAVIS new msg file format (with pH diag)
+%   05/04/22 - TM added IceEvasionRecord in 8-digit and current status flag
 
 
 % ************************************************************************
@@ -78,6 +79,8 @@ data.FlbbMode = NaN;
 data.CTDtype = '';
 data.CTDsn   = '';
 data.EOT    = 0;
+data.ice_flag = [];                 % NEW
+data.ice_hex = [];                   % NEW
 
 % ************************************************************************
 % GET PARK AND DATA HEADERS, THEN BUILD FORMAT STRINGS (VARIES W/ FLOAT)
@@ -95,7 +98,10 @@ data.EOT    = 0;
 % Pressure Temp(C) Salinity  nbins_pts  O2Phase  O2Temp nbins_O2  Fl  
 %  9  10     11
 % Ntu Cd  nbins_MCOMS
-% ************************************************************************               
+% ************************************************************************   
+ice_flag = 0;
+ice_hex = [];
+
 fid = fopen(msg_file);
 tline = ' ';
 while ischar(tline) % # find header lines   
@@ -277,6 +283,19 @@ end
 % EXTRACT PROFILE DATA
 while ischar(tline)
     tline = strtrim(tline);
+
+    % ICE INFO        
+    IceEvas_ind = regexp(tline,'IceEvasionRecord','once');
+    if ~isempty(IceEvas_ind) 
+        
+        ihex = regexp(tline,'(?<=IceEvasionRecord.+)\w+','once','match'); % extract hex
+        ice_hex = hex2bin(ihex, 8);                     % convert hex to binary
+        lastnum = str2double(ice_hex(8));          % extract last digit of hex 8
+        if lastnum == 1
+            ice_flag = 1               ;                          % change flag to 1 if under ice now
+        end
+                clear IceEvas_ind
+    end
     
     % GET SOME INFO FOR ANNIE - Older float, found in footer
     FwRev_ind = regexp(tline,'FwRev', 'once');
@@ -442,6 +461,8 @@ clear tmp t0 t_hi t_low
 if isempty(low_res) && isempty(high_res)
     disp(['No data found in ',msg_file])
 else
+    data.ice_flag = ice_flag;                 % NEW
+    data.ice_hex = ice_hex;                   % NEW
     if ~isempty(low_res)
         xx = find(isnan(low_res(:,1)));
         if ~isempty(xx)

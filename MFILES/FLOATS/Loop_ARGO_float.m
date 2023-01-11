@@ -36,6 +36,7 @@ function Loop_ARGO_float(update_str,filter_str,exclude_floats)
 %		 such that missing files that come in out of sequence actually get processed in real time (previously a full
 %		 float refresh done manually was required for such cases).  Also enhanced the notification system to better
 % 		 differentiate between such cases and msg files received in sequence.
+%        5/16/2022: TM Remove MLR "flavor" of data files for upcoming snapshot archive!
 
 % ************************************************************************
 % ------------------------------------------------------------------------
@@ -92,6 +93,10 @@ dirs.cal       = [user_dir,'ARGO_PROCESSING\DATA\CAL\'];
 dirs.FVlocal   = [user_dir,'ARGO_PROCESSING\DATA\FLOATVIZ\'];
 dirs.FV        = [user_dir,'ARGO_PROCESSING\DATA\FLOATVIZ\'];
 dirs.CANY = [user_dir,'ARGO_PROCESSING\DATA\CANYON\'];
+%dirs.pk        = [dirs.FV,'PARK\'];
+dirs.pk       = [user_dir,'ARGO_PROCESSING\DATA\FLOATVIZ_ParkData\'];
+
+
 
 %dirs.FV        = '\\sirocco\wwwroot\lobo\Data\FloatVizData\';
 
@@ -154,7 +159,7 @@ clear d iS iT iP tS1 tS0 tT PID rPID kill_str
 setpref('Internet','SMTP_Server','mbarimail.mbari.org'); % define server
 setpref('Internet','E_mail','tmaurer@mbari.org'); % define sender
 %email_list ={'johnson@mbari.org';'tmaurer@mbari.org';'jplant@mbari.org'}; %5/16/19, Ken asked to be removed from processing email list.
-email_list ={'tmaurer@mbari.org';'jplant@mbari.org'};
+email_list ={'tmaurer@mbari.org';'jplant@mbari.org';'eclark@mbari.org';'johnson@mbari.org'}; %TM 8/16/21 added Emily to recipients.
 % email_list ={'tmaurer@mbari.org'};
 new_msg_fn = ['new_argo_msgs',datestr(now,'yyyymmddHHMM.txt')];
 bad_msg_fn = ['bad_argo_msgs',datestr(now,'yyyymmddHHMM.txt')];
@@ -203,6 +208,12 @@ else
     disp('****UNABLE TO BUILD (OR LOAD PRE-EXISTING) MBARI MASTER FLOAT LIST.  EXITING!!!!****')
     return
 end
+
+% ************************************************************************
+% TEMORARY CODE BLOCK TO EXCLUDE NAVIS FROM REPROCESSING LIST
+% tf_NAVIS   = strcmp(FLOAT_LIST(:,4),'APEX'); % TESTING - EXCLUDE NAVIS
+% FLOAT_LIST = FLOAT_LIST(~tf_NAVIS,:); % TESTING - EXLUDE NAVIS
+% ************************************************************************
 
 %dura pH ver code:
 try
@@ -278,7 +289,7 @@ for loop_ctr = start_num: stop_num
         elseif strcmp('NAVIS',FLOAT_LIST{loop_ctr,iFLT})
             tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str);
         elseif strcmp('SOLO',FLOAT_LIST{loop_ctr,iFLT})
-            Do nothing for now.  Insert Process_SOLO_float once built!
+            tf_float = Process_SOLO_float(MBARI_ID_str, dirs, update_str);
         else
             disp(['Unknown float type for ',MBARI_ID_str,', WMO: ',WMO_ID_str,...
                 '! processing next float'])
@@ -330,9 +341,11 @@ for loop_ctr = start_num : stop_num % TM 3/3/21 - why is this a separate loop?
         
         %TM 6/14/21 temporary(?) exclusion for OCR-test float.  Don't yet
         %write ODV files.
-        if strcmp(WMO_ID,'5906446')==1
-            continue
-        end
+        % TM 2/7/22, added the first BSOLO to this exclusion...will likely
+        % remove the exclusion soon!
+       % if strcmp(WMO_ID,'5906446')==1 || strcmp(WMO_ID,'5906320')==1 %|| strcmp(WMO_ID,'4903026')==1
+        %    continue
+       % end
         
         if ~isempty(exclude_floats) && ...
                 any(strcmp(FLOAT_LIST{loop_ctr,iMB},exclude_floats)) || any(strcmp(FLOAT_LIST{loop_ctr,iWMO},exclude_floats))
@@ -342,6 +355,25 @@ for loop_ctr = start_num : stop_num % TM 3/3/21 - why is this a separate loop?
         ODV_tf = argo2odv_LIAR(WMO_ID, dirs, update_str,1);
         if ODV_tf == 1
             disp(['A NEW ODV FILE WAS CREATED FOR ',MBARI_ID_str,', WMO: ',WMO_ID,'.']);
+            
+            %** IF THE ODV PROFILE FILE WAS UPDATED, UPDATE THE PARK DATA FILE TOO **
+            try
+                out = merge_PARK_mat(WMO_ID, dirs, 1);
+                disp(['A NEW PARK DATA ODV FILE WAS CREATED FOR ',MBARI_ID_str,', WMO: ',WMO_ID,'.']);
+                clear out
+            catch ME
+                disp(['ARGO PARK ODV FILE CREATION FAILED ON FLOAT ',MBARI_ID_str,', WMO: ',WMO_ID, ...
+                    ' at ', datestr(now,'mm/dd/yyyy HH:MM:SS')]);
+                new_msgs = [new_msgs; ['PARK ODV FILE CREATION ERROR: ',MBARI_ID_str,', WMO: ',WMO_ID]];
+                new_msgs = [new_msgs; ME.message];
+                
+                for k=1:length(ME.stack)
+                    ME.stack(k)
+                    new_msgs = [new_msgs; [ME.stack(k).file, ' LINE: ', ...
+                        num2str(ME.stack(k).line)]];
+                end
+            end
+            
         end
         
     catch ME
@@ -378,29 +410,29 @@ for loop_ctr = start_num : stop_num % TM 3/3/21 - why is this a separate loop?
         end
         fclose('all');
     end
-    
-    try
-        ODV_tf = argo2odv_MLR(WMO_ID, dirs, update_str,1);
-        if ODV_tf == 0
-            %continue
-        else
-            disp(['A NEW ODV FILE WAS CREATED USING ',...
-                'Williams MLR ALKALINITY']);
-        end
-        
-    catch ME
-        disp(['ARGO ODV FILE CREATION FAILED ON FLOAT ',MBARI_ID_str,', WMO: ',WMO_ID, ...
-            ' at ', datestr(now,'mm/dd/yyyy HH:MM:SS')]);
-        new_msgs = [new_msgs; ['ODV(MLR) FILE CREATION ERROR: ',MBARI_ID_str,', WMO: ',WMO_ID]];
-        new_msgs = [new_msgs; ME.message];
-        
-        for k=1:length(ME.stack)
-            ME.stack(k)
-            new_msgs = [new_msgs; [ME.stack(k).file, 'LINE: ', ...
-                ME.stack(k).line]];
-        end
-        fclose('all');
-    end
+%% TM 5/16/22: Remove MLR "flavor" of data files for upcoming snapshot archive!!!    
+% % % %     try
+% % % %         ODV_tf = argo2odv_MLR(WMO_ID, dirs, update_str,1);
+% % % %         if ODV_tf == 0
+% % % %             %continue
+% % % %         else
+% % % %             disp(['A NEW ODV FILE WAS CREATED USING ',...
+% % % %                 'Williams MLR ALKALINITY']);
+% % % %         end
+% % % %         
+% % % %     catch ME
+% % % %         disp(['ARGO ODV FILE CREATION FAILED ON FLOAT ',MBARI_ID_str,', WMO: ',WMO_ID, ...
+% % % %             ' at ', datestr(now,'mm/dd/yyyy HH:MM:SS')]);
+% % % %         new_msgs = [new_msgs; ['ODV(MLR) FILE CREATION ERROR: ',MBARI_ID_str,', WMO: ',WMO_ID]];
+% % % %         new_msgs = [new_msgs; ME.message];
+% % % %         
+% % % %         for k=1:length(ME.stack)
+% % % %             ME.stack(k)
+% % % %             new_msgs = [new_msgs; [ME.stack(k).file, 'LINE: ', ...
+% % % %                 ME.stack(k).line]];
+% % % %         end
+% % % %         fclose('all');
+% % % %     end
 end
 end_txt_time = now;
 
@@ -419,56 +451,56 @@ end
 
 % If running in "update" mode, only reprocess the floats for which new msg
 % files come in.
-if ~isempty(floats_processed)
-    for ifp = 1:length(floats_processed)
-        try
-            MBARI_id_str = floats_processed{ifp}; % MBARI ID str
-            tg = strcmp(FLOAT_LIST(:,iMB), MBARI_id_str) & cell2mat(FLOAT_LIST(:,iTFPH)) == 1 & ~strcmp( FLOAT_LIST(:,iFLT),'NAVIS');
-            if sum(tg) == 1
-                disp(['NOW PROCESSING .DURA FILES FOR FLOAT ',...
-                    MBARI_id_str,' AND GENERATING PH DIAGNOSTIC TXT FILE FOR USE IN E-VIZ.'])
-                dirs.save = [user_dir,'ARGO_PROCESSING\', ...
-                    'DATA\PH_DIAGNOSTICS\'];
-                Merge_dura_msgs(MBARI_id_str, dirs)
-            end
-            
-            %             thefloattype = float_types{ifp};
-            disp(['DONE PROCESSING .DURA FILES FOR FLOAT ',...
-                MBARI_id_str,' AND GENERATING PH DIAGNOSTIC TXT FILE FOR USE IN E-VIZ.'])
-            %             Loop_ARGO_dura(MBARI_id_str,thefloattype)
-        catch ME
-            disp(['Merge_dura_msgs failed on float ',MBARI_id_str,'.']);
-            for k=1:length(ME.stack)
-                ME.stack(k)
-                ME.stack(k).file
-                ME.stack(k).line
-            end
-        end
-        
-        try
-            MBARI_id_str = floats_processed{ifp}; % MBARI ID str
-            %             thefloattype = float_types{ifp};
-            tg = strcmp(FLOAT_LIST(:,iMB), MBARI_id_str) & cell2mat(FLOAT_LIST(:,iTFNO3)) == 1;
-            if sum(tg) == 1
-                disp(['NOW PROCESSING .ISUS FILES FOR FLOAT ',...
-                    MBARI_id_str,' AND GENERATING NO3 DIAGNOSTIC TXT FILE FOR USE IN N-VIZ.'])
-                dirs.save = [user_dir,'ARGO_PROCESSING\', ...
-                    'DATA\NO3_DIAGNOSTICS\'];
-                Merge_isus_msgs(MBARI_id_str, dirs)
-            end
-            disp(['DONE PROCESSING .ISUS FILES FOR FLOAT ',...
-                MBARI_id_str,' AND GENERATING NO3 DIAGNOSTIC TXT FILE FOR USE IN N-VIZ.'])
-            %             Loop_ARGO_isus(MBARI_id_str)
-        catch ME
-            disp(['Loop_ARGO_isus failed on float ',MBARI_id_str,'.']);
-            for k=1:length(ME.stack)
-                ME.stack(k)
-                ME.stack(k).file
-                ME.stack(k).line
-            end
-        end
-    end
-end
+ if ~isempty(floats_processed)
+     for ifp = 1:length(floats_processed)
+         try
+             MBARI_id_str = floats_processed{ifp}; % MBARI ID str
+             tg = strcmp(FLOAT_LIST(:,iMB), MBARI_id_str) & cell2mat(FLOAT_LIST(:,iTFPH)) == 1 & ~strcmp( FLOAT_LIST(:,iFLT),'NAVIS');
+             if sum(tg) == 1
+                 disp(['NOW PROCESSING .DURA FILES FOR FLOAT ',...
+                     MBARI_id_str,' AND GENERATING PH DIAGNOSTIC TXT FILE FOR USE IN E-VIZ.'])
+                 dirs.save = [user_dir,'ARGO_PROCESSING\', ...
+                     'DATA\PH_DIAGNOSTICS\'];
+                 Merge_dura_msgs(MBARI_id_str, dirs)
+             end
+             
+             %             thefloattype = float_types{ifp};
+             disp(['DONE PROCESSING .DURA FILES FOR FLOAT ',...
+                 MBARI_id_str,' AND GENERATING PH DIAGNOSTIC TXT FILE FOR USE IN E-VIZ.'])
+             %             Loop_ARGO_dura(MBARI_id_str,thefloattype)
+         catch ME
+             disp(['Merge_dura_msgs failed on float ',MBARI_id_str,'.']);
+             for k=1:length(ME.stack)
+                 ME.stack(k)
+                 ME.stack(k).file
+                 ME.stack(k).line
+             end
+         end
+         
+         try
+             MBARI_id_str = floats_processed{ifp}; % MBARI ID str
+             %             thefloattype = float_types{ifp};
+             tg = strcmp(FLOAT_LIST(:,iMB), MBARI_id_str) & cell2mat(FLOAT_LIST(:,iTFNO3)) == 1;
+             if sum(tg) == 1
+                 disp(['NOW PROCESSING .ISUS FILES FOR FLOAT ',...
+                     MBARI_id_str,' AND GENERATING NO3 DIAGNOSTIC TXT FILE FOR USE IN N-VIZ.'])
+                 dirs.save = [user_dir,'ARGO_PROCESSING\', ...
+                     'DATA\NO3_DIAGNOSTICS\'];
+                 Merge_isus_msgs(MBARI_id_str, dirs)
+             end
+             disp(['DONE PROCESSING .ISUS FILES FOR FLOAT ',...
+                 MBARI_id_str,' AND GENERATING NO3 DIAGNOSTIC TXT FILE FOR USE IN N-VIZ.'])
+             %             Loop_ARGO_isus(MBARI_id_str)
+         catch ME
+             disp(['Loop_ARGO_isus failed on float ',MBARI_id_str,'.']);
+             for k=1:length(ME.stack)
+                 ME.stack(k)
+                 ME.stack(k).file
+                 ME.stack(k).line
+             end
+         end
+     end
+ end
 
 % ************************************************************************
 % NOW REGENERATE ALL THE FLOATVIZ HTML AND FLOATVIZ LIST FILES.
@@ -560,7 +592,7 @@ disp(' ');
 disp('COPYING FILES TO THE NETWORK........');
 str = [ dirs.bat,'copyARGO2network_xcopy.bat'];
 disp(str)
-status = system(str);
+status = system(str); % Comment this line out if you don't want to copy to Chem!
 
 end_copy_time = now;
 
