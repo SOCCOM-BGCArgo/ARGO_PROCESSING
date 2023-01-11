@@ -222,7 +222,7 @@ clear d
 
 % SET MISSING VALUES = NaN
 data(data == -999) = NaN;
-
+% save('tanyatemp.mat','data')
 % ************************************************************************
 % CHECK QUALITY FLAGS & SET BAD DATA TO NaN 10/30/2017 JP
 
@@ -288,7 +288,6 @@ iLON  = find(strcmp('LONGITUDE',hdr) == 1); % TO ESTIMATE ALKALINITY IF
 iO    = find(strcmp('OXYGEN',hdr)    == 1); % IT IS NOT PRESENT IN THE 
 iSDN  = find(strcmp('DATE',hdr)      == 1); % DATASET
 iZ    = find(strcmp('DEPTH',hdr)     == 1);
-
 % CALCULATE DEPTH IF NAN's IN DEPTH COL
 nan_Z = isnan(data(:,iZ));
 data(nan_Z, iZ) = sw_dpth(data(nan_Z,iP),data(nan_Z,iLAT)); 

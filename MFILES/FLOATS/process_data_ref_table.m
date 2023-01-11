@@ -12,6 +12,9 @@ function out = process_data_ref_table
 % cruise, station & cycle values where being extracted properly again
 % 03/31/21 - TM - tweaks due to changes in Sharon's table structure; plus
 % the addition of the GOBGC data reference table.
+% 08/22/22 - TM - Temporary (?) fix for Marion Isl station entries in
+% Sharon's table (currently being listed as "AM012**" and that is breaking
+% the code.
 
 
 out.ref_table        = 0;
@@ -116,6 +119,10 @@ try
             % ALPHA-NUMERIC STATION NUMBERS FOR CUSTARD CRUISE
             if regexp(station,'^0|S+','once')
                 station = regexp(station,'[1-9]\d*','match','once');
+            elseif regexp(station,'AM','once')  % TM 8/22/22; temporary (?) fix for Marion Isl entries in Sharon's table. 
+                station = '-999';
+            elseif regexp(station,'P','once')  % TM 8/22/22; temporary (?) fix for Sikuliaq entry in Sharon's table. These are hacks!
+                station = '-999';
             end
             
             cast_str = test_str(col_inds(11):col_inds(12));
@@ -432,6 +439,17 @@ if sum(t1) > 0
     list(t1,iDF) = {'74JC20190221.exc.csv'};
 end
 
+%GOBGC OOI Irminger Sea Cruise
+t1 = strcmp(list(:,iCRU),'OOI') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+    list(t1,iDF) = {'33VB20210803_hy1.csv'};
+end
+
+%%SOCCOM A13.5 cruise, 2020; listed as 33RO20200321 but odd file name?
+%t1 = strcmp(list(:,iCRU),'A13.5') & cellfun(@isempty,(list(:,iDF)));
+%if sum(t1) > 0
+%    list(t1,iDF) = {'A13-A12_2020_RB2002_2020_stationsfinal2021.csv'};
+%end
 
 
 %HAZMAT cruise.
@@ -483,10 +501,8 @@ end
 % COPY BOTTLE FILES TO LOCAL
 % Make a Unique list by file name
 fprintf('\nCopying files locally\n')
-
 [~,ia,~] = unique(list(:,iDF));
 blist    = list(ia,:);
-
 loop_ct  = 0;
 for i = 1:size(blist,1)
     loop_ct = loop_ct +1;

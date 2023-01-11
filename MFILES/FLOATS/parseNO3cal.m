@@ -40,12 +40,17 @@ function cal = parseNO3cal(cal_file)
 % EXAMPLE:
 %   jp = parseNO3cal('\\atlas\Chem\ISUS\Argo\5143StnP\5143.cal')
 %
+% CHANGES:
+%    10/07/22 JP, un1448 & un1449 have differnt header formats & missing
+%    T_CAL line. Updated header paramete reg expression block o account.
+%    also if no T_CAL found use T_CAL_SWA temperature. Also converted eval
+%    loop at end dynamic fileds
+%
 % Created 12/29/2015 by jp
 
 %TEST
-%cal_file ='C:\Users\jplant\Documents\MATLAB\ARGO\DATA\Cal_files\0508.cal'; % for testing
+%cal_file ='C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\CAL\NO3_CAL\un1448.cal'; % for testing
 
-%cal_file ='C:\Users\jplant\Documents\MATLAB\ARGO\DATA\Cal_files\7663.cal'; % for testing
 
 % ************************************************************************
 % SET FORMATS, PREDIMENSION STRUCTURE, BOOKKEEPING
@@ -137,6 +142,13 @@ while ischar(tline)
         if isempty(cal.CalTemp) & regexp(tline,'^H,T_CAL','once') 
             cal.CalTemp = sscanf(tline,'H,T_CAL%f',1);
         end
+        
+        %JP 10/04/2021 un1448 & 1449
+        if isempty(cal.CalTemp) & regexp(tline,'^H,T_CAL_SWA','once')
+            fprintf(['WARNING: NO "T_CAL" line found! Using temperature ',...
+                'from T_CAL_SWA!!!\n'])
+            cal.CalTemp = sscanf(tline,'H,T_CAL_SWA%f',1);
+        end
 
         % GET PIXEL BASE, 1 (1-256), 0 (0-255)
         if  regexp(tline,'Pixel base','once') 
@@ -175,6 +187,7 @@ while ischar(tline)
         
         % PARSE HEADER LINE
         if  regexp(tline,'Wave','once') & regexp(tline,'NO3', 'once')
+     
             % shorten hdr names and/or rename to make cals easier later
             tline = regexprep(tline,'New ',''); % shorten hdr names a bit
             tline = regexprep(tline,'DI DC Corr','Ref'); % ISUS
@@ -185,6 +198,7 @@ while ischar(tline)
             tline = regexprep(tline,',SWA',',ESW'); % SUNA
             tline = regexprep(tline,',ASW,',',ESW,'); % 7622 APEX w SUNA
             tline = regexprep(tline,',T\*ASW',',TSWA'); %Satlantic ISUS 7663
+            tline = regexprep(tline,',T\*SWA',',TSWA'); %UW NAVIS 1448 & 1449 (jp 10/07/22)
             hdr = textscan(tline, '%s', 'Delimiter',',');
             hdr = hdr{1,1}; 
             hdr(1) = []; % Remove 1st cell 'H'
@@ -208,8 +222,9 @@ end
 
 % ASSIGN VARIABLE NAMES BASED ON HEADER
 for i = 1:length(hdr)
-    s1 = ['cal.',hdr{i,1},'=data(:,i);'];
-    eval(s1)
+    cal.(hdr{i,1}) =data(:,i);
+    %s1 = ['cal.',hdr{i,1},'=data(:,i);'];
+    %eval(s1)
 end
 
 fclose(fid);

@@ -70,8 +70,19 @@ function tf_odv = argo2odv_MLR(WMO_ID, dirs, update_str, HR_flag)
 %    new default for Matlab 2020 and better cross platform sharing
 % 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
 % 3/5/21 - TM, Code modifications to switch to WMO-based filename.
+% 02/23/22 - JP added code to include BGC-SOLO, OCR APEX & 2X02 floats
 
+% !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 % TESTING
+% WMO_ID     = '4903026'; % s0001
+% WMO_ID     = '5906320'; % ua19191
+% %WMO_ID     = '5906305'; % un1113
+% %WMO_ID     = '5905131'; % ua12733	12733	5905131	APEX
+% dirs       = [];
+% update_str = 'all';
+% HR_flag    = 1;
+% !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 
 
 % ************************************************************************
@@ -112,7 +123,7 @@ else
 end
 
 %Get Some indices:
-iMSG =find(strcmp('msg dir', d.hdr)  == 1);
+iMSG = find(strcmp('msg dir', d.hdr)  == 1);
 iWMO = find(strcmp('WMO',d.hdr) == 1);
 iMB  = find(strcmp('MBARI ID',d.hdr) == 1);
 iFLT = find(strcmp('float type',d.hdr) == 1);
@@ -121,15 +132,15 @@ iREG = find(strcmp('Region',d.hdr) == 1);
 clear d
 
 % get index of float in master list
-i_tmp = strfind(FLOAT_LIST(:,3),WMO_ID);
+i_tmp    = strfind(FLOAT_LIST(:,3),WMO_ID);
 iTHISFLT = find(not(cellfun('isempty',i_tmp)));
 
 % Set some definitions
-dirs.msg = FLOAT_LIST{iTHISFLT,iMSG};
+dirs.msg     = FLOAT_LIST{iTHISFLT,iMSG};
 MBARI_ID_str = FLOAT_LIST{iTHISFLT,iMB};
-FLT_type = FLOAT_LIST{iTHISFLT,iFLT};
-PROJ_Name = FLOAT_LIST{iTHISFLT,iPRJ};
-REGION = FLOAT_LIST{iTHISFLT,iREG};
+FLT_type     = FLOAT_LIST{iTHISFLT,iFLT};
+PROJ_Name    = FLOAT_LIST{iTHISFLT,iPRJ};
+REGION       = FLOAT_LIST{iTHISFLT,iREG};
 
 tf_odv = 0;
 
@@ -141,7 +152,7 @@ if strcmp(update_str, 'update')
     data_dir   = [dirs.mat, WMO_ID,'\'];
     mat_files  = dir([data_dir,WMO_ID,'*.mat']);
     mat_cycles = regexp({mat_files.name},'(?<=\.)\d+(?=\.)','match');
-    N_mat = length(mat_cycles);
+    N_mat      = length(mat_cycles);
     
     clear WMO_path list float_names ind ind data_dir
     clear mat_files mat_cycles
@@ -173,7 +184,13 @@ RC.P    = [0 12000]; % from argo parameter list
 % MERGE INDIVIDUAL MAT FILES FOR GIVEN BIO-ARGO FLOAT
 % returns a structure: INFO, hdr, data
 % ************************************************************************
-d = merge_ARGO_mat(WMO_ID, dirs);
+tf_APEX_OCR = strcmp(WMO_ID,'5906320') | strcmp(WMO_ID,'5906446'); % ua19191, ua19314
+
+if  ~strcmp(FLT_type,'SOLO') & ~tf_APEX_OCR % APEX, NAVIS but not OCR ONLY APEX
+    d = merge_ARGO_mat(WMO_ID, dirs);
+else % SOLO
+    d = merge_SOLO_mat(WMO_ID, dirs);
+end
 if isempty(d)
     disp(['Could not merge data for ',WMO_ID,'. Probably no data '...
         'to merge - Process float data first.'])
@@ -215,7 +232,7 @@ rdata   = [rdata(:,1:4),fill_0+1 , rdata(:,5:dc)]; % ARGO QF's, START GOOD
 ahdr    = [ahdr(1:4),'Lat_QC', ahdr(5:dc)]; % adjusted data
 adata   = [adata(:,1:4),fill_0+1 , adata(:,5:dc)]; % ARGO QF's
 
-if strcmp(info.float_type, 'APEX')
+if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
     hrrdata   = [hrrdata(:,1:4),hr_fill_0+1 , hrrdata(:,5:hrdc)];
 end
 
@@ -315,7 +332,7 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never
                 t1 = rdata(:,1) == missing_pos(j,1);
                 rdata(t1,2:4) = ones(sum(t1),1) * missing_pos(j,2:4); % matrix
                 rdata(t1,5)  = 3; %set QF to 3, ODV coversion takes it to 4
-                if strcmp(info.float_type, 'APEX')
+                if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
                     t1 = hrrdata(:,1) == missing_pos(j,1);
                     hrrdata(t1,2:4) = ones(sum(t1),1) * missing_pos(j,2:4);
                     hrrdata(t1,5)  = 3; %set QF to 3, ODV coversion takes it to 4
@@ -341,7 +358,7 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never
             sprintf('%0.0f ',pos_fix(t_nan2,1))];
         disp(missing_pos_str)
         rdata(isnan(rdata(:,4)),5) = 99;  % BIO ARGO MISSING DATA QF VALUE
-        if strcmp(info.float_type, 'APEX')
+        if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
             hrrdata(isnan(hrrdata(:,4)),5) = 99;
         end
         
@@ -387,7 +404,7 @@ else
     PRES_QF = max([rdata(:,iP+1) adata(:,iP+1)],[],2);
 end
 
-% ADJUSTED & RAW ARE THE SAME VALUES BUT FLAGGS MAY ONLY BE SET IN ADJUSTED
+% ADJUSTED & RAW ARE THE SAME VALUES BUT FLAGS MAY ONLY BE SET IN ADJUSTED
 % DATA SO LOOK AT BOTH AND TAKE THE GREATEST VALUE
 TEMP_QF = max([rdata(:,iT+1) adata(:,iT+1)],[],2);
 PSAL_QF = max([rdata(:,iS+1) adata(:,iS+1)],[],2);
@@ -401,7 +418,7 @@ den_QF(TEMP_QF == 4 | PSAL_QF == 4) = 4;% out of range T or S so den bad too
 % CALC DEPTH
 float_z  = ones(size(rdata(:,iP)))*NaN;
 nan_lat  = isnan(rdata(:,iL));
-mean_lat = nanmean(rdata(:,iL));
+mean_lat = mean(rdata(:,iL),'omitnan');
 % If pos fix available
 float_z(~nan_lat) = sw_dpth(rdata(~nan_lat,iP),rdata(~nan_lat,iL));
 % otherwise use average lat
@@ -426,7 +443,7 @@ adj_data = [adata(:,1:iL+1), adata(:,iP), PRES_QF, adata(:,iT), ...
     TEMP_QF, adata(:,iS), PSAL_QF, den, den_QF, float_z, float_z_QF, ...
     adata(:,iS+2:dc)];
 
-if strcmp(info.float_type, 'APEX') %
+if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR%
     hrPRES_QF = hr_fill_0 + 1;             % ARGO QF = GOOD
     hrPRES_QF(isnan(hrrdata(:,iP))) = 99; % BIO ARGO QF MISSING VALUE
     hrPRES_QF(hrrdata(:,iP) < RC.P(1) | hrrdata(:,iP) > RC.P(2)) = 4;
@@ -518,6 +535,8 @@ iN  = find(strcmp('NITRATE_ADJUSTED',adj_hdr) == 1);
 iST = find(strcmp('SIGMA_THETA',adj_hdr) == 1);
 iL  = find(strncmp('Lat [',adj_hdr,5)    == 1);
 iPH = find(strcmp('PH_IN_SITU_TOTAL_ADJUSTED',adj_hdr)   == 1); % pH
+iOCR = find(~cellfun(@isempty,regexp(adj_hdr,'^DOWN.+[ED]$','once','match')) == 1);
+iCDOM = find(strcmp('CDOM_ADJUSTED',adj_hdr)   == 1); % pH
 
 % LIAR_alk_str   = '';
 % CANYON_alk_str = '';
@@ -725,7 +744,7 @@ if ~isempty(iPH) % pH data exists
             end
         end
         
-        % SET OUT OF RANGE pH = NAN SO CO2SYS DOESN't BUG DOWN
+        % SET OUT OF RANGE pH = NAN SO CO2SYS DOESN't BOG DOWN
         BIAS_PH(~tQC_PH) = NaN;
         
         % REDO FOR pCO2 using biased pH at INSITU P & T
@@ -778,20 +797,56 @@ for i = 1:raw_c
     % SETTING ALL QF's TO 1, EXCEPT FOR PTSZ & OBVIOUSLY BAD
     if regexp(raw_hdr{i},'\_QC', 'once')
         tmp1 = raw_data(:,i);
-        tmp1(tmp1 == 5) = 3;
+        
+        % solo sprof merge can have 8's, replace with highest bounding QC
+        t8 = tmp1 == 8; 
+        if sum(t8,1) > 0 % sprof can have interpolated QC values  (8)
+            ct     = (1:size(tmp1,1))';
+            tnan   = isnan(tmp1);
+            i_next = interp1(ct(~t8 & ~tnan), tmp1(~t8 & ~tnan), ct(t8),...
+                'next');
+            i_prev = interp1(ct(~t8 & ~tnan), tmp1(~t8 & ~tnan), ct(t8),...
+                'previous');
+            tmp1(t8) = max([i_next, i_prev],[],2);
+            clear i_next i_prev t8 ct tnan
+        end
+
+        tmp1(tmp1 == 5) = 3; % This is for NPQ corrected data
         tmp1(tmp1 == 4) = 8;
         tmp1(tmp1 == 3) = 4; % This will catch interp lat 2/9/17 jp
         tmp1(tmp1 == 0) = 10; % temporary
-        tmp1(tmp1 == 1) = 0; % P T S Z
-        tmp1(tmp1 == 2) = 1; % All others uninspected
+        
+        if strncmp(raw_hdr{i},'BBP',3)
+            tmp1(tmp1 == 1) = 0;
+            tmp1(tmp1 == 2) = 1; % BGC Argo flags raw bbp qc =2
+        else
+            tmp1(tmp1 == 1 |tmp1 == 2) = 0; % P T S Z 2/17/22 jp and ==2 piece here
+        end
         tmp1(tmp1 == 10 | tmp1 == 99) = 1; % NO QC or Missing value
         raw_data(:,i) = tmp1;
     end
 end
+
+%pause
+
 for i = 1:adj_c
     if regexp(adj_hdr{i},'\_QC', 'once')
         tmp2 = adj_data(:,i);
-        tmp2(tmp2 == 5) = 3;
+        
+        % solo sprof merge can have 8's, replace with highest bounding QC
+        t8 = tmp2 == 8;
+        if sum(t8,1) > 0 % sprof has interpolated values
+            ct     = (1:size(tmp2,1))';
+            tnan   = isnan(tmp2);
+            i_next = interp1(ct(~t8 & ~tnan), tmp2(~t8 & ~tnan), ct(t8),...
+                'next');
+            i_prev = interp1(ct(~t8 & ~tnan), tmp2(~t8 & ~tnan), ct(t8),...
+                'previous');
+            tmp2(t8) = max([i_next, i_prev],[],2);
+            clear i_next i_prev t8 ct tnan
+        end
+        
+        tmp2(tmp2 == 5) = 3; % This is for NPQ corrected data
         tmp2(tmp2 == 4) = 8;
         tmp2(tmp2 == 3) = 4;
         tmp2(tmp2 == 0) = 10; % temporary
@@ -801,11 +856,11 @@ for i = 1:adj_c
     end
 end
 
-if strcmp(info.float_type, 'APEX')
+if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
     for i = 1:hrdc
         if regexp(raw_hdr{i},'\_QC', 'once')
             tmp2 = hrraw_data(:,i);
-            tmp2(tmp2 == 5) = 3;
+            tmp2(tmp2 == 5) = 3; % This is for NPQ corrected data
             tmp2(tmp2 == 4) = 8;
             tmp2(tmp2 == 3) = 4;
             tmp2(tmp2 == 0) = 10; % temporary
@@ -941,7 +996,7 @@ clear NPQ iNPQ tNPQ tLAT CHL_EXP CHL_new i t1 tmp cycle_ct
 % ************************************************************************
 raw_missing_data_str = 'No missing data found';
 nan_sum =(sum(isnan(raw_data), 2))>0; % cols so I can get casts later
-if sum(nan_sum,1) > 0
+if strcmp(FLT_type,'APEX') && ~tf_APEX_OCR && sum(nan_sum,1) > 0
     tmp = unique(raw_data(nan_sum,1));
     raw_missing_data_str = ['Missing Float data detected for raw data', ...
         ' station(s): ', sprintf('%0.0f ',tmp)];
@@ -951,7 +1006,7 @@ clear nan_sum tmp
 
 adj_missing_data_str = 'No missing data found';
 nan_sum = sum(isnan(adj_data), 2)>0; % cols so I can get casts later
-if sum(nan_sum,1) > 0
+if strcmp(FLT_type,'APEX') && ~tf_APEX_OCR && sum(nan_sum,1) > 0
     tmp = unique(adj_data(nan_sum,1));
     adj_missing_data_str = ['Missing Float data detected for adjusted ',...
         'station(s): ', sprintf('%0.0f ',tmp)];
@@ -963,7 +1018,7 @@ clear nan_sum tmp
 %          BUILD COMBINED LR + HR DATA SET FOR "HR" FLOATVIZ FILE
 %                 !!! APEX FLOATS ONLY, HR DATA = P T S !!!
 % ************************************************************************
-if strcmp(info.float_type, 'APEX')
+if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR
     cycles = unique(raw_data(:,1));
     allraw_data = ones(hrdr + raw_r, raw_c) * NaN;
     alladj_data = ones(hrdr + adj_r, adj_c) * NaN;
@@ -1040,7 +1095,7 @@ Bio_optics_str = ['See: Boss, E.B. and N. Haëntjens, 2016. ', ...
 
 CO2SYS_str = ['//NOTE ON CO2SYS CARBONATE SYSTEM CALCULATIONS:\r\n',...
     '//All carbonate system variables calculated with CO2SYS for Matlab\r\n',...
-    '//(van Heuven et al., 2011, doi: 10.3334/CDIAC/otg.CO2SYS_MATLAB_v1.1)\r\n',...
+    '//(Sharp et al., 2020; see also Lewis and Wallace 1998)\r\n',...
     '//used the following conditions: pH was reported on the total scale.\r\n',...
     '//K1 and K2 dissociation constants were from Lueker et al., 2000, doi:\r\n', ...
     '//10.1016/S0304-4203(00)00022-0. The KSO4 dissociation constant was\r\n',...
@@ -1074,6 +1129,30 @@ CHL_str = ['//NOTE ON Chl_a & Chl_a_corr [mg/m^3] CONCENTRATION:\r\n',...
     '\r\n//meeting in Hamburg, Germany (Nov, 2017), and is subject to change as research on optimal ',...
     '\r\n//correction methods for float data from FLBB sensors continues.\r\n//'];
 
+SOLO_info_str = ['//\r\n//THIS IS a BGC SOLO FLOAT!\r\n',...
+    '//Each BGC sensor may have a unique pressure axis. If so all data have been aligned\r\n',...
+    '//on to a common pressure axis using a modified version of code from Henry Bittig\r\n',...
+    '//which was originally used to build the Sprof profile files. More information at:\r\n',...
+    '//https://archimer.ifremer.fr/doc/00445/55637/  and  ',...
+    'https://www.seanoe.org/data/00345/45589/\r\n',...
+    '//(\\decArgo_YYYYMMDD_XXXX\\decArgo_soft\\soft\\util\\sub_foreign', ...
+    '\\ARGO_simplified_profile.m\r\n', ...
+    '//Data here may not exactly match that of the Sprof profile file ',...
+    'due to slight QC flagging differences\r\n//\r\n'];
+
+TEST_OCR_info_str = ['//\r\n//THIS IS AN APEX TEST FLOAT\r\n//It has one of the ', ...
+    'first installations of an OCR 504 Radiometer on an APEX float\r\n//The OCR data have ',...
+    'their own pressure axis so data have been aligned\r\n',...
+    '//on to a common pressure axis using a modified version of code from Henry Bittig\r\n',...
+    '//which was originally used to build the Sprof profile files. Prior to alignment \r\n',...
+    '//non unique data shallower than 4 dbar were replaced by the median of these data points.\r\n', ...
+    '//More information at:\r\n',...
+    '//https://archimer.ifremer.fr/doc/00445/55637/  and  ',...
+    'https://www.seanoe.org/data/00345/45589/\r\n',...
+    '//(\\decArgo_YYYYMMDD_XXXX\\decArgo_soft\\soft\\util\\sub_foreign', ...
+    '\\ARGO_simplified_profile.m\r\n', ...
+    '//Data here may not exactly match that of the Sprof profile file ',...
+    'due to slight QC flagging differences\r\n//\r\n'];
 % LOAD CAL FILE - will use info in meta data headers
 % % load([dirs.cal,'cal',info.FloatViz_name,'.mat']);  % TM 3/3/21; THE CAL
 % FILE IS LOADED ON LINE ~1020, DOES THIS NEED TO BE LOADED AGAIN??
@@ -1099,9 +1178,14 @@ ODV_raw(11,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};
 ODV_raw(12,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532' '' '' ''};
 ODV_raw(13,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''};
 
+% OCR VARIABLES
+ODV_raw(14,:) = {'DOWN_IRRAD380[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE380' '' '' ''};
+ODV_raw(15,:) = {'DOWN_IRRAD412[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE412' '' '' ''};
+ODV_raw(16,:) = {'DOWN_IRRAD490[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE490' '' '' ''};
+ODV_raw(17,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]'  '%0.6f' 'DOWNWELLING_PAR' '' '' ''};
 % ************************************************************************
 % ADD VARIABLE DESCRIPTORS TO RAW CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
-if strcmp(info.float_type,'APEX')
+if strcmp(info.float_type,'APEX') && ~tf_APEX_OCR
     O2sensor = 'Aanderaa ';
 else
     O2sensor = '';
@@ -1139,7 +1223,12 @@ end
 if sum(strcmp(ODV_raw{13,3},raw_hdr))
     ODV_raw(13,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %CDOM
 end
-
+if sum(strcmp(ODV_raw{14,3},raw_hdr))
+    ODV_raw(14,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_raw(15,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_raw(16,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_raw(17,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+end
 % ************************************************************************
 % ************************************************************************
 % QC ODV FILE
@@ -1168,8 +1257,13 @@ ODV_adj(18,:) = {'pCO2_MLR[µatm]'       '%4.1f' 'MLR_pCO2' '' '' ''};
 ODV_adj(19,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532_ADJUSTED' '' '' ''};
 ODV_adj(20,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM_ADJUSTED' '' '' ''};
 
+% OCR VARIABLES
+ODV_adj(21,:) = {'DOWN_IRRAD380[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE380' '' '' ''};
+ODV_adj(22,:) = {'DOWN_IRRAD412[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE412' '' '' ''};
+ODV_adj(23,:) = {'DOWN_IRRAD490[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE490' '' '' ''};
+ODV_adj(24,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]'  '%0.6f' 'DOWNWELLING_PAR' '' '' ''};
 % ************************************************************************
-% ADD VARIABLE DESCRIPTORS TO RAW CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
+% ADD VARIABLE DESCRIPTORS TO ADJ CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
 
 ODV_adj(1:9,4:6) = ODV_raw(1:9,4:6);
 if sum(strcmp(ODV_adj{10,3},adj_hdr))
@@ -1213,6 +1307,12 @@ end
 if sum(strcmp(ODV_adj{20,3},adj_hdr))
     ODV_adj(20,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %CDOM
 end
+if sum(strcmp(ODV_adj{21,3},raw_hdr))
+    ODV_adj(21,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_adj(22,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_adj(23,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_adj(24,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+end
 
 % ************************************************************************
 % FIGURE OUT ODV FILE FORMAT TYPE: [NO pH] [pH] [NAVIS]
@@ -1226,16 +1326,41 @@ if isempty(iPH)
     ODV_adj(ind1:ind2,:) = [];
 end
 
-if ~strcmp(info.float_type, 'NAVIS')
-    ind1 = find(strcmp('b_bp532[1/m]',ODV_raw(:,1))   == 1);
-    ind2 = find(strcmp('CDOM[ppb]',ODV_raw(:,1))   == 1);
-    ODV_raw(ind1:ind2,:) = [];
+if isempty(iCDOM)
+    ind1 = find(strncmp('CDOM[ppb]',ODV_raw(:,1),4)   == 1);
+    ODV_raw(ind1,:) = [];
     
-    ind1 = find(strcmp('b_bp532[1/m]',ODV_adj(:,1))   == 1);
-    ind2 = find(strcmp('CDOM[ppb]',ODV_adj(:,1))   == 1);
-    ODV_adj(ind1:ind2,:) = [];
+    ind1 = find(strncmp('CDOM[ppb]',ODV_adj(:,1),4)   == 1);
+    ODV_adj(ind1,:) = [];
 end
 
+if ~strcmp(info.float_type, 'NAVIS') %TMNEW
+    ind1 = find(strcmp('b_bp532[1/m]',ODV_raw(:,1))   == 1);
+    %ind2 = find(strcmp('CDOM[ppb]',ODV_raw(:,1))   == 1);
+    %ODV_raw(ind1:ind2,:) = [];
+    ODV_raw(ind1,:) = [];
+    
+    ind1 = find(strcmp('b_bp532[1/m]',ODV_adj(:,1))   == 1);
+%     ind2 = find(strcmp('CDOM[ppb]',ODV_adj(:,1))   == 1);
+%     ODV_adj(ind1:ind2,:) = [];
+    ODV_adj(ind1,:) = [];
+end
+
+if isempty(iOCR)
+    ind1 = find(strncmp('DOWN',ODV_raw(:,1),4)   == 1);
+    ODV_raw(ind1,:) = [];
+    
+    ind1 = find(strncmp('DOWN',ODV_adj(:,1),4)   == 1);
+    ODV_adj(ind1,:) = [];
+end
+
+if tf_APEX_OCR % APEX OCR TEST FLOATS
+    tg = cellfun(@isempty, regexp(ODV_raw(:,1),'^Oxy|^Nit|^Chl|^b_bp','once'));
+    ODV_raw = ODV_raw(tg,:);
+    
+    tg = cellfun(@isempty, regexp(ODV_adj(:,1),'^Oxy|^Nit|^Chl|^b_bp|^POC','once'));
+    ODV_adj = ODV_adj(tg,:);
+end
 raw_var_ct = size(ODV_raw,1);
 adj_var_ct = size(ODV_adj,1);
 
@@ -1270,6 +1395,13 @@ if QC_check == 1
     fprintf(fid_adj,['//Project Name: ',PROJ_Name,'\r\n']);
     fprintf(fid_adj,['//Region: ',REGION,'\r\n']);
     
+    if strcmp(FLT_type,'SOLO')
+        fprintf(fid_raw, SOLO_info_str);
+    end
+    
+    if tf_APEX_OCR
+        fprintf(fid_raw, TEST_OCR_info_str);
+    end
     fprintf(fid_adj,['//', missing_profile_str,'\r\n']);
     if ~isempty(interp_pos_str)
         fprintf(fid_adj,['//',interp_pos_str,'\r\n']);
@@ -1448,7 +1580,7 @@ end
 % ************************************************************************
 if QC_check == 1 && HR_flag == 1
     % PRINT HEADER FIRST
-    if strcmp(info.float_type, 'APEX')
+    if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR
         [alladj_r,alladj_c] = size(allraw_data);
         disp(['Printing HR+LR adjusted data to: ',dirs.FVlocal,'MLR_QC\', ...
             info.FloatViz_name,'_HRQC', '.txt']);

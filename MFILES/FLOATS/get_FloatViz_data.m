@@ -38,9 +38,12 @@ function floatviz_data = get_FloatViz_data(floatviz_file)
 %    and all ODV compatible TXT files are  now UTF-8
 % 3/15/21 - TM modified regular exp on line 74 for new floatviz naming
 %   structure.
+% 03/28/2022 - JP improved isolation of file name when full path entered.
+%   Was breaking on CPF file names when copying to local
 % *************************************************************************
 % TESTING
 % floatviz_file = 'C:\Users\jplant\Documents\MATLAB\ARGO\DATA\ADJ\ODV1901467ADJ.TXT';
+%floatviz_file  = '\\atlas\tempbox\Plant\CPF003_2022-3-14.TXT';
 
 % *************************************************************************
 % SET PATHS & COPY FILE TO LOCAL & OPEN
@@ -68,10 +71,12 @@ switch data_source
     % GET TEXT FILE FROM DIRECT PATH OR SIROCCO AND STORE LOCALY
     case 'network'     
         floatviz_dir  = '\\sirocco\wwwroot\lobo\Data\FloatVizData\'; %MBARI USE ONLY
-        if regexp(floatviz_file,filesep) % direct path (dir included)
+        if regexp(floatviz_file,filesep,'once') % direct path (dir included)
             from_str = floatviz_file;
-            to_str   = [temp_dir, regexpi(floatviz_file, ...
-                        '\w+\d+\w+\.txt','once','match')];
+            tmp      = regexp(from_str,filesep,'split');
+            to_str   = [temp_dir,tmp{end}];
+%             to_str   = [temp_dir, regexpi(floatviz_file, ...
+%                         '\w+\d+\w+\.txt','once','match')];
         elseif regexp(floatviz_file,'HRQC','once') % QC DIR
             floatviz_dir  = [floatviz_dir,'HRQC',filesep];
             from_str = [floatviz_dir, floatviz_file, '.txt'];

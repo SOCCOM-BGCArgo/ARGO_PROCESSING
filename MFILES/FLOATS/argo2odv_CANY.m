@@ -71,8 +71,31 @@ function tf_odv = argo2odv_CANY(WMO_ID, dirs, update_str, HR_flag)
 %    new default for Matlab 2020 and better cross platform sharing
 % 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
 % 3/5/21 - TM, Code modifications to switch to WMO-based filename.
+% 02/23/22 - JP added code to include BGC-SOLO, OCR APEX & 2X02 floats
+% 05/17/22 - JP modified code to eliminate Chl_a_corr[mg/m^3], b_bp_corr[1/m]
+%            & their associated QC columns from the generated text file
+% 07/21/2022 - JP Updated QC Flagging code for ALK, DIC, pH25 for "sprof" type
+%     floats (i.e SOLO). Bug related to lots of fill values + QF = 8 
+%     not properly assigning ODV QF flags
+% 07/25/2022 - TM Officially switched to CO2SYSv3 from "CO2SYSSOCCOM", although all constants used are the same (the latter inclued hard-wired inputs from N. Williams).
 
-% TESTING
+% WMO_ID = '1902303'; % wn1201
+% dirs       = [];
+% update_str = 'all';
+% HR_flag    = 1;
+% !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+% % TESTING
+% %WMO_ID     = '4903026'; % s0001
+% % % WMO_ID     = '5906446'; %'ua19314' % OCR 5906446	APEX
+% WMO_ID     = '5905131'; % ua12733	12733	5905131	APEX
+% % %WMO_ID = '5906481'; % ua19842 2XO2 float
+% % %WMO_ID = '5906482'; % ua19298 2XO2 float
+% WMO_ID = '5906767'; 
+% dirs       = [];
+% update_str = 'all';
+% HR_flag    = 1;
+% !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 
 % ************************************************************************
 % SET UP DIRECTORIES AND PATHS
@@ -112,7 +135,7 @@ else
 end
 
 %Get Some indices:
-iMSG =find(strcmp('msg dir', d.hdr)  == 1);
+iMSG = find(strcmp('msg dir', d.hdr)  == 1);
 iWMO = find(strcmp('WMO',d.hdr) == 1);
 iMB  = find(strcmp('MBARI ID',d.hdr) == 1);
 iFLT = find(strcmp('float type',d.hdr) == 1);
@@ -121,15 +144,15 @@ iREG = find(strcmp('Region',d.hdr) == 1);
 clear d
 
 % get index of float in master list
-i_tmp = strfind(FLOAT_LIST(:,3),WMO_ID);
+i_tmp    = strfind(FLOAT_LIST(:,3),WMO_ID);
 iTHISFLT = find(not(cellfun('isempty',i_tmp)));
 
 % Set some definitions
-dirs.msg = FLOAT_LIST{iTHISFLT,iMSG};
+dirs.msg     = FLOAT_LIST{iTHISFLT,iMSG};
 MBARI_ID_str = FLOAT_LIST{iTHISFLT,iMB};
-FLT_type = FLOAT_LIST{iTHISFLT,iFLT};
-PROJ_Name = FLOAT_LIST{iTHISFLT,iPRJ};
-REGION = FLOAT_LIST{iTHISFLT,iREG};
+FLT_type     = FLOAT_LIST{iTHISFLT,iFLT};
+PROJ_Name    = FLOAT_LIST{iTHISFLT,iPRJ};
+REGION       = FLOAT_LIST{iTHISFLT,iREG};
 
 tf_odv = 0;
 % ************************************************************************
@@ -172,7 +195,14 @@ RC.P    = [0 12000]; % from argo parameter list
 % MERGE INDIVIDUAL MAT FILES FOR GIVEN BIO-ARGO FLOAT
 % returns a structure: INFO, hdr, data
 % ************************************************************************
-d = merge_ARGO_mat(WMO_ID, dirs);
+tf_APEX_OCR = strcmp(WMO_ID,'5906320') | strcmp(WMO_ID,'5906446'); % ua19191, ua19314
+
+if  ~strcmp(FLT_type,'SOLO') & ~tf_APEX_OCR % APEX, NAVIS but not OCR ONLY APEX
+    d = merge_ARGO_mat(WMO_ID, dirs);
+else % SOLO
+    d = merge_SOLO_mat(WMO_ID, dirs);
+end
+
 if isempty(d)
     disp(['Could not merge data for ',WMO_ID,'. Probably no data '...
         'to merge - Process float data first.'])
@@ -212,7 +242,7 @@ rdata   = [rdata(:,1:4),fill_0+1 , rdata(:,5:dc)]; % ARGO QF's, START GOOD
 ahdr    = [ahdr(1:4),'Lat_QC', ahdr(5:dc)]; % adjusted data
 adata   = [adata(:,1:4),fill_0+1 , adata(:,5:dc)]; % ARGO QF's
 
-if strcmp(info.float_type, 'APEX')
+if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
     hrrdata   = [hrrdata(:,1:4),hr_fill_0+1 , hrrdata(:,5:hrdc)];
 end
 
@@ -314,7 +344,7 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never
                 t1 = rdata(:,1) == missing_pos(j,1);
                 rdata(t1,2:4) = ones(sum(t1),1) * missing_pos(j,2:4); % matrix
                 rdata(t1,5)  = 3; %set QF to 3, ODV coversion takes it to 4
-                if strcmp(info.float_type, 'APEX')
+                if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
                     t1 = hrrdata(:,1) == missing_pos(j,1);
                     hrrdata(t1,2:4) = ones(sum(t1),1) * missing_pos(j,2:4);
                     hrrdata(t1,5)  = 3; %set QF to 3, ODV coversion takes it to 4
@@ -340,7 +370,7 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if all nans (ie never
             sprintf('%0.0f ',pos_fix(t_nan2,1))];
         disp(missing_pos_str)
         rdata(isnan(rdata(:,4)),5) = 99;  % BIO ARGO MISSING DATA QF VALUE
-        if strcmp(info.float_type, 'APEX')
+        if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
             hrrdata(isnan(hrrdata(:,4)),5) = 99;
         end
         
@@ -386,7 +416,7 @@ else
     PRES_QF = max([rdata(:,iP+1) adata(:,iP+1)],[],2);
 end
 
-% ADJUSTED & RAW ARE THE SAME VALUES BUT FLAGGS MAY ONLY BE SET IN ADJUSTED
+% ADJUSTED & RAW ARE THE SAME VALUES BUT FLAGS MAY ONLY BE SET IN ADJUSTED
 % DATA SO LOOK AT BOTH AND TAKE THE GREATEST VALUE
 TEMP_QF = max([rdata(:,iT+1) adata(:,iT+1)],[],2);
 PSAL_QF = max([rdata(:,iS+1) adata(:,iS+1)],[],2);
@@ -400,13 +430,14 @@ den_QF(TEMP_QF == 4 | PSAL_QF == 4) = 4;% out of range T or S so den bad too
 % CALC DEPTH
 float_z  = ones(size(rdata(:,iP)))*NaN;
 nan_lat  = isnan(rdata(:,iL));
-mean_lat = nanmean(rdata(:,iL));
+mean_lat = mean(rdata(:,iL),'omitnan');
 % If pos fix available
 float_z(~nan_lat) = sw_dpth(rdata(~nan_lat,iP),rdata(~nan_lat,iL));
 % otherwise use average lat
 float_z(nan_lat) = sw_dpth(rdata(nan_lat,iP),rdata(nan_lat,iP)*0+mean_lat);
 
-float_z_QF = fill_0 + 1;
+%float_z_QF = fill_0 + 1;
+float_z_QF = PRES_QF; %TM, ie cycle 7593.032.msg has bad pres values and they weren't getting propagated to depth(z)-qc.  Just use PRES_QC?? 8/1/22 
 float_z_QF(isnan(float_z)) = 99;
 clear nan_lat mean_lat
 
@@ -425,7 +456,7 @@ adj_data = [adata(:,1:iL+1), adata(:,iP), PRES_QF, adata(:,iT), ...
     TEMP_QF, adata(:,iS), PSAL_QF, den, den_QF, float_z, float_z_QF, ...
     adata(:,iS+2:dc)];
 
-if strcmp(info.float_type, 'APEX') %
+if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR%
     hrPRES_QF = hr_fill_0 + 1;             % ARGO QF = GOOD
     hrPRES_QF(isnan(hrrdata(:,iP))) = 99; % BIO ARGO QF MISSING VALUE
     hrPRES_QF(hrrdata(:,iP) < RC.P(1) | hrrdata(:,iP) > RC.P(2)) = 4;
@@ -517,25 +548,47 @@ iN  = find(strcmp('NITRATE_ADJUSTED',adj_hdr) == 1);
 iST = find(strcmp('SIGMA_THETA',adj_hdr) == 1);
 iL  = find(strncmp('Lat [',adj_hdr,5)    == 1);
 iPH = find(strcmp('PH_IN_SITU_TOTAL_ADJUSTED',adj_hdr)   == 1); % pH
+iOCR = find(~cellfun(@isempty,regexp(adj_hdr,'^DOWN.+[ED]$','once','match')) == 1);
+iCDOM = find(strcmp('CDOM_ADJUSTED',adj_hdr)   == 1); % pH
 
 % LIAR_alk_str   = '';
 CANYON_alk_str = '';
 % MLR_alk_str    = '';
 
 % ************************************************************************
-% CALCULATE LIAR ALKALINITY FOR THE ADJUSTED DATA SET
+% CALCULATE CANYON B ALKALINITY FOR THE ADJUSTED DATA SET
 % ************************************************************************
 if ~isempty(iPH) % empty will be flase
-    
-    % ************************************************************************
-    % CALCULATE CANYON ALKALINITY FOR THE ADJUSTED DATA SET
-    % ************************************************************************
+
     disp('Calculating Alkalinity using CANYON-B........')
     CBout = CANYONB(adj_data(:,2), adj_data(:,4), adj_data(:,3), ...
         adj_data(:,iP), adj_data(:,iT),adj_data(:,iS), ...
         adj_data(:,iO),{'AT'});
     Alk_Est = CBout.AT;
-    Alk_QF = max([adj_data(:,iS+1) adj_data(:,iO+1)],[],2);
+    
+    
+    % 07/21/2022 JP
+    % With SOLO floats QC "maxing" is tricker because of QF 8 & lots of
+    % fill values. Value added only going to ODV files so convert QC 8's to
+    % nearest & largest QC non interp flag first before "maxing"
+    % PREP QC FLAGS FOR SOLO TYPE FLOATS TO GET FLAGGING RIGHT
+    % NO O2 ALK EST. WILL ONLY USE 1st COLUMN
+    QF_tmp = [adj_data(:,iS+1) adj_data(:,iO+1)];
+    chk8   = QF_tmp == 8; % only triggered for sprof type files
+    if sum(chk8(:)) > 1
+        ct     = (1:size(QF_tmp,1))';
+        for i = 1:size(QF_tmp,2)
+            tmp    = QF_tmp(:,i);
+            t8     = tmp == 8;
+            tnan   = isnan(tmp); % just in case
+            i_next = interp1(ct(~t8 & ~tnan), tmp(~t8 & ~tnan), ct(t8),...
+                'next');
+            i_prev = interp1(ct(~t8 & ~tnan), tmp(~t8 & ~tnan), ct(t8),...
+                'previous');
+            QF_tmp(t8,i) = max([i_next, i_prev],[],2);
+        end
+    end
+    Alk_QF = max(QF_tmp,[],2);
     
     CANYON_alk_str = ['TALK_CANY = Alkalinity estimated using CANYON-B ', ...
         'neural network algorithim (Bittig et al., 2018: https://doi.org/10.3389/fmars.2018.00328 )'];
@@ -549,14 +602,12 @@ if ~isempty(iPH) % empty will be flase
     [adj_r,adj_c] = size(adj_data); % get new size
 end
 % ************************************************************************
-% NOW GET PH TOTAL @ 25C&0P & DIC ESTIMATES USING CO2SYS WITH SOCCOM SETTINGS
+% NOW GET PH TOTAL @ 25C&0P & DIC ESTIMATES USING CO2SYSv3 
 % ONLY USE CO2SYS WITH IN RANGE pH VALUES - OTHERWISE INF LOOP IN CALC
 % ************************************************************************
 % NEED A FEW MORE INDICES
 
-% iAL  = find(strcmp('LIAR_ALK',adj_hdr)   == 1); % LIAR ESTIMATE
 iAC  = find(strcmp('CANYON_ALK',adj_hdr) == 1); % CANYON estimate
-% iAM  = find(strcmp('MLR_ALK',adj_hdr)    == 1); % MLR estimate
 
 if ~isempty(iPH) % pH data exists
     tQC_PH        = adj_data(:,iPH) >= 6.5 & adj_data(:,iPH) <= 9;
@@ -595,12 +646,16 @@ if ~isempty(iPH) % pH data exists
         PAR2     = adj_data(:,iAC);
         tQC_PAR2 = adj_data(:,iAC+1) ==4; %add check for bad ALK values, bogging CO2SYS down 10/9/2017
         PAR2(tQC_PAR2) = nan;
+
+% % % %         [OUT] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+% % % %             TEMPIN, 25, PRESIN, 0, SI, PO4, ...
+% % % %             pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
+                [OUT] = CO2SYSv3(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+            TEMPIN, 25, PRESIN, 0, SI, PO4, 0, 0, ...
+            pHSCALEIN, K1K2CONSTANTS, 1,2,2);
         
-        [OUT] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
-            TEMPIN, 25, PRESIN, 0, SI, PO4, ...
-            pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
-        
-        CANYON_PH25C =  OUT(:,18); % Col 19 in OUT is pH out
+        CANYON_PH25C =  OUT(:,20); % Col 18 in OUT is pH 25C; TM 20 in Sharp v3
+        CANYON_PH25C(CANYON_PH25C==-999)=NaN; % CO2SYSv3 sets all NaN to -999...set them back!
         
         % MAKE A BIASED PH DATA ARRAY FOR CALCULATING pCO2 IN ACCORDANCE
         % WITH WILLIAMS et al 2017, SECT 3.4 EQUATION 3
@@ -623,7 +678,7 @@ if ~isempty(iPH) % pH data exists
             
             if isempty(tmp)
                 disp(['Could not calculate biased pH for cycle ', ...
-                    num2str(cycles(i)), 'no usable deep pH found']);
+                    num2str(cycles(i)), ' no usable deep pH found']);
                 continue
             end
             
@@ -648,30 +703,62 @@ if ~isempty(iPH) % pH data exists
             end
         end
         
-        % SET OUT OF RANGE pH = NAN SO CO2SYS DOESN't BUG DOWN
+        % SET OUT OF RANGE pH = NAN SO CO2SYS DOESN't BOG DOWN
         BIAS_PH(~tQC_PH) = NaN;
         
         % REDO FOR pCO2 using biased pH at INSITU P & T
-        [OUT] = CO2SYSSOCCOM(BIAS_PH, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
-            TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, ...
-            pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
-        
-        CANYON_pCO2 = OUT(:,19); % Col 19 in OUT is pCO2, (uatm)
+% % % %         [OUT] = CO2SYSSOCCOM(BIAS_PH, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+% % % %             TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, ...
+% % % %             pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
+
+        [OUT] = CO2SYSv3(BIAS_PH, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+            TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, 0, 0, ...
+            pHSCALEIN, K1K2CONSTANTS, 1, 2, 2);
+        CANYON_pCO2 = OUT(:,21); % Col 19 in OUT is pCO2, (uatm); TM, 21 in Sharp V3
+        CANYON_pCO2(CANYON_pCO2==-999)=NaN; % CO2SYSv3 sets all NaN to -999...set them back!
         
         clear cycles pres_tol i tcycle tmp p1500 min1500 ind
         clear  p1000 min1000 BIAS_PH
         
         
         % REDO FOR DIC at INSITU P & T
-        [OUT] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
-            TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, ...
-            pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
+% % % %         [OUT] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+% % % %             TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, ...
+% % % %             pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
+
+        [OUT] = CO2SYSv3(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+            TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, 0, 0, ...
+            pHSCALEIN, K1K2CONSTANTS, 1 ,2 ,2);
         
-        CANYON_DIC  = OUT(:,2); % Col 2 in OUT is TCO2, (umol/kgSW)
+        CANYON_DIC  = OUT(:,2); % Col 2 in OUT is TCO2, (umol/kgSW); TM same for Sharp v3.
+        CANYON_DIC(CANYON_DIC==-999)=NaN; % CO2SYSv3 sets all NaN to -999...set them back!
         
+%         DIC_QF = max([adj_data(:,iS+1) adj_data(:,iO+1) ...
+%             adj_data(:,iAC+1) adj_data(:,iPH+1)],[],2);
         
-        DIC_QF = max([adj_data(:,iS+1) adj_data(:,iO+1) ...
-            adj_data(:,iAC+1) adj_data(:,iPH+1)],[],2);
+        % 07/21/2022 JP
+        % With SOLO floats QC "maxing" is tricker because of QF 8 & lots of
+        % fill values, & ALK goes full resolution but pH does not. Value
+        % added only going to ODV files so convert QC 8's to nearest &
+        % largest QC non interp flag first before "maxing"
+        
+        QF_tmp = [adj_data(:,iS+1), adj_data(:,iAC+1) adj_data(:,iPH+1)];
+        chk8   = QF_tmp == 8; % only triggered for sprof type files
+        if sum(chk8(:)) > 1
+            ct     = (1:size(QF_tmp,1))';
+            for i = 1:size(QF_tmp,2)
+                tmp    = QF_tmp(:,i);
+                t8     = tmp == 8;
+                tnan   = isnan(tmp); % just in case
+                i_next = interp1(ct(~t8 & ~tnan), tmp(~t8 & ~tnan), ct(t8),...
+                    'next');
+                i_prev = interp1(ct(~t8 & ~tnan), tmp(~t8 & ~tnan), ct(t8),...
+                    'previous');
+                QF_tmp(t8,i) = max([i_next, i_prev],[],2);
+            end
+        end
+        DIC_QF = max(QF_tmp,[],2);
+        clear QF_tmp chk8 ct i tmp t8 tnan i_next i_prev
         
         adj_hdr  = [adj_hdr, 'CANYON_PHTOT25C' 'CANY_PHTOT25C_QC', ...
             'CANYON_DIC' 'CANYON_DIC_QC' 'CANYON_pCO2' 'CANYON_pCO2_QC'];
@@ -702,20 +789,54 @@ for i = 1:raw_c
     % SETTING ALL QF's TO 1, EXCEPT FOR PTSZ & OBVIOUSLY BAD
     if regexp(raw_hdr{i},'\_QC', 'once')
         tmp1 = raw_data(:,i);
-        tmp1(tmp1 == 5) = 3;
+        
+        % solo sprof merge can have 8's, replace with highest bounding QC
+        t8 = tmp1 == 8; 
+        if sum(t8,1) > 0 % sprof can have interpolated QC values  (8)
+            ct     = (1:size(tmp1,1))';
+            tnan   = isnan(tmp1);
+            i_next = interp1(ct(~t8 & ~tnan), tmp1(~t8 & ~tnan), ct(t8),...
+                'next');
+            i_prev = interp1(ct(~t8 & ~tnan), tmp1(~t8 & ~tnan), ct(t8),...
+                'previous');
+            tmp1(t8) = max([i_next, i_prev],[],2);
+            clear i_next i_prev t8 ct tnan
+        end
+
+        tmp1(tmp1 == 5) = 3; % This is for NPQ corrected data
         tmp1(tmp1 == 4) = 8;
         tmp1(tmp1 == 3) = 4; % This will catch interp lat 2/9/17 jp
         tmp1(tmp1 == 0) = 10; % temporary
-        tmp1(tmp1 == 1) = 0; % P T S Z
-        tmp1(tmp1 == 2) = 1; % All others uninspected
+        
+        if strncmp(raw_hdr{i},'BBP',3)
+            tmp1(tmp1 == 1) = 0;
+            tmp1(tmp1 == 2) = 1; % BGC Argo flags raw bbp qc =2
+        else
+            tmp1(tmp1 == 1 |tmp1 == 2) = 0; % P T S Z 2/17/22 jp and ==2 piece here
+        end
         tmp1(tmp1 == 10 | tmp1 == 99) = 1; % NO QC or Missing value
         raw_data(:,i) = tmp1;
     end
 end
+
 for i = 1:adj_c
     if regexp(adj_hdr{i},'\_QC', 'once')
         tmp2 = adj_data(:,i);
-        tmp2(tmp2 == 5) = 3;
+        
+        % solo sprof merge can have 8's, replace with highest bounding QC
+        t8 = tmp2 == 8;
+        if sum(t8,1) > 0 % sprof has interpolated values
+            ct     = (1:size(tmp2,1))';
+            tnan   = isnan(tmp2);
+            i_next = interp1(ct(~t8 & ~tnan), tmp2(~t8 & ~tnan), ct(t8),...
+                'next');
+            i_prev = interp1(ct(~t8 & ~tnan), tmp2(~t8 & ~tnan), ct(t8),...
+                'previous');
+            tmp2(t8) = max([i_next, i_prev],[],2);
+            clear i_next i_prev t8 ct tnan
+        end
+        
+        tmp2(tmp2 == 5) = 3; % This is for NPQ corrected data
         tmp2(tmp2 == 4) = 8;
         tmp2(tmp2 == 3) = 4;
         tmp2(tmp2 == 0) = 10; % temporary
@@ -724,12 +845,11 @@ for i = 1:adj_c
         adj_data(:,i) = tmp2;
     end
 end
-
-if strcmp(info.float_type, 'APEX')
+if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
     for i = 1:hrdc
         if regexp(raw_hdr{i},'\_QC', 'once')
             tmp2 = hrraw_data(:,i);
-            tmp2(tmp2 == 5) = 3;
+            tmp2(tmp2 == 5) = 3; % This is for NPQ corrected data
             tmp2(tmp2 == 4) = 8;
             tmp2(tmp2 == 3) = 4;
             tmp2(tmp2 == 0) = 10; % temporary
@@ -790,59 +910,59 @@ end
 
 % ************************************************************************
 % ADD "VALUE ADDED" BIO-OPTICS PRODUCTS
-global_gain  = 2; % THIS CAN BE MODIFIED OR FUNCTIONIZED LATER
-soocn_gain   = 6; % S of 40S for now
-lat_cutoff   = -30;
-
-iChl_raw = find(strcmp('CHLA',raw_hdr) == 1);
-float_cal_path = [dirs.cal,'cal',MBARI_ID_str,'.mat'];
-if ~isempty(iChl_raw) && exist(float_cal_path,'file')
-    load(float_cal_path);
-    if isfield(cal,'CHL') && isfield(cal.CHL, 'SWDC')
-        iSDN = find(strcmp('Matlab SDN',raw_hdr) == 1);
-        iLON = find(strcmp('Lon [ºE]',raw_hdr) == 1);
-        iLAT = find(strcmp('Lat [ºN]',raw_hdr) == 1);
-        iP   = find(strcmp('PRES',raw_hdr) == 1);
-        iT   = find(strcmp('TEMP',raw_hdr) == 1);
-        iS   = find(strcmp('PSAL',raw_hdr) == 1);
-        iSTA = find(strcmp('Station',raw_hdr) == 1);
-        
-        CHL_CTS = raw_data(:,iChl_raw) ./ cal.CHL.ChlScale ...
-            + cal.CHL.ChlDC; % back to counts
-        tLAT = raw_data(:,iLAT) < lat_cutoff;
-        CHL_new = (CHL_CTS - cal.CHL.SWDC.DC) .* cal.CHL.ChlScale;
-        CHL_new(tLAT) = CHL_new(tLAT) ./ soocn_gain; %S of 40S
-        CHL_new(~tLAT) = CHL_new(~tLAT) ./ global_gain; %N of 40S
-        CHL_new_QC = adj_data(:,iChl+1); % copy adjusted data QC flags
-        
-        % NPQ NEXT - HAVE TO STEP THROUGH PROFILES AGAIN
-        cycle_ct = unique(raw_data(:,iSTA));
-        disp('Creating experimental gain & NPQ corrected data set ...')
-        for i = 1: size(cycle_ct,1)
-            if i == size(cycle_ct,1)
-                fprintf('%0.0f \r\n',cycle_ct(i))
-            else
-                fprintf('%0.0f ',cycle_ct(i))
-            end
-            
-            t1 = raw_data(:,iSTA) == cycle_ct(i);
-            tmp = raw_data(t1,:);
-            CHL_EXP = CHL_new(t1);
-            
-            NPQ = get_NPQcorr(tmp(1,[iSDN,iLON,iLAT]), ...
-                [tmp(:,[iP,iT,iS]),CHL_EXP],dirs);
-            if ~isempty(NPQ.data)
-                iNPQ = find(strcmp('Xing_Zchl',NPQ.hdr) == 1);
-                tNPQ = tmp(:,iP) <= NPQ.XMLDZ;
-                CHL_EXP(tNPQ) = NPQ.data(tNPQ, iNPQ); % no spike added
-                CHL_new(t1) = CHL_EXP;
-            end
-        end
-        
-        adj_hdr    = [adj_hdr, 'Chl_a_corr[mg/m^3]' 'QF']; % ADD TO HEADER
-        adj_data = [adj_data, CHL_new, CHL_new_QC];
-    end
-end
+% global_gain  = 2; % THIS CAN BE MODIFIED OR FUNCTIONIZED LATER
+% soocn_gain   = 6; % S of 40S for now
+% lat_cutoff   = -30;
+% 
+% iChl_raw = find(strcmp('CHLA',raw_hdr) == 1);
+% float_cal_path = [dirs.cal,'cal',MBARI_ID_str,'.mat'];
+% if ~isempty(iChl_raw) && exist(float_cal_path,'file')
+%     load(float_cal_path);
+%     if isfield(cal,'CHL') && isfield(cal.CHL, 'SWDC')
+%         iSDN = find(strcmp('Matlab SDN',raw_hdr) == 1);
+%         iLON = find(strcmp('Lon [ºE]',raw_hdr) == 1);
+%         iLAT = find(strcmp('Lat [ºN]',raw_hdr) == 1);
+%         iP   = find(strcmp('PRES',raw_hdr) == 1);
+%         iT   = find(strcmp('TEMP',raw_hdr) == 1);
+%         iS   = find(strcmp('PSAL',raw_hdr) == 1);
+%         iSTA = find(strcmp('Station',raw_hdr) == 1);
+%         
+%         CHL_CTS = raw_data(:,iChl_raw) ./ cal.CHL.ChlScale ...
+%             + cal.CHL.ChlDC; % back to counts
+%         tLAT = raw_data(:,iLAT) < lat_cutoff;
+%         CHL_new = (CHL_CTS - cal.CHL.SWDC.DC) .* cal.CHL.ChlScale;
+%         CHL_new(tLAT) = CHL_new(tLAT) ./ soocn_gain; %S of 40S
+%         CHL_new(~tLAT) = CHL_new(~tLAT) ./ global_gain; %N of 40S
+%         CHL_new_QC = adj_data(:,iChl+1); % copy adjusted data QC flags
+%         
+%         % NPQ NEXT - HAVE TO STEP THROUGH PROFILES AGAIN
+%         cycle_ct = unique(raw_data(:,iSTA));
+%         disp('Creating experimental gain & NPQ corrected data set ...')
+%         for i = 1: size(cycle_ct,1)
+%             if i == size(cycle_ct,1)
+%                 fprintf('%0.0f \r\n',cycle_ct(i))
+%             else
+%                 fprintf('%0.0f ',cycle_ct(i))
+%             end
+%             
+%             t1 = raw_data(:,iSTA) == cycle_ct(i);
+%             tmp = raw_data(t1,:);
+%             CHL_EXP = CHL_new(t1);
+%             
+%             NPQ = get_NPQcorr(tmp(1,[iSDN,iLON,iLAT]), ...
+%                 [tmp(:,[iP,iT,iS]),CHL_EXP],dirs);
+%             if ~isempty(NPQ.data)
+%                 iNPQ = find(strcmp('Xing_Zchl',NPQ.hdr) == 1);
+%                 tNPQ = tmp(:,iP) <= NPQ.XMLDZ;
+%                 CHL_EXP(tNPQ) = NPQ.data(tNPQ, iNPQ); % no spike added
+%                 CHL_new(t1) = CHL_EXP;
+%             end
+%         end
+%         
+%         adj_hdr    = [adj_hdr, 'Chl_a_corr[mg/m^3]' 'QF']; % ADD TO HEADER
+%         adj_data = [adj_data, CHL_new, CHL_new_QC];
+%     end
+% end
 
 if ~isempty(iBbp)
     % using Johnson et al.,2017, doi:10.1002/2017JC012838
@@ -862,7 +982,7 @@ clear NPQ iNPQ tNPQ tLAT CHL_EXP CHL_new i t1 tmp cycle_ct
 % ************************************************************************
 raw_missing_data_str = 'No missing data found';
 nan_sum =(sum(isnan(raw_data), 2))>0; % cols so I can get casts later
-if sum(nan_sum,1) > 0
+if strcmp(FLT_type,'APEX') && ~tf_APEX_OCR && sum(nan_sum,1) > 0
     tmp = unique(raw_data(nan_sum,1));
     raw_missing_data_str = ['Missing Float data detected for raw data', ...
         ' station(s): ', sprintf('%0.0f ',tmp)];
@@ -872,7 +992,7 @@ clear nan_sum tmp
 
 adj_missing_data_str = 'No missing data found';
 nan_sum = sum(isnan(adj_data), 2)>0; % cols so I can get casts later
-if sum(nan_sum,1) > 0
+if strcmp(FLT_type,'APEX') && ~tf_APEX_OCR && sum(nan_sum,1) > 0
     tmp = unique(adj_data(nan_sum,1));
     adj_missing_data_str = ['Missing Float data detected for adjusted ',...
         'station(s): ', sprintf('%0.0f ',tmp)];
@@ -884,7 +1004,7 @@ clear nan_sum tmp
 %          BUILD COMBINED LR + HR DATA SET FOR "HR" FLOATVIZ FILE
 %                 !!! APEX FLOATS ONLY, HR DATA = P T S !!!
 % ************************************************************************
-if strcmp(info.float_type, 'APEX')
+if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR
     cycles = unique(raw_data(:,1));
     allraw_data = ones(hrdr + raw_r, raw_c) * NaN;
     alladj_data = ones(hrdr + adj_r, adj_c) * NaN;
@@ -961,7 +1081,7 @@ Bio_optics_str = ['See: Boss, E.B. and N. Haëntjens, 2016. ', ...
 
 CO2SYS_str = ['//NOTE ON CO2SYS CARBONATE SYSTEM CALCULATIONS:\r\n',...
     '//All carbonate system variables calculated with CO2SYS for Matlab\r\n',...
-    '//(van Heuven et al., 2011, doi: 10.3334/CDIAC/otg.CO2SYS_MATLAB_v1.1)\r\n',...
+    '//(Sharp et al., 2020; see also Lewis and Wallace 1998)\r\n',...
     '//used the following conditions: pH was reported on the total scale.\r\n',...
     '//K1 and K2 dissociation constants were from Lueker et al., 2000, doi:\r\n', ...
     '//10.1016/S0304-4203(00)00022-0. The KSO4 dissociation constant was\r\n',...
@@ -977,7 +1097,7 @@ CO2SYS_str = ['//NOTE ON CO2SYS CARBONATE SYSTEM CALCULATIONS:\r\n',...
     '//following Williams et al., 2017, doi: https://doi.org/10.1002/2016GB005541 , section 3.4, equation 3.\r\n',...
 	'//This correction is not necessary for DIC and DIC is computed with the reported pH and the TALK_CANY value.\r\n'];
 
-CHL_str = ['//NOTE ON Chl_a & Chl_a_corr [mg/m^3] CONCENTRATION:\r\n',...
+CHL_str = ['//NOTE ON Chl_a [mg/m^3] CONCENTRATION:\r\n',...
     '//There is community-established calibration bias of 2 for the WET Labs 413',...
     ' ECO-series fluorometers\r\n//(Roesler et al, 2017, doi: 10.1002/lom3.10185).',...
     '\r\n//Chl_a has been recalculated using in situ measured dark counts. ', ...
@@ -990,11 +1110,37 @@ CHL_str = ['//NOTE ON Chl_a & Chl_a_corr [mg/m^3] CONCENTRATION:\r\n',...
     '\r\n//Kim et al., 2015, doi:10.5194/bg-12-5119-2015).No spike profile added.',...
     '\r\n//Note that all NPQ-corrected data receives an Argo quality flag of 5 ("value changed")',...
     '\r\n//and an ODV-style quality flag of 4 ("questionable").',...
-    '\r\n//South of 30S a slope correction of 6 was used(E. Boss unpublished data).',...
-    '\r\n//This correction scheme was decided upon at the 18th Argo Data Management Team ',...
-    '\r\n//meeting in Hamburg, Germany (Nov, 2017), and is subject to change as research on optimal ',...
-    '\r\n//correction methods for float data from FLBB sensors continues.\r\n//'];
+    '\r\n//'];
+    
+%     South of 30S a slope correction of 6 was used(E. Boss unpublished data).',...
+%     '\r\n//This correction scheme was decided upon at the 18th Argo Data Management Team ',...
+%     '\r\n//meeting in Hamburg, Germany (Nov, 2017), and is subject to change as research on optimal ',...
+%     '\r\n//correction methods for float data from FLBB sensors continues.\r\n//'];
 
+SOLO_info_str = ['//\r\n//THIS IS a BGC SOLO FLOAT!\r\n',...
+    '//Each BGC sensor may have a unique pressure axis. If so all data have been aligned\r\n',...
+    '//on to a common pressure axis using a modified version of code from Henry Bittig\r\n',...
+    '//which was originally used to build the Sprof profile files. More information at:\r\n',...
+    '//https://archimer.ifremer.fr/doc/00445/55637/  and  ',...
+    'https://www.seanoe.org/data/00345/45589/\r\n',...
+    '//(\\decArgo_YYYYMMDD_XXXX\\decArgo_soft\\soft\\util\\sub_foreign', ...
+    '\\ARGO_simplified_profile.m\r\n', ...
+    '//Data here may not exactly match that of the Sprof profile file ',...
+    'due to slight QC flagging differences\r\n//\r\n'];
+
+TEST_OCR_info_str = ['//\r\n//THIS IS AN APEX TEST FLOAT\r\n//It has one of the ', ...
+    'first installations of an OCR 504 Radiometer on an APEX float\r\n//The OCR data have ',...
+    'their own pressure axis so data have been aligned\r\n',...
+    '//on to a common pressure axis using a modified version of code from Henry Bittig\r\n',...
+    '//which was originally used to build the Sprof profile files. Prior to alignment \r\n',...
+    '//non unique data shallower than 4 dbar were replaced by the median of these data points.\r\n', ...
+    '//More information at:\r\n',...
+    '//https://archimer.ifremer.fr/doc/00445/55637/  and  ',...
+    'https://www.seanoe.org/data/00345/45589/\r\n',...
+    '//(\\decArgo_YYYYMMDD_XXXX\\decArgo_soft\\soft\\util\\sub_foreign', ...
+    '\\ARGO_simplified_profile.m\r\n', ...
+    '//Data here may not exactly match that of the Sprof profile file ',...
+    'due to slight QC flagging differences\r\n//\r\n'];
 % LOAD CAL FILE - will use info in meta data headers
 % % load([dirs.cal,'cal',info.FloatViz_name,'.mat']);  % TM 3/3/21; THE CAL
 % FILE IS LOADED ON LINE ~1020, DOES THIS NEED TO BE LOADED AGAIN??
@@ -1020,9 +1166,14 @@ ODV_raw(11,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};
 ODV_raw(12,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532' '' '' ''};
 ODV_raw(13,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''};
 
+% OCR VARIABLES
+ODV_raw(14,:) = {'DOWN_IRRAD380[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE380' '' '' ''};
+ODV_raw(15,:) = {'DOWN_IRRAD412[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE412' '' '' ''};
+ODV_raw(16,:) = {'DOWN_IRRAD490[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE490' '' '' ''};
+ODV_raw(17,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]'  '%0.6f' 'DOWNWELLING_PAR' '' '' ''};
 % ************************************************************************
 % ADD VARIABLE DESCRIPTORS TO RAW CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
-if strcmp(info.float_type,'APEX')
+if strcmp(info.float_type,'APEX') && ~tf_APEX_OCR
     O2sensor = 'Aanderaa ';
 else
     O2sensor = '';
@@ -1060,6 +1211,12 @@ end
 if sum(strcmp(ODV_raw{13,3},raw_hdr))
     ODV_raw(13,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %CDOM
 end
+if sum(strcmp(ODV_raw{14,3},raw_hdr))
+    ODV_raw(14,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_raw(15,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_raw(16,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_raw(17,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+end
 
 % ************************************************************************
 % ************************************************************************
@@ -1073,66 +1230,77 @@ ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.2f' 'DOXY_ADJUSTED' '' '' ''};
 ODV_adj(7,:)  = {'OxygenSat[%]'          '%0.1f' 'DOXY_%SAT_ADJUSTED' '' '' ''};
 ODV_adj(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE_ADJUSTED' '' '' ''};
 ODV_adj(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA_ADJUSTED' '' '' ''};
-ODV_adj(10,:) = {'Chl_a_corr[mg/m^3]'    '%0.4f' 'Chl_a_corr[mg/m^3]' '' '' ''};
-ODV_adj(11,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700_ADJUSTED' '' '' ''};
-ODV_adj(12,:) = {'b_bp_corr[1/m]'        '%0.6f' 'bbp' '' '' ''};
-ODV_adj(13,:) = {'POC[mmol/m^3]'         '%0.2f' 'POC[mmol/m^3]' '' '' ''};
+%ODV_adj(10,:) = {'Chl_a_corr[mg/m^3]'    '%0.4f' 'Chl_a_corr[mg/m^3]' '' '' ''};
+ODV_adj(10,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700_ADJUSTED' '' '' ''};
+%ODV_adj(12,:) = {'b_bp_corr[1/m]'        '%0.6f' 'bbp' '' '' ''};
+ODV_adj(11,:) = {'POC[mmol/m^3]'         '%0.2f' 'POC[mmol/m^3]' '' '' ''};
 
 % ADD THESE FOR ODV FLAVOR #2
-ODV_adj(14,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL_ADJUSTED' '' '' ''};
-ODV_adj(15,:) = {'pH25C[Total]'          '%0.4f' 'CANYON_PHTOT25C' '' '' ''};
-ODV_adj(16,:) = {'TALK_CANY[µmol/kg]'    '%4.0f' 'CANYON_ALK' '' '' ''};
-ODV_adj(17,:) = {'DIC_CANY[µmol/kg]'     '%4.0f' 'CANYON_DIC' '' '' ''};
-ODV_adj(18,:) = {'pCO2_CANY[µatm]'       '%4.1f' 'CANYON_pCO2' '' '' ''};
+ODV_adj(12,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL_ADJUSTED' '' '' ''};
+ODV_adj(13,:) = {'pH25C[Total]'          '%0.4f' 'CANYON_PHTOT25C' '' '' ''};
+ODV_adj(14,:) = {'TALK_CANY[µmol/kg]'    '%4.0f' 'CANYON_ALK' '' '' ''};
+ODV_adj(15,:) = {'DIC_CANY[µmol/kg]'     '%4.0f' 'CANYON_DIC' '' '' ''};
+ODV_adj(16,:) = {'pCO2_CANY[µatm]'       '%4.1f' 'CANYON_pCO2' '' '' ''};
 
 % ADD THESE FOR ODV FLAVOR #3
-ODV_adj(19,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532_ADJUSTED' '' '' ''};
-ODV_adj(20,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM_ADJUSTED' '' '' ''};
+ODV_adj(17,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532_ADJUSTED' '' '' ''};
+ODV_adj(18,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM_ADJUSTED' '' '' ''};
 
+% OCR VARIABLES
+ODV_adj(19,:) = {'DOWN_IRRAD380[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE380' '' '' ''};
+ODV_adj(20,:) = {'DOWN_IRRAD412[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE412' '' '' ''};
+ODV_adj(21,:) = {'DOWN_IRRAD490[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE490' '' '' ''};
+ODV_adj(22,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]'  '%0.6f' 'DOWNWELLING_PAR' '' '' ''};
 % ************************************************************************
-% ADD VARIABLE DESCRIPTORS TO RAW CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
+% ADD VARIABLE DESCRIPTORS TO ADJ CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
 
 ODV_adj(1:9,4:6) = ODV_raw(1:9,4:6);
+if sum(strcmp(ODV_adj{9,3},adj_hdr))
+    ODV_adj(9,4:6) = {cal.CHL.type cal.CHL.SN Bio_optics_str}; %chl
+end
 if sum(strcmp(ODV_adj{10,3},adj_hdr))
-    ODV_adj(10,4:6) = {cal.CHL.type cal.CHL.SN Bio_optics_str}; %chl corr
+    ODV_adj(10,4:6) = {cal.BB.type cal.BB.SN ''}; %bbp700
 end
+% if sum(strcmp(ODV_adj{12,3},adj_hdr))
+%     ODV_adj(12,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %bbp700 cor
+% end
 if sum(strcmp(ODV_adj{11,3},adj_hdr))
-    ODV_adj(11,4:6) = {cal.BB.type cal.BB.SN ''}; %bbp700
-end
-if sum(strcmp(ODV_adj{12,3},adj_hdr))
-    ODV_adj(12,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %bbp700 cor
-end
-if sum(strcmp(ODV_adj{13,3},adj_hdr))
-    ODV_adj(13,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %POC
+    ODV_adj(11,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %POC
 end
 
+if sum(strcmp(ODV_adj{12,3},adj_hdr))
+    ODV_adj(12,4:6) = {cal.pH.type cal.pH.SN ''}; %pH in situ
+end
+if sum(strcmp(ODV_adj{13,3},adj_hdr))
+    str =['estimated with CO2SYS(TALK_CANY,pHinsitu) for Matlab ', ...
+        ' see note below'];
+    ODV_adj(13,4:6) = {cal.pH.type cal.pH.SN str}; %pH 25C total
+end
 if sum(strcmp(ODV_adj{14,3},adj_hdr))
-    ODV_adj(14,4:6) = {cal.pH.type cal.pH.SN ''}; %pH in situ
+    ODV_adj(14,4:6) = {'' '' CANYON_alk_str}; %TALK CANYON
 end
 if sum(strcmp(ODV_adj{15,3},adj_hdr))
     str =['estimated with CO2SYS(TALK_CANY,pHinsitu) for Matlab ', ...
-        ' see note below'];
-    ODV_adj(15,4:6) = {cal.pH.type cal.pH.SN str}; %pH 25C total
+        '(see note below)'];
+    ODV_adj(15,4:6) = {'' '' str}; %CANY DIC
 end
 if sum(strcmp(ODV_adj{16,3},adj_hdr))
-    ODV_adj(16,4:6) = {'' '' CANYON_alk_str}; %TALK CANYON
-end
-if sum(strcmp(ODV_adj{17,3},adj_hdr))
-    str =['estimated with CO2SYS(TALK_CANY,pHinsitu) for Matlab ', ...
-        '(see note below)'];
-    ODV_adj(17,4:6) = {'' '' str}; %CANY DIC
-end
-if sum(strcmp(ODV_adj{18,3},adj_hdr))
     str =['estimated with CO2SYS(TALK_CANY,biased pHinsitu) for Matlab ', ...
         '(see note below)'];
-    ODV_adj(18,4:6) = {'' '' str}; %CANY pCO2 DIC
+    ODV_adj(16,4:6) = {'' '' str}; %CANY pCO2 DIC
 end
 
-if sum(strcmp(ODV_adj{19,3},adj_hdr))
-    ODV_adj(19,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; % BBP532
+if sum(strcmp(ODV_adj{17,3},adj_hdr))
+    ODV_adj(17,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; % BBP532
 end
-if sum(strcmp(ODV_adj{20,3},adj_hdr))
-    ODV_adj(20,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %CDOM
+if sum(strcmp(ODV_adj{18,3},adj_hdr))
+    ODV_adj(18,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %CDOM
+end
+if sum(strcmp(ODV_adj{19,3},raw_hdr))
+    ODV_adj(19,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_adj(20,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_adj(21,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_adj(22,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
 end
 
 % ************************************************************************
@@ -1147,15 +1315,42 @@ if isempty(iPH)
     ODV_adj(ind1:ind2,:) = [];
 end
 
-if ~strcmp(info.float_type, 'NAVIS')
+if isempty(iCDOM)
+    ind1 = find(strncmp('CDOM[ppb]',ODV_raw(:,1),4)   == 1);
+    ODV_raw(ind1,:) = [];
+    
+    ind1 = find(strncmp('CDOM[ppb]',ODV_adj(:,1),4)   == 1);
+    ODV_adj(ind1,:) = [];
+end
+
+if ~strcmp(info.float_type, 'NAVIS') %TMNEW
     ind1 = find(strcmp('b_bp532[1/m]',ODV_raw(:,1))   == 1);
-    ind2 = find(strcmp('CDOM[ppb]',ODV_raw(:,1))   == 1);
-    ODV_raw(ind1:ind2,:) = [];
+    %ind2 = find(strcmp('CDOM[ppb]',ODV_raw(:,1))   == 1);
+    %ODV_raw(ind1:ind2,:) = [];
+    ODV_raw(ind1,:) = [];
     
     ind1 = find(strcmp('b_bp532[1/m]',ODV_adj(:,1))   == 1);
-    ind2 = find(strcmp('CDOM[ppb]',ODV_adj(:,1))   == 1);
-    ODV_adj(ind1:ind2,:) = [];
+%     ind2 = find(strcmp('CDOM[ppb]',ODV_adj(:,1))   == 1);
+%     ODV_adj(ind1:ind2,:) = [];
+    ODV_adj(ind1,:) = [];
 end
+
+if isempty(iOCR)
+    ind1 = find(strncmp('DOWN',ODV_raw(:,1),4)   == 1);
+    ODV_raw(ind1,:) = [];
+    
+    ind1 = find(strncmp('DOWN',ODV_adj(:,1),4)   == 1);
+    ODV_adj(ind1,:) = [];
+end
+
+if tf_APEX_OCR % APEX OCR TEST FLOATS
+    tg = cellfun(@isempty, regexp(ODV_raw(:,1),'^Oxy|^Nit|^Chl|^b_bp','once'));
+    ODV_raw = ODV_raw(tg,:);
+    
+    tg = cellfun(@isempty, regexp(ODV_adj(:,1),'^Oxy|^Nit|^Chl|^b_bp|^POC','once'));
+    ODV_adj = ODV_adj(tg,:);
+end
+
 
 raw_var_ct = size(ODV_raw,1);
 adj_var_ct = size(ODV_adj,1);
@@ -1191,6 +1386,13 @@ if QC_check == 1
     fprintf(fid_adj,['//Project Name: ',PROJ_Name,'\r\n']);
     fprintf(fid_adj,['//Region: ',REGION,'\r\n']);
     
+    if strcmp(FLT_type,'SOLO')
+        fprintf(fid_adj, SOLO_info_str);
+    end
+    
+    if tf_APEX_OCR
+        fprintf(fid_raw, TEST_OCR_info_str);
+    end
     fprintf(fid_adj,['//', missing_profile_str,'\r\n']);
     if ~isempty(interp_pos_str)
         fprintf(fid_adj,['//',interp_pos_str,'\r\n']);
@@ -1369,7 +1571,7 @@ end
 % ************************************************************************
 if QC_check == 1 && HR_flag == 1
     % PRINT HEADER FIRST
-    if strcmp(info.float_type, 'APEX')
+    if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR
         [alladj_r,alladj_c] = size(allraw_data);
         disp(['Printing HR+LR adjusted data to: ',dirs.FVlocal, ...
             'CANYON_QC\', info.FloatViz_name,'_HRQC', '.txt']);

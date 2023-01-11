@@ -3,17 +3,19 @@ function d = parse_html_table(url)
 
 % Tmaurer April 14 2020, updated Jan 20, 2021 to clean up code.
 % 03/17/2021 JP - updated to return the parsed stats table as a structure
-% with hdr & table data fields
-% 03/23/2021 JP - minor tweaks for launch of Sharon's new GOBGC formated
-% tables
+%     with hdr & table data fields
+% 03/23/2021 JP - minor tweaks for launch of Sharon's new GOBGC formated tables
+% 10/17/22 JP - updated table header line extraction to account for Sharon's
+%    sortable table up date. Minor Modification "hdr_search_exp"
+% 01/04/22 JP fix to the 10/17 fix. parsing sortable header data type fix broke 
+%    sortable header line parse when no data type. Now test for table type to decide on
+%    regexp filter.
 
 % ************************************************************************ 
 % TESTING
 %url  = 'http://soccom.ucsd.edu/floats/SOCCOM_float_stats.html'
-
-% url  = ['https://www3.mbari.org/chemsensor/MBARI_float_table/',...
-%         'mbari_float_table.html'];
 %url  = 'http://soccom.ucsd.edu/SOCCOM_float_performance.html'
+%url = 'https://www3.mbari.org/chemsensor/MBARI_float_table/mbari_float_table.html';
 % ************************************************************************
 
 % ************************************************************************
@@ -23,14 +25,20 @@ function d = parse_html_table(url)
 big_str    = webread(url); % Sharon's HTML page as big string
 html_lines = regexp(big_str,'\n','split')'; % cell array of all html lines 
 
-% FIND HDR LINE
+% FIND AND EXTRACT COLUMN ID'sHDR LINE
 thdr     = ~cellfun(@isempty, regexp(html_lines,'^<table class','once')); % table data lines
 hdr_line = html_lines(thdr); % only want 1st header definition line
-hdr_search_exp = '(?<=<th>)[\w+\<\>-\s*\.]+(?=</th>)'; % may need to expand char set for other tables
+
+% test table type - sortable data type  or just sortable jp 01/04/22
+if ~isempty(regexp(hdr_line{1},'<th data', 'once')) % sortable
+    hdr_search_exp = '(?<=<th data.*>)[\w+\<\>-\s*\.]+(?=</th>)'; % JP 10/17/22 add ".*" in the look before
+else % not sortable
+    hdr_search_exp = '(?<=<th>)[\w+\<\>-\s*\.]+(?=</th>)'; % may need to expand char set for other tables
+end
+
 tbl_hdr  = regexp(hdr_line{1}, hdr_search_exp,'match');
 tbl_hdr  = regexprep(tbl_hdr,'<br>-',''); % end of hdr ID, replace with nothing
 tbl_hdr  = regexprep(tbl_hdr,'<br>',' '); % header break code replaced with space
-
 
 % GET TABLE DATA ROWS
 tg         = ~cellfun(@isempty, regexp(html_lines,'^\s*<td','once')); % table data lines

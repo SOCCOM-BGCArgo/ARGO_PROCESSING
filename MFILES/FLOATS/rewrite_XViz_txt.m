@@ -5,6 +5,10 @@ function status = rewrite_XViz_txt(dirs)
 % Tanya Maurer & Josh Plant, MBARI
 % This code is internal to the MBARI system (FloatViz web data plotting interface that is built and maintained at mbari)
 % 3/24/21
+% 
+% UPDATES:
+% 10/27/21, TM, improved indexing on mapping of MBARI float WMO to Sharon's
+% adopt-a-float list.
 
 %--------------------------------------------------------------------------
 % SET DIRECTORIES
@@ -106,10 +110,13 @@ if adopt_success == 1
     [~,IX]       = sort(adopt_info(:,1)); % sort by adopted name
     adopt_info   = adopt_info(IX,:);
 
-    tf_adopt = ismember(FLOAT_LIST(:,iWMO),adopt_WMO); % logical aray size of FLOAT_LIST
-    adopt_list = FLOAT_LIST(tf_adopt,:);
+%     tf_adopt = ismember(FLOAT_LIST(:,iWMO),adopt_WMO); % logical aray size of FLOAT_LIST
+    [~,IA,IB] = intersect(FLOAT_LIST(:,iWMO),adopt_WMO); %TM 10/27/21 use intersect in case of duplicate float nums!
+    adopt_list = FLOAT_LIST(IA,:);
+    TMP_adopt_info = adopt_info(IB,:);
     
-    [~,IX]  = sort(adopt_info(:,2)); % sort by adopted name
+    [~,IX]  = sort(TMP_adopt_info(:,2)); % sort by adopted name
+    
     adopt_list = adopt_list(IX,:); % main adopt list now sorted by name
     
     clear fid tmp ans t1 sharon_info school_pat name_pat

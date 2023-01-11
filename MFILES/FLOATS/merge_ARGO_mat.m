@@ -45,11 +45,21 @@ function d = merge_ARGO_mat(WMO_ID, dirs)
 %   our processing system overhaul(!)  The main system changes are related to the
 %   float IDs and the naming of floatViz files (floatViz files will now be
 %   identified by WMO, instead of MBARI-ID.)
+% 12/13/21 JP - Modified to use CPActivationP vs LR DOXY sample count when 
+%   merging LR & HR cp BGC data. This fixes merging bug when dealing with
+%   un1114 when O2 sensor fails
+% 02/01/22 JP - Added DOX2 as another parameter
 %
 % ************************************************************************
 %TESTING
+% WMO_ID = '5906306'; % un1114 
+% %WMO_ID = '1902304'; % wn1203
+% % WMO_ID = '5906450'; % ua20704
+% %
+% WMO_ID     = '5906320'; % ua19191 OCR APEX
+% WMO_ID = '5906481'; % ua19842 2XO2 float
+% WMO_ID     = '5906341';
 % dirs =[];
-
 % *************************************************************************
 %  SET DATA DIRS AND PATHS
 % *************************************************************************
@@ -67,7 +77,7 @@ end
 
 list_path  = [dirs.cal, 'MBARI_float_list.mat']; % MBARI master list file path
 % *************************************************************************
-%  GET ALL IDS ASSOCIATED WITH WMO INPUT
+%  GET ALL ID'S ASSOCIATED WITH WMO INPUT
 % *************************************************************************
 if exist(list_path, 'file') % load list variables
     load(list_path)
@@ -98,12 +108,18 @@ disp(['Institution ID for ',WMO_ID, ' = ', INST_ID_str]);
 float_dir = [dirs.mat,WMO_ID,'\'];
 if exist(float_dir, 'dir') == 7 % list * .mat files
     file_list = ls([float_dir,WMO_ID,'*.mat']);
+    
     r_list    = size(file_list,1);
     if r_list == 0 %directory exists but no .mat files exist yet.
         disp(['WMO directory found for ', MBARI_ID_str, ' (', WMO_ID, '), but no .mat files exist yet.']);
         d = []; % Return this if no data
         return
     end
+    
+    % test for 000.mat file. Remove if exists
+    t000 = contains(cellstr(file_list),'000.mat');
+    file_list = file_list(~t000,:);
+    
 else
     disp(['No WMO directory found for ', MBARI_ID_str, ' (', WMO_ID, ')']);
     d = []; % Return this if no data
@@ -122,39 +138,59 @@ raw_vars(5,1)  = {'PSAL'};
 raw_vars(6,1)  = {'PSAL_QC'};
 raw_vars(7,1)  = {'DOXY'};
 raw_vars(8,1)  = {'DOXY_QC'};
-raw_vars(9,1)  = {'NITRATE'}; 
-raw_vars(10,1)  = {'NITRATE_QC'}; 
-raw_vars(11,1)  = {'CHLA'};  
-raw_vars(12,1)  = {'CHLA_QC'};
-raw_vars(13,1) = {'BBP700'};
-raw_vars(14,1) = {'BBP700_QC'};
-raw_vars(15,1) = {'CDOM'};   
-raw_vars(16,1) = {'CDOM_QC'};  
-raw_vars(17,1) = {'BBP532'};
-raw_vars(18,1) = {'BBP532_QC'};
-raw_vars(19,1) = {'PH_IN_SITU_TOTAL'}; 
-raw_vars(20,1) = {'PH_IN_SITU_TOTAL_QC'}; 
+raw_vars(9,1)  = {'DOXY2'};
+raw_vars(10,1)  = {'DOXY2_QC'};
+raw_vars(11,1)  = {'NITRATE'}; 
+raw_vars(12,1)  = {'NITRATE_QC'}; 
+raw_vars(13,1)  = {'CHLA'};  
+raw_vars(14,1)  = {'CHLA_QC'};
+raw_vars(15,1) = {'BBP700'};
+raw_vars(16,1) = {'BBP700_QC'};
+raw_vars(17,1) = {'CDOM'};   
+raw_vars(18,1) = {'CDOM_QC'};  
+raw_vars(19,1) = {'BBP532'};
+raw_vars(20,1) = {'BBP532_QC'};
+raw_vars(21,1) = {'PH_IN_SITU_TOTAL'}; 
+raw_vars(22,1) = {'PH_IN_SITU_TOTAL_QC'}; 
+raw_vars(23,1) = {'DOWN_IRRADIANCE380'};
+raw_vars(24,1) = {'DOWN_IRRADIANCE380_QC'};
+raw_vars(25,1) = {'DOWN_IRRADIANCE412'}; 
+raw_vars(26,1) = {'DOWN_IRRADIANCE412_QC'};  
+raw_vars(27,1) = {'DOWN_IRRADIANCE490'}; 
+raw_vars(28,1) = {'DOWN_IRRADIANCE490_QC'}; 
+raw_vars(29,1) = {'DOWNWELLING_PAR'};
+raw_vars(30,1) = {'DOWNWELLING_PAR_QC'}; 
 
-adj_vars(1,1)  = {'PRES_ADJUSTED'}; 
+adj_vars(1,1)  = {'PRES_ADJUSTED'}; % ADJUSTED VARIABLES
 adj_vars(2,1)  = {'PRES_ADJUSTED_QC'}; 
 adj_vars(3,1)  = {'TEMP_ADJUSTED'};
 adj_vars(4,1)  = {'TEMP_ADJUSTED_QC'};
 adj_vars(5,1)  = {'PSAL_ADJUSTED'}; 
 adj_vars(6,1)  = {'PSAL_ADJUSTED_QC'};
-adj_vars(7,1)  = {'DOXY_ADJUSTED'}; % ADJUSTED VARIABLES
+adj_vars(7,1)  = {'DOXY_ADJUSTED'}; 
 adj_vars(8,1)  = {'DOXY_ADJUSTED_QC'};
-adj_vars(9,1)  = {'NITRATE_ADJUSTED'};
-adj_vars(10,1)  = {'NITRATE_ADJUSTED_QC'};
-adj_vars(11,1)  = {'CHLA_ADJUSTED'};
-adj_vars(12,1)  = {'CHLA_ADJUSTED_QC'};
-adj_vars(13,1) = {'BBP700_ADJUSTED'};
-adj_vars(14,1) = {'BBP700_ADJUSTED_QC'};
-adj_vars(15,1) = {'CDOM_ADJUSTED'};
-adj_vars(16,1) = {'CDOM_ADJUSTED_QC'};
-adj_vars(17,1) = {'BBP532_ADJUSTED'};
-adj_vars(18,1) = {'BBP532_ADJUSTED_QC'};
-adj_vars(19,1) = {'PH_IN_SITU_TOTAL_ADJUSTED'};
-adj_vars(20,1) = {'PH_IN_SITU_TOTAL_ADJUSTED_QC'};  
+adj_vars(9,1)  = {'DOXY2_ADJUSTED'}; 
+adj_vars(10,1)  = {'DOXY2_ADJUSTED_QC'};
+adj_vars(11,1)  = {'NITRATE_ADJUSTED'};
+adj_vars(12,1)  = {'NITRATE_ADJUSTED_QC'};
+adj_vars(13,1)  = {'CHLA_ADJUSTED'};
+adj_vars(14,1)  = {'CHLA_ADJUSTED_QC'};
+adj_vars(15,1) = {'BBP700_ADJUSTED'};
+adj_vars(16,1) = {'BBP700_ADJUSTED_QC'};
+adj_vars(17,1) = {'CDOM_ADJUSTED'};
+adj_vars(18,1) = {'CDOM_ADJUSTED_QC'};
+adj_vars(19,1) = {'BBP532_ADJUSTED'};
+adj_vars(20,1) = {'BBP532_ADJUSTED_QC'};
+adj_vars(21,1) = {'PH_IN_SITU_TOTAL_ADJUSTED'};
+adj_vars(22,1) = {'PH_IN_SITU_TOTAL_ADJUSTED_QC'};  
+adj_vars(23,1) = {'DOWN_IRRADIANCE380_ADJUSTED'};
+adj_vars(24,1) = {'DOWN_IRRADIANCE380_ADJUSTED_QC'};
+adj_vars(25,1) = {'DOWN_IRRADIANCE412_ADJUSTED'}; 
+adj_vars(26,1) = {'DOWN_IRRADIANCE412_ADJUSTED_QC'};  
+adj_vars(27,1) = {'DOWN_IRRADIANCE490_ADJUSTED'}; 
+adj_vars(28,1) = {'DOWN_IRRADIANCE490_ADJUSTED_QC'}; 
+adj_vars(29,1) = {'DOWNWELLING_PAR_ADJUSTED'};
+adj_vars(30,1) = {'DOWNWELLING_PAR_ADJUSTED_QC'}; 
 
 raw_vars_ct = size(raw_vars,1);
 adj_vars_ct = size(adj_vars,1);
@@ -174,9 +210,10 @@ disp(' ');
 disp(['Merging float profiles for ' ,MBARI_ID_str,':'])
 for file_ct = 1 : r_list
     float_file = strtrim(file_list(file_ct,:));
+    
     load([float_dir,float_file])
     fprintf('%0.0f ',INFO.cast)
-    
+
     if CTD_flag == 0 % Look FOR CTD TYPE AND SN
         CTDtype = INFO.CTDtype;
         CTDsn   = INFO.CTDsn;
@@ -212,7 +249,7 @@ for file_ct = 1 : r_list
         HR.PRES_ADJUSTED = HR.PRES;
         HR.PRES_ADJUSTED_QC = HR.PRES_QC;
     end
-    
+
     % ********************************************************************
     % BUILD HEADER ARRAY
     % ********************************************************************
@@ -265,7 +302,15 @@ for file_ct = 1 : r_list
         
         % NOW MERGE DEEP LR WITH HR & THEN SET LR DATA = HR DATA FOR ODV
         % FILE PRINT OUT
-        t1 = LR.DOXY ~= 99999; % discrete sample flags
+        %12/13/21 JP - Modified to use CPActivationP vs LR DOXY sample
+        % count. This fixes merging bug when dealing with un1114 when O2
+        % sensor fails
+        if isfield(INFO,'CpActivationP') && ~isempty(INFO.CpActivationP)
+            t1 = LR.PRES > INFO.CpActivationP; %12/13/21 new JP
+        else
+            t1 = LR.DOXY ~= 99999; % discrete sample flags - original method
+        end
+        
         [~,LRHR_ind] = sort([LR.PRES(t1); HR.PRES],'ascend'); % sort ind's
         
         for i = 1: hdr_size
@@ -288,6 +333,8 @@ for file_ct = 1 : r_list
             %end
         end
     end
+    
+    %if INFO.cast == 24, pause, end % TESTING
  
     
     % ********************************************************************

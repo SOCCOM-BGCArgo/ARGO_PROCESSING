@@ -6,7 +6,10 @@
 %mbari_id = '12884SOOCN';
 %mbari_id = '18796SOOCN';
 %mbari_id = '18013SOOCN';
-wmo_id = '5905988';
+%wmo_id = '5904677';
+%wmo_id = '5906307'; %un1115	1115	
+%wmo_id = '4903026'; 
+wmo_id = '5906555'; %wn1359	1359	
 
 data_dir = '\\sirocco\wwwroot\lobo\Data\FloatVizData\';
 FV_dirs  = {'','CANYON_QC\', 'HR\', 'HRQC\','MLR_QC\','QC\'};

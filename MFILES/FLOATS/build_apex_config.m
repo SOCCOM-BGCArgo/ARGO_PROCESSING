@@ -1,4 +1,4 @@
-function tf = build_apex_config(mbari_fn)
+% function tf = build_apex_config(mbari_fn)
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % SCRIPT TO BUILD APEX FLOAT CONFIGS:
@@ -39,6 +39,9 @@ function tf = build_apex_config(mbari_fn)
 % 12/06/2021 EC Added 'EQPac' as a basin option in drop down list
 % 03/25/2021 JP udates for 8th order f(P) and 6th order k2 f(p) & bio
 %               optics fixes
+% 09/01/2022 JP Fixed f(P) extraction bug. SBS stems we k0'ed were nor
+%    getting the last f(p) term. Also added MSC # into config file header
+%    if avalable
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
@@ -64,7 +67,15 @@ function tf = build_apex_config(mbari_fn)
 % CHOOSE FLOAT
  %mbari_fn = 'ua20002'
  %mbari_fn = 'ua20675'
- %mbari_fn = 'ua20148'
+ % Sikuliaq floats
+ %mbari_fn = 'ua20528'
+
+% mbari_fn = 'ua20150'
+% mbari_fn = 'ua20134'
+% mbari_fn = 'ua20492'
+% mbari_fn = 'ua20620'
+% mbari_fn = 'ua20136'
+mbari_fn = 'ua20169'
 
 %% ************************************************************************
 % DEFINE DIRS STRUCTURE
@@ -421,7 +432,12 @@ if tf_pH_continue == 1
     K0_HCL  = d.data{tpH,iK0_HCL};
     K2      = cell2mat(d.data(tpH, iK2));
     FP      = cell2mat(d.data(tpH, iFP));
-    
+
+    % THE pH f(P) COEFFICIENTS MAY OR MAY NOT INCLUDUE THE POLYNOMIAL
+    % CONSTANT. IT IS NOT USED TO CACULATE pH ( F(P=0) = 0 ) SO REMOVE THIS
+    % COLUMN BEFORE PROCEDING
+    FP(end) = []; % remove last f(P) column entry (value or NaN)
+
     % DO SOME CHECKS
     if isnan(APEX_ID)
         fprintf('WARNING: No APEX ID FOR pH SN %s in %s. Building cal anyway\n',...
@@ -470,7 +486,7 @@ else
     end
     
     % CHECK & BUILD Pcoef strings
-    FP(end) = []; % Remove constant coef so p(0) = 0
+    %FP(end) = []; % Remove constant coef so p(0) = 0
     P = (flip(FP))';
     ph_cal{2,1} = sprintf(['%0.0f, number of calibration ', ...
         'coefficients'],size(P,1)+2);
@@ -478,6 +494,7 @@ else
         ph_cal{4+i,1} = sprintf(['%0.4E, =k',num2str(i+2),'*P^',...
             num2str(i)],P(i));
     end
+
 end
 
 clear DF_num  DF_txt DF_APX K0_ON K0_OFF K0_HCL
@@ -633,6 +650,8 @@ else
     Region = RegionList{ind};
 end
 
+
+
 %% ************************************************************************
 % IF YOU GET TO HERE O2 CAL & PH CAL HAVE BEEN SUCCESFULLY EXTRACTED
 % PRINT TO FILE
@@ -643,6 +662,12 @@ fprintf(fid,'%s\r\n',['Institution ID: ', APEX_ID_str]);
 fprintf(fid,'%s\r\n',['MBARI ID: ', mbari_fn]);
 fprintf(fid,'%s\r\n',['Program: ', Program]);
 fprintf(fid,'%s\r\n',['Region: ', Region]);
+
+% ADD MSC TO CONFIG F IT EXISTS
+if exist('MSC_str','var') && ~isnan(MSC)
+    fprintf(fid,'MSC: %s\r\n', MSC_str);
+end
+
 fprintf(fid,'%s\r\n', msg_path);
 
 out = [O2_cal; ph_cal; optics_cal]; % print O2, pH, and optics to file
