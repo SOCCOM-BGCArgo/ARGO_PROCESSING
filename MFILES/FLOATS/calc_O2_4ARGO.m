@@ -1,4 +1,4 @@
-function O2data = calc_O2_4ARGO(S, T, P, Phase, cal)
+function O2data = calc_O2_4ARGO(S, T, P, Phase, O2_T, cal)
 % USE: Calculate oxygen concentration from phase angle for fluorescent
 % quenching optodes ( Aanderaa 3038 & 4330, SBE63). Deals with the
 % different flavors of calibration based on info found in the calibration
@@ -15,6 +15,7 @@ function O2data = calc_O2_4ARGO(S, T, P, Phase, cal)
 %     P         = Pressure (mbar)
 %
 %     Phase     = Phase angle from Optode (degrees)
+%     O2_T      = Temperature returned from the optode
 %     cal       = a structure with calibration data. (Created using
 %                 get_float_cals.m)
 %
@@ -39,6 +40,7 @@ function O2data = calc_O2_4ARGO(S, T, P, Phase, cal)
 %       recommendation, it is more accurate for these cases because more
 %       closely matches what Aanderaa used in derivation of cal coeffs. (And this is
 %       also reflected in the Argo O2 processing doc, and verified from Henry Bittig).
+% 03/10/22  - Modifications to Temperature used for Stern Volmer calculation (use Optode T)
 
 % ************************************************************************
 % SET VARIABLES & PATHS & FORMATS
@@ -147,6 +149,7 @@ elseif strcmp(cal.type,'4330')
         
         
     elseif isfield(cal,'SVUFoilCoef') % 4330 Stern Volmer (Uchida) returns [O2]
+		T = O2_T; %per cookbook!!  For 4330 polynomial - use CTD T for all calcs.
         SVU = cal.SVUFoilCoef;
         Ksv = SVU(1) + SVU(2).*T + SVU(3).*T.^2;
         P0  = SVU(4) + SVU(5).*T;
