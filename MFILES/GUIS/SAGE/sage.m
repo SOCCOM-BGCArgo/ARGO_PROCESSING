@@ -82,6 +82,9 @@ function varargout = sage()
 %   04/15/19 changed Make_Mprof_ODVQC to Make_Sprof_ODVQC.
 %   07/22/19 updated to WOA2018 and GLODAP2019; removed original CANYON
 %            reference options (now only CANYON-B listed)
+%   10/10/21 TM added LIR without O2 as a reference option (eq 8)
+%   10/25/21 TM incorporated Carter et al 2021 ESPER (LIR & NN) routines as
+%   reference options (https://doi.org/10.1002/lom3.10461)
 
 % NOTES:
 %
@@ -224,13 +227,15 @@ clear d
         rb3(1) = uicontrol('Parent',bbox,'Style','radiobutton',...
             'String','LIR','tag','LIR','Value',1,'Callback',@ref_onClicked );
         rb3(2) = uicontrol('Parent',bbox,'Style','radiobutton',...
-            'String','CANYON-B','tag','CANYON_B','Value',0,'Callback',@ref_onClicked );
+            'String','LIR(noO2)','tag','LIRnoO2','Value',0,'Callback',@ref_onClicked );
         rb3(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
-            'String','WOA2018','tag','WOA','Value',0,'Callback',@ref_onClicked );
+            'String','CANYON-B','tag','CANYON_B','Value',0,'Callback',@ref_onClicked );
         rb3(4) = uicontrol('Parent',bbox,'Style','radiobutton',...
-            'String','Williams_50Sto80S','tag','MLR W50to80','Value',0,'Callback',@ref_onClicked );
+            'String','WOA2018','tag','WOA','Value',0,'Callback',@ref_onClicked );
         rb3(5) = uicontrol('Parent',bbox,'Style','radiobutton',...
-            'String','Williams_30Sto50S','tag','MLR W30to50','Value',0,'Callback',@ref_onClicked );
+            'String','ESPER_LIR','tag','ESPER LIR','Value',0,'Callback',@ref_onClicked );
+        rb3(6) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','ESPER_NN','tag','ESPER NN','Value',0,'Callback',@ref_onClicked );
         gui.rb3 = rb3;
         
         % Control Box 5 (Parameter to plot) - This is really control box 4
@@ -392,13 +397,13 @@ clear d
         %Assign proper depth edits for profile view (depending which
         %algorithm chosen)
         if inputs.isprof == 1
-            if DATA.paramrefnum ==5 || DATA.paramrefnum ==6 %williams
-                %inputs.depthedit = [1000 1600];
-                inputs.depthedit = [1000 inputs.Dedit(3,2)];
-            else
+%             if DATA.paramrefnum ==5 || DATA.paramrefnum ==6 %williams
+%                 %inputs.depthedit = [1000 1600];
+%                 inputs.depthedit = [1000 inputs.Dedit(3,2)];
+%             else
                 %inputs.depthedit = [0 1600];
                 inputs.depthedit = inputs.Dedit(3,:);
-            end
+%             end
         end
         
         
@@ -468,14 +473,20 @@ clear d
                     else
                         DATA.refdata = DATA.reftemp;
                     end
-%                 case 'CANYON'
-%                     DATA.refdata = DATA.reftemp(:,DATA.CIND);
+                    %                 case 'CANYON'
+                    %                     DATA.refdata = DATA.reftemp(:,DATA.CIND);
                 case 'CANYON_B'
                     DATA.refdata = DATA.reftemp(:,DATA.CBIND);
                 case 'LIR'
                     DATA.refdata = DATA.reftemp(:,DATA.LIND);
-                case {'MLR W50to80','MLR W30to50'} % REMOVE ?? JP 04/03/21
-                    DATA.refdata = DATA.MLRdata.(DATA.paramtag).(DATA.refs);
+                case 'LIRnoO2'
+                    DATA.refdata = DATA.reftemp(:,DATA.LnoO2IND);
+                case 'ESPER LIR'
+                    DATA.refdata = DATA.reftemp(:,DATA.ESPER_LIND);
+                case 'ESPER NN'
+                    DATA.refdata = DATA.reftemp(:,DATA.ESPER_NIND);
+%                 case {'MLR W50to80','MLR W30to50'} % REMOVE ?? JP 04/03/21
+%                     DATA.refdata = DATA.MLRdata.(DATA.paramtag).(DATA.refs);
                     %                     MLR = DATA.refs.(DATA.paramtag);
                     %                     if ~isempty(MLR) %will be empty for salinity, temp, oxygen
                     %                         tMLR = isnan(handles.qc_data.data(:,iO)) | isnan(handles.qc_data.data(:,iS));
@@ -562,6 +573,7 @@ clear d
         set(gui.rb3(3),'Enable','on')
         set(gui.rb3(4),'Enable','on')
         set(gui.rb3(5),'Enable','on')
+        set(gui.rb3(6),'Enable','on')
         set(gui.rb2(1),'Value',0)
         set(gui.rb2(2),'Value',1)
         set(gui.rb2(3),'Value',0)
@@ -599,9 +611,9 @@ clear d
             if isfield(handles,'MasterList') && ~isempty(handles.MasterList) % For MBARI floats
                 t1 = strcmp(handles.MasterList(:,3),WMO_ID);
                 if sum(t1) == 1
-                     handles.info.float_name = handles.MasterList{t1,1};
-                     handles.info.INST_ID    = handles.MasterList{t1,2};
-                     handles.info.float_type      = handles.MasterList{t1,4};
+                    handles.info.float_name = handles.MasterList{t1,1};
+                    handles.info.INST_ID    = handles.MasterList{t1,2};
+                    handles.info.float_type      = handles.MasterList{t1,4};
                 elseif regexp(fn,'^NO_WMO','once') % MBARI FLOAT NOT ON LIST i.e 1173
                     handles.info.float_name = ...
                         regexp(fn,'(?<=^NO_WMO_)[uws][ans]\d+','once','match');
@@ -609,7 +621,7 @@ clear d
                         regexp(handles.info.float_name, ...
                         '(?<=^NO_WMO_[uws][ans])\d+','once','match');
                     tmp = handles.info.float_name(2); %a, n or s
-                    handles.info.float_type = regexprep(tmp,'a','APEX'); 
+                    handles.info.float_type = regexprep(tmp,'a','APEX');
                     handles.info.float_type = regexprep(tmp,'n','NAVIS');
                     handles.info.float_type = regexprep(tmp,'s','SOLO');
                 elseif regexp(fn,'^ODV','once') %non-MBARI float
@@ -620,13 +632,13 @@ clear d
                 handles.info.float_name = 'NON-MBARIfloat';
             end
             handles.info.QCadj_file   = [WMO_ID,'_FloatQCList.txt'];
-                
-                
-%             handles.info.float_name = regexpi(fn,'\w+(?=\QC.txt)|\w+(?=\.txt)', ...
-%                 'match', 'once');
-%             handles.info.UW_ID  = regexp(handles.info.float_name, ...
-%                 '^\d{3}\d+(?=\w+)','match', 'once'); %#'s but chars follow
-%             handles.info.QCadj_file   = [handles.info.float_name,'_FloatQCList.txt'];
+            
+            
+            %             handles.info.float_name = regexpi(fn,'\w+(?=\QC.txt)|\w+(?=\.txt)', ...
+            %                 'match', 'once');
+            %             handles.info.UW_ID  = regexp(handles.info.float_name, ...
+            %                 '^\d{3}\d+(?=\w+)','match', 'once'); %#'s but chars follow
+            %             handles.info.QCadj_file   = [handles.info.float_name,'_FloatQCList.txt'];
             
             % Set flag for ODV file created from Mprof netcdf vs msg files
             % based on file name
@@ -863,18 +875,18 @@ clear d
             
             set( gui.Fbutton,'String','Loading Ref data ...');
             drawnow
-            [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA);
+            [handles, DATA] = get_LIR_CAN_ESPER(dirs,handles,DATA);
             
             % GET CALIBRATION BOTTLE DATA IF IT EXISTS
             % LOOKUP TABLE  HEADER = [MBARI_ID UW_ID  WMO   CRUISE   STN   CAST   Data file]
             % LOAD BOTTLE DATA LOOK UP TABLE & STORE IN handles STRUCTURE
             % LOOK UP TABLE  HEADER = [MBARI_ID UW_ID  WMO   CRUISE   STN   CAST   Data file]
+
             fid = fopen([dirs.bottle,'BottleData_lookup_table.txt' ]);
             d   = textscan(fid, '%s %s %s %s %f %f %s','Delimiter', '\t','HeaderLines',1);
             fclose(fid);
             handles.bottle_lookup = d;
             clear d fid
-            
             ind = strcmpi(handles.info.float_name, handles.bottle_lookup{1,1});
             
             if sum(ind) > 0 % float(s) exists in lookup table
@@ -911,7 +923,6 @@ clear d
             
             b = handles.bdata; % Could be empty if no calibration data
             DATA.b = b;
-            
             DATA.ibSDN  = find(strcmp('DATE',  b.hdr) == 1);
             DATA.ibZ    = find(strcmp('DEPTH', b.hdr) == 1);
             DATA.ibP    = find(strcmp('CTDPRS',b.hdr) == 1);
@@ -940,6 +951,9 @@ clear d
             DATA.CIND = DATA.iCN;
             DATA.CBIND = DATA.iCBN;
             DATA.LIND = DATA.iLN;
+            DATA.LnoO2IND = DATA.iLN_noO2;
+            DATA.ESPER_LIND = DATA.iEL_N;
+            DATA.ESPER_NIND = DATA.iEN_N;
             %                    if max(handles.raw_data.data(:,6)) < inputs.depthedit(1)
             %             hmsg = msgbox({'No Data within assigned depth limits','Expanding lower end of range.'},'Depth Range Adjustment');
             %             inputs.depthedit(1) = floor(max(DATA.datatype.data(:,6)))-100;
@@ -981,8 +995,8 @@ clear d
         else
             disp([fn, ' COULD NOT BE LOADED INTO SAGE']);
         end
-        % %         set(gui.Window,'PaperPositionMode','auto')
-        % %         print(gui.Window,'sageinterface.png','-dpng','-r600')
+        %                 set(gui.Window,'PaperPositionMode','auto')
+        %                 %print(gui.Window,'sageinterface.png','-dpng','-r600')
     end %end selectfloat
 %%
 %-------------------------------------------------------------------------%
@@ -1064,19 +1078,19 @@ clear d
         DEtag = get(source,'tag');
         DE = get(source,'String');
         if (strcmp(DEtag,'Pmin')) == 1
-            if DATA.paramrefnum == 5  && str2double(DE)<1000 % Williams
-                mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_50to80S.');
-                inputs.depthedit(1,1) = inputs.depthedit(1,1);
-                inputs.Dedit(tf,1) = inputs.depthedit(1,1);
-                updateInterface()
-                return
-            elseif DATA.paramrefnum == 6  && str2double(DE)<1000 % Williams
-                mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_30to80S.');
-                inputs.depthedit(1,1) = inputs.depthedit(1,1);
-                inputs.Dedit(tf,1) = inputs.depthedit(1,1);
-                updateInterface()
-                return
-            end
+%             if DATA.paramrefnum == 5  && str2double(DE)<1000 % Williams
+%                 mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_50to80S.');
+%                 inputs.depthedit(1,1) = inputs.depthedit(1,1);
+%                 inputs.Dedit(tf,1) = inputs.depthedit(1,1);
+%                 updateInterface()
+%                 return
+%             elseif DATA.paramrefnum == 6  && str2double(DE)<1000 % Williams
+%                 mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_30to80S.');
+%                 inputs.depthedit(1,1) = inputs.depthedit(1,1);
+%                 inputs.Dedit(tf,1) = inputs.depthedit(1,1);
+%                 updateInterface()
+%                 return
+%             end
             inputs.depthedit(1,1) = str2double(DE);
             inputs.Dedit(tf,1) = str2double(DE);
         else
@@ -1156,11 +1170,15 @@ clear d
                 DATA.CIND = DATA.iCN;
                 DATA.CBIND = DATA.iCBN;
                 DATA.LIND = DATA.iLN;
+                DATA.LnoO2IND = DATA.iLN_noO2;
+                DATA.ESPER_LIND = DATA.iEL_N;
+                DATA.ESPER_NIND = DATA.iEN_N;
                 set(gui.rb3(1),'Value',0,'Enable','on')
                 set(gui.rb3(2),'Value',0,'Enable','on')
                 set(gui.rb3(3),'Value',0,'Enable','on')
                 set(gui.rb3(4),'Value',0,'Enable','on')
                 set(gui.rb3(5),'Value',0,'Enable','on')
+                set(gui.rb3(6),'Value',0,'Enable','on')
                 set(gui.calcadjs,'Enable','on')
                 set(gui.findchpts,'Enable','on')
                 set(gui.removerow,'Enable','on')
@@ -1173,11 +1191,15 @@ clear d
                 DATA.CIND = DATA.iCPH;
                 DATA.CBIND = DATA.iCBPH;
                 DATA.LIND = DATA.iLPH;
+                DATA.LnoO2IND = DATA.iLPH_noO2;
+                DATA.ESPER_LIND = DATA.iEL_PH;
+                DATA.ESPER_NIND = DATA.iEN_PH;
                 set(gui.rb3(1),'Value',0,'Enable','on')
                 set(gui.rb3(2),'Value',0,'Enable','on')
-                set(gui.rb3(3),'Value',0,'Enable','off')
-                set(gui.rb3(4),'Value',0,'Enable','on')
+                set(gui.rb3(3),'Value',0,'Enable','on')
+                set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','on')
+                set(gui.rb3(6),'Value',0,'Enable','on')
                 set(gui.calcadjs,'Enable','on')
                 set(gui.findchpts,'Enable','on')
                 set(gui.removerow,'Enable','on')
@@ -1192,6 +1214,7 @@ clear d
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
+                set(gui.rb3(6),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','off')
@@ -1205,6 +1228,7 @@ clear d
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
+                set(gui.rb3(6),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','off')
@@ -1218,6 +1242,7 @@ clear d
                 set(gui.rb3(3),'Value',0,'Enable','off')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
+                set(gui.rb3(6),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','of')
@@ -1253,41 +1278,24 @@ clear d
         set( r3(r3~=source), 'Value', 0 ) % unselect others
         % get track data
         reftag = get(source,'tag');
-        if (strcmp(reftag,'MLR W50to80')) == 1
-            if inputs.depthedit(1) <1000
-                if inputs.isprof == 1
-                    inputs.depthedit = [1000 1600];
-                    updateInterface()
-                else
-                    mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_50to80S.');
-                    source.Value = 0;
-                    return
-                end
-            end
-            DATA.refs = 'Williams_50Sto80S';
-            DATA.paramrefnum = 4;
-        elseif (strcmp(reftag,'MLR W30to50')) == 1
-            if inputs.depthedit(1) <1000
-                if inputs.isprof == 1
-                    inputs.depthedit = [1000 1600];
-                    updateInterface()
-                else
-                    mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_30to80S.');
-                    source.Value = 0;
-                    return
-                end
-            end
-            DATA.refs = 'Williams_30Sto50S';
+        if (strcmp(reftag,'ESPER LIR')) == 1
+            DATA.reftemp = DATA.ESPER_LIR.data;
             DATA.paramrefnum = 5;
+        elseif (strcmp(reftag,'ESPER NN')) == 1
+            DATA.reftemp = DATA.ESPER_NN.data;
+            DATA.paramrefnum = 6;
         elseif (strcmp(reftag,'WOA')) == 1
             DATA.reftemp = DATA.WOA_NO3;
-            DATA.paramrefnum = 3;
+            DATA.paramrefnum = 4;
         elseif (strcmp(reftag,'CANYON_B')) == 1
             DATA.reftemp = DATA.C.data;
-            DATA.paramrefnum = 2;
+            DATA.paramrefnum = 3;
         elseif (strcmp(reftag,'LIR')) == 1
             DATA.reftemp = DATA.L.data;
             DATA.paramrefnum = 1;
+        elseif (strcmp(reftag,'LIRnoO2')) == 1
+            DATA.reftemp = DATA.LnoO2.data;
+            DATA.paramrefnum = 2;
         end
         DATA.reftag = reftag;
         updateInterface()
@@ -1366,7 +1374,7 @@ clear d
         if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified
             Omsg = figure('Name','UPDATING O2 AND RECALCULATING REFERENCE FIELDS...','NumberTitle','off','units','pixels','position',[500 500 200 50],'windowstyle','modal');
             uicontrol('style','text','string','PLEASE WAIT.','units','pixels','position',[75 10 50 30]);
-            [handles, DATA] = get_LIR_CAN_MLR(dirs,handles,DATA);
+            [handles, DATA] = get_LIR_CAN_ESPER(dirs,handles,DATA);
         end
         updateInterface()
         if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified
@@ -1553,6 +1561,9 @@ clear d
 
 %-------------------------------------------------------------------------%
     function on_reprocess( source, ~ )
+        %                         set(gui.Window,'PaperPositionMode','auto')
+        %                 print(gui.Window,'sageinterface_raw.png','-dpng','-r600')
+        %                 return
         update_flag = 1;
         USER       = getenv('USERNAME');
         sdn        = datestr(now,'mm/dd/yy HH:MM:SS');

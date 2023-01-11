@@ -83,8 +83,8 @@ if strcmp(float_type,'APEX')
 elseif strcmp(float_type,'NAVIS')
     tf_float = Process_NAVIS_float(MBARI_ID_str, dirs,update_str);
 elseif strcmp(float_type,'SOLO')
-    disp('ADD SOLO PROCESSING FUNCTION CALL HERE!')
-    return
+    %disp('ADD SOLO PROCESSING FUNCTION CALL HERE!')
+    tf_float = Process_SOLO_float(MBARI_ID_str, dirs, update_str);
 else
     disp(['Unknown float type for ',MBARI_ID_str, ...
         '! processing next float'])

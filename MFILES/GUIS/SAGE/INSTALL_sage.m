@@ -46,6 +46,7 @@ else
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'WOA',fp]);
 	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'CANYON',fp]);
 	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'CANYON_B',fp]);
+    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'ESPER',fp]));
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,]);
 
     disp('INSTALLING "ARGO_PROCESSING\DATA" PATHS...')

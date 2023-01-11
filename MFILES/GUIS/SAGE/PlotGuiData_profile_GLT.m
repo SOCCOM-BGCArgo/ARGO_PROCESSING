@@ -3,14 +3,18 @@ function [] = PlotGuiData_profile_GLT(dirs,gui,DATA,inputs,handles)
 % ***************************************************************G*********
 %                       PREP FOR PLOT MAKING
 % ************************************************************************
+% TM 2021, added additional color for GLODAP plotting
 float_color  = [0 102 204]/255; %light blue
 MLR_color    = [1 0 0]; %red
 DIFF_color   = [0 153 76]/255; %green
 GLODAP_color = [0   255 255;... % keep color and symbol count equal
                 153  51 255;
                 255 51 255;
+                0 255 0;
+                1 1 0;
+                1 0 0;
                 255 128 0]./255;
-GLODAP_symbols = {'^' 'd' 's' '*' '<' 'x'};
+GLODAP_symbols = {'^' 'd' 's' '*' '<' 'x' 'p'};
 %y_lim   = [0 1600];
 y_lim       = [inputs.depthedit(1) inputs.depthedit(2)];
 
@@ -202,19 +206,23 @@ if ~isempty(vdata)
         [G_YRS,~,~,~,~,~] = datevec(DATA.G.data(:,DATA.iGSDN));% Years only
         YRS = unique(G_YRS);
         ct = 0; ct2 = 1;
-
+        iN = 1;
         for i = 1: size(YRS,1)
             ct = ct+1;
             t1 = G_YRS == YRS(i);
             hold(gui.whichAX(1),'on')
-            vp(i) = plot(DATA.G.data(t1,DATA.GIND),DATA.G.data(t1,DATA.iGP), ...
+            if sum(double(t1)) == 0
+                continue
+            end
+            vp(iN) = plot(DATA.G.data(t1,DATA.GIND),DATA.G.data(t1,DATA.iGP), ...
                 'Linestyle', 'none', ...
                 'Marker', GLODAP_symbols{ct2}, ...
                 'MarkerFaceColor', GLODAP_color(ct,:), ...
                 'MarkerEdgeColor', 'k', 'parent',gui.whichAX(2),'MarkerSize', 4);
+            iN = iN+1;
             hlegend_cell = [hlegend_cell, ...
                 ['GLODAP ',num2str(YRS(i))]];
-            if ct == 4
+            if ct == 5
                 ct = 0;
                 ct2 = ct2+1;
             end
@@ -351,5 +359,5 @@ if ~isempty(vdata)
 
     end
 end
-save('mydata.mat','DATA')
+% save('mydata.mat','DATA')
 end
