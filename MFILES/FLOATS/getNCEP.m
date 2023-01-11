@@ -1,4 +1,4 @@
-function NCEP = getNCEPtest(SDN,LON,LAT,dirs)
+function NCEP = getNCEP(SDN,LON,LAT,dirs)
 %
 % NCEP = getNCP(SDN,lon,lat)
 %   getNCEP extracts NCEP data along a time track given time, lon & lat
