@@ -37,6 +37,10 @@ function sdn = get_QCstep_dates(WMO,QC_data,dirs)
 %
 %   03/08/2021 TM Modifications to bring in line with the new MBARI master
 %        float list and switch to WMO for processed file names.
+%
+%   06/15/2022 JP Updated SOLO time stamp extraction. Was using *.mat files
+%        but if process mode is "all", all *.mat files are wiped before they
+%        are loaded in this function producing an error
 % ************************************************************************
 % CREATE REG & ALT DIR PATHS USING FLOAT NAME
 % ************************************************************************
@@ -78,17 +82,19 @@ else
     d = MBARI_float_list(dirs);
     FLOAT_LIST = d.list;
 end
-iMSG =find(strcmp('msg dir', d.hdr)  == 1);
-iWMO = find(strcmp('WMO',d.hdr) == 1);
-iMB  = find(strcmp('MBARI ID',d.hdr) == 1);
-iINST = find(strcmp('INST ID',d.hdr) == 1);
-IndexC = strfind(d.list(:,iWMO),WMO);
-Index = find(not(cellfun('isempty',IndexC)));
-MSGloc = FLOAT_LIST{Index,iMSG};
+iMSG         = find(strcmp('msg dir', d.hdr)  == 1);
+iWMO         = find(strcmp('WMO',d.hdr) == 1);
+iMB          = find(strcmp('MBARI ID',d.hdr) == 1);
+iINST        = find(strcmp('INST ID',d.hdr) == 1);
+iFtype       = find(strcmp('float type',d.hdr) == 1);
+IndexC       = strfind(d.list(:,iWMO),WMO);
+Index        = find(not(cellfun('isempty',IndexC)));
+MSGloc       = FLOAT_LIST{Index,iMSG};
 MBARI_ID_str = FLOAT_LIST{Index,iMB};
-INST_ID_str = FLOAT_LIST{Index,iINST};
+INST_ID_str  = FLOAT_LIST{Index,iINST};
+Ftype        = FLOAT_LIST{Index,iFtype};
 
-if isdir(MSGloc)      % from float list specification
+if isfolder(MSGloc)      % from float list specification
     reg_dir = MSGloc;
 else
     disp(['Could not find msg file directory for: ',WMO])
@@ -99,7 +105,7 @@ end
 
 % CHECK FOR SECONDARY (ALTERNATE) DIRECTORY LISTING.
 inst      = regexp(reg_dir,'(?<=floats\\)\w+','match','once'); % institute
-alt_dir = regexprep(reg_dir, inst,[inst,'\\alternate']);
+alt_dir   = regexprep(reg_dir, inst,[inst,'\\alternate']);
 
 % ************************************************************************
 % OPEN MESSSAGE FILES CORRESPONDING TO CASTS IN QC_DATA & GET DATE
@@ -108,47 +114,75 @@ msg_time_format = '%*s %*s %*s %*s %*s %s %s %s %s';
 rows            = size(QC_data,1);
 sdn             = ones(rows,1)* NaN;
 for i = 1:rows
-    tline = ' ';
-    msg_file = [INST_ID_str,'.',sprintf('%03.0f',QC_data(i,1)),'.msg'];
-    % TRY REGULAR DIR FIRST
-    if exist([reg_dir,msg_file],'file')
-        fid = fopen([reg_dir,msg_file]);
-        while ischar(tline)
-            if regexp(tline,'^\$ Profile', 'once')
-                tline = strtrim(tline);
-                d_str = textscan(tline,msg_time_format,'CollectOutput',1);
-                d_str = d_str{1}; % cells: mmm dd hh:mm:ss 2008
-                % = Malab format - not sure why I did this but I think there was a
-                % burp when I did it a simpler way (= Malab format)
-                s1 = [d_str{2},'-',d_str{1},'-',d_str{4},' ',d_str{3}];
-                sdn(i) = datenum(s1,0); % Profile end time as Matlab SDN
+    if strcmp(Ftype,'SOLO')
+        tmp = dir([reg_dir, sprintf('CTD\\*%03.0f.phy',QC_data(i,1))]);
+        if ~isempty(tmp)
+            fp    = fullfile(tmp(1).folder, tmp(1).name);
+            tline = ' ';
+            fid   = fopen(fp);
+            while ischar(tline)
+                if regexp(tline,'^MC600 TIME', 'once') % profile end time
+                    dstr   = regexp(tline,'\d{4}\d+','once','match');
+                    sdn(i) = datenum(dstr,'yyyymmddHHMMSS');
+%                     disp(fp) % TESTING
+%                     disp(tline)
+%                     fprintf('cycle %0.0f %s\n',QC_data(i,1), datestr(sdn(i)))
+                    break
+                end
+                tline = fgetl(fid);
             end
-            tline = fgetl(fid);
+            fclose(fid);
+            clear dstr fid tline fp tmp
         end
-        fclose(fid);
-        clear fid
-    end
-    
-    % IF NO DATE RECOVERED TRY ALTERNATE DIR
-    if isnan(sdn(i)) && exist([alt_dir,msg_file],'file') ==2
-        fid = fopen([alt_dir,msg_file]);
+
+%     if strcmp(Ftype,'SOLO')
+%         DD = load([dirs.mat,WMO,'\',WMO,'.',num2str(QC_data(i,1),'%03.f'),'.mat']);
+%         sdn(i) = DD.INFO.sdn;
+%         clear DD
+
+    else
         tline = ' ';
-        while ischar(tline)
-            if regexp(tline,'^\$ Profile', 'once')
-                tline = strtrim(tline);
-                d_str = textscan(tline,msg_time_format,'CollectOutput',1);
-                d_str = d_str{1}; % cells: mmm dd hh:mm:ss 2008
-                % = Malab format - not sure why I did this but I think there was a
-                % burp when I did it a simpler way (= Malab format)
-                s1 = [d_str{2},'-',d_str{1},'-',d_str{4},' ',d_str{3}];
-                sdn(i) = datenum(s1,0); % Profile end time as Matlab SDN
+        msg_file = [INST_ID_str,'.',sprintf('%03.0f',QC_data(i,1)),'.msg'];
+        % TRY REGULAR DIR FIRST
+        if exist([reg_dir,msg_file],'file')
+            fid = fopen([reg_dir,msg_file]);
+            while ischar(tline)
+                if regexp(tline,'^\$ Profile', 'once')
+                    tline = strtrim(tline);
+                    d_str = textscan(tline,msg_time_format,'CollectOutput',1);
+                    d_str = d_str{1}; % cells: mmm dd hh:mm:ss 2008
+                    % = Malab format - not sure why I did this but I think there was a
+                    % burp when I did it a simpler way (= Malab format)
+                    s1 = [d_str{2},'-',d_str{1},'-',d_str{4},' ',d_str{3}];
+                    sdn(i) = datenum(s1,0); % Profile end time as Matlab SDN
+                end
+                tline = fgetl(fid);
             end
-            tline = fgetl(fid);
+            fclose(fid);
+            clear fid
         end
-        fclose(fid);
-        clear fid
+        
+        % IF NO DATE RECOVERED TRY ALTERNATE DIR
+        if isnan(sdn(i)) && exist([alt_dir,msg_file],'file') ==2
+            fid = fopen([alt_dir,msg_file]);
+            tline = ' ';
+            while ischar(tline)
+                if regexp(tline,'^\$ Profile', 'once')
+                    tline = strtrim(tline);
+                    d_str = textscan(tline,msg_time_format,'CollectOutput',1);
+                    d_str = d_str{1}; % cells: mmm dd hh:mm:ss 2008
+                    % = Malab format - not sure why I did this but I think there was a
+                    % burp when I did it a simpler way (= Malab format)
+                    s1 = [d_str{2},'-',d_str{1},'-',d_str{4},' ',d_str{3}];
+                    sdn(i) = datenum(s1,0); % Profile end time as Matlab SDN
+                end
+                tline = fgetl(fid);
+            end
+            fclose(fid);
+            clear fid
+        end
     end
-    
+
     % CHECK FOR BAD GPS TIME (week day roll over problem) 05/11/20 -jp
     % WE ARE GETTING TIME FROM PROFILE TERMINATION TIME NOT GPS FIX TIME!!!
     if isnan(sdn(i))
@@ -172,9 +206,9 @@ for i = 1:rows
     
     
     % STILL NO DATE RECOVERED - REPORT IT
-%     if isnan(sdn(i))
-%         disp(['No sdn recovered for profile ',num2str(QC_data(i,1))])
-%     end
+    %     if isnan(sdn(i))
+    %         disp(['No sdn recovered for profile ',num2str(QC_data(i,1))])
+    %     end
     
 end
 

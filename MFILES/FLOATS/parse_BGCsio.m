@@ -45,6 +45,9 @@ function d = parse_BGCsio(filename, verbosity, msgtype)
 %      (to follow jg format changes).
 %      07/18/2022  TM & JP: Modifications to "sensors_str" regular
 %      expression to reflect jg format changes.
+%      8/11/22     TM: If 'verbosity' is set to 1: ONLY remove NaN pressure lines
+%       that are beyond Max Press!  If there are missing pressures along the
+%       profile, preference is to record them as such).
 %
 % TESTING
 %filename  = 'C:\temp\08666_000001_0042.alk'; msgtype   = 'alk';
@@ -251,7 +254,7 @@ while ischar(tline)
             data(line_ct,:) = str2double(tmp);
             % partial data line, fill in what you can
         elseif size(tmp,2) < rhdr && size(tmp,2) > 0
-            fprintf('Partial data line at %0.1f meter detected\', ...
+            fprintf('Partial data line at %0.1f meter detected', ...
                 str2double(tmp{1}));
             data(line_ct,1:size(tmp,2)) = str2double(tmp);
         else
@@ -285,7 +288,7 @@ data           = data(1:line_ct,:);
 tFILL          = data == -999 | data == -99;
 data(tFILL)    = NaN; % replace fill values with NaN
 iP             = strncmp(hdr,'PRESSURE (dbar)',15);
-d.max_BGC_pres = max(data(:,iP),[],1,'omitnan');
+[d.max_BGC_pres,mpI] = max(data(:,iP),[],1,'omitnan');
 
 % If oxygen data file, look for in air measurements & seperate
 if strcmp(msgtype, 'dox')
@@ -306,9 +309,13 @@ end
 % ************************************************************************
 if verbosity == 1
     d.verbosity = 1;
-    % REMOVE NaN PRESSURE LINES
-    tnan = isnan(data(:,iP'));
-    data = data(~tnan,:);
+    % REMOVE NaN PRESSURE LINES 
+    % (TM NOTE Aug22: ONLY remove NaN pressure lines
+    % that are beyond Max Press!  If there are missing pressures along the
+    % profile, preference is to record them as such).
+    data = data(mpI:end,:);
+%     tnan = isnan(data(:,iP'));
+%     data = data(~tnan,:);
     
     % REMOVE RESOLUTION,INDEX COLUMNS
     % May need to divide data by gain 1st if not always 1
