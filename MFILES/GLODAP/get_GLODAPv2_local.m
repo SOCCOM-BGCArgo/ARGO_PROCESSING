@@ -52,7 +52,8 @@ function d = get_GLODAPv2_local(datadir, track, tol, depth_bnds)
 %                       'DATA\GLODAP\'];
 % GLODAP_fn           = 'GLODAPv2 Merged Master 102716.mat';
 %GLODAP_fn           = 'GLODAPv2.2019_Merged_Master_File.mat';
-GLODAP_fn			= 'GLODAPv2.2020_Merged_Master_File.mat';
+%GLODAP_fn			= 'GLODAPv2.2020_Merged_Master_File.mat';
+GLODAP_fn			= 'GLODAPv2.2021_Merged_Master_File.mat';
 %GLODAP_expocode_fn  = 'GLODAPv2_ExpoCodes_102716.txt';
 
 % ***********************************************************************

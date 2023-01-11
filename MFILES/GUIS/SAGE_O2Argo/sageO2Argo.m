@@ -413,6 +413,8 @@ function gui = createInterface( ~ )
         drawnow
         set( gui.Fbutton,'String',inputs.floatID);
         DATA = getall_floatdata_sO2Argo(thedatadir,inputs.floatID);
+%         save('floatDATA.mat','DATA')
+%         pause
         set(gui.Mbutton,'Enable','on');
         %inputs.depthedit = [1480 1520]; %default pressure range (deep)
         inputs.depthedit = [0 30]; %default pressure range (deep)
@@ -730,7 +732,6 @@ function gui = createInterface( ~ )
             m_proj('stereographic','latitude',-90,'radius',60,'rotangle',45);
         end
         m_tbase('contourf','edgecolor','none');
-        legend_cell = {};
         hold on
         m_plot(track(:,3),track(:,4),'ko-', 'MarkerSize',3)%     xlim(lon_limits);
         title(['FLOAT ',inputs.floatID],'FontSize', 16)
@@ -739,15 +740,12 @@ function gui = createInterface( ~ )
             'MarkerEdgeColor','k');
         Hm2 = m_plot(track(end,3),track(end,4),'o', 'MarkerSize',10, 'MarkerFaceColor','r', ...
             'MarkerEdgeColor','k');
-        whos Hm
-        legend_cell = [legend_cell, 'first', 'last'];
         colorbar
-
-        track_legend = legend([Hm1 Hm2],legend_cell);
-    %     track_legend.Orientation = 'Horizontal';
-        track_legend.Location = 'northeastoutside';
-        set(gca,'ydir','normal');
         m_grid('linewidth',2,'tickdir','out','xaxislocation','top');
+		hold off
+        track_legend = legend([Hm1 Hm2],'first','last');
+        track_legend.Location = 'northeastoutside';
+        %set(gca,'ydir','normal');
     end
 
 %-------------------------------------------------------------------------%
@@ -807,7 +805,7 @@ function gui = createInterface( ~ )
        GDkm = get(source,'String');
        inputs.GLDPkm = str2double(GDkm);
        updateInterface()
-       if gui.TP.Selection == 3
+       if inputs.isprof == 1
            redraw_PROF_sageO2Argo(dirs,gui,DATA,inputs);
        end
    end
