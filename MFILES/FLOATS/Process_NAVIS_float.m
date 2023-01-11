@@ -1,5 +1,5 @@
 function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
-% ************************************************************************
+% % ************************************************************************
 % PURPOSE:
 %    This function processes raw message files for a given NAVIS float
 %    (.msg & .isus), calculates useful values from the raw signals
@@ -115,11 +115,19 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 % 6/22/21 TM, Added code to transfer BBP700 to BBP700_ADJUSTED in real time
 %       (same for BBP532).  Also included are slight modifications to the
 %       specification of DOXY SCIENTIFIC_CALIB fields.
+% 8/25/21 TM, Added code to write pH and NO3 adjustment coeffs to INFO
+%           structure (for inclusion in Argo Bfiles).
+% 05/26/22	TM, Added code to incorporate the "Bad-sample-list", so manual modification of flags is no longer necessary
+% 07/25/22  EC, Added park data processing for park depth, psal, temp, O2,
+%                   and pH, stored in TRAJ
+% 07/26/2022 TM, Added assinment of PPOX_DOXY to the internal matlab structures (for use internally at MBARI)
 % ************************************************************************
 
 % FOR TESTING
-%MBARI_ID_str = 'un0037';
+% MBARI_ID_str = 'un1113';
+% MBARI_ID_str = 'un0037';
 % MBARI_ID_str = 'un0565';
+% MBARI_ID_str = 'un0889'; % has a msg without pk
 % update_str   = 'all';
 % dirs =[];
 
@@ -130,17 +138,26 @@ fclose all; % CLOSE ANY OPEN FILES
 tf_float.status = 0; % Flag for float processing success 0 = no good
 tf_float.new_messages = {};
 tf_float.bad_messages = {};
+yesBSAML = 0;
 
 % THIS IS A LIST OF FLOATS WITH BAD NO3 FROM THE START OR NO3 LISTED IN THE
 % MSG HEADER BUT NO SENSOR ON BOARD
-bad_no3_filter = 'un0691|un0569|ua7622|ua18340|un0887';
+bad_no3_filter = 'un0691|un0569|ua7622|ua18340|un0887|wn1357';
 
 % THIS IS A LIST OF FLOATS WITH WITH STRONG O2 GRADIENTS AT THE SURFACE
 % NO SPIKE TESTS PERFORMED ON THESE FLOATS (CURRENTLY JUST ARCTIC FLOATS)
-no_o2_spike = 'un0691|ua7564|';
+no_o2_spike = 'un0691|ua7564';
 
 % CDOM channel really a second BBP channel(532
 cdom_bbp532_chk = 'un0565';
+
+% THIS IS FOR FLOATS WITH FAILED OPTODES THAT ARE BEING QC'D USING
+% LI(PH/N)R EQN 8 (T/S/LOC INPUTS ONLY) - TM 8/25/21
+% NOTE THAT AT THIS TIME (8/25/21) THE FOLLOWING NAVIS FLOATS HAVE A
+% FAILED OPTODE, BUT PH AND NO3 QC ARE NOT YET AFFECTED: 0276 and 1114 (MAY BE ADDED
+% IN FUTURE AT NEXT DMQC ASSESSMENT)
+bad_O2_filter = 'un1114|wn1200'; %12/17/21 1114 added; 5/9/22 1200 added (TM)
+
 
 % ************************************************************************
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
@@ -182,6 +199,34 @@ elseif ~isstruct(dirs)
     return
 end
 
+
+% PARSE BAD SAMPLE LIST-----------------------------------------------
+bad_sample_list = parse_bad_sample_list([dirs.cal,'bad_sample_list.txt']);
+iM   = find(strcmp('MBARI ID STR',bad_sample_list.hdr) == 1);
+ibsSENS   = find(strcmp('SENSOR',bad_sample_list.hdr) == 1);
+ibsCYC   = find(strcmp('CYCLE',bad_sample_list.hdr) == 1);
+ibsD   = find(strcmp('DEPTH',bad_sample_list.hdr) == 1);
+ibsDB   = find(strcmp('DEPTH BLOCKS',bad_sample_list.hdr) == 1);
+ibsFL   = find(strcmp('FLAG',bad_sample_list.hdr) == 1);
+
+% CHECK IF SPECIFC FLOAT HAS BAD SAMPLES NOT CAUGHT BY RT TESTS
+if ~isempty(bad_sample_list.list)
+    tSENSOR = strcmp(MBARI_ID_str,bad_sample_list.list(:,iM));
+    if sum(tSENSOR) > 0
+        disp([MBARI_ID_str,' found on the bad samples list!'])
+        BSAML = bad_sample_list;
+        dirs.BSAML = BSAML;
+        dirs.BSAML.list = BSAML.list(tSENSOR,:);
+        yesBSAML = 1;
+        %             clear BSL SbsIND
+    else
+        dirs.BSAML.hdr  = [];
+        dirs.BSAML.list = [];
+        yesBSAML = 0;
+    end
+    clear tSENSOR
+end
+% ------------------------------------------------------------------------
 % ************************************************************************
 
 % SET DATA FILL VALUES
@@ -223,7 +268,7 @@ RC.PHV   = [-1.2 -0.7]; % Range check on pH volts
 RC.IB    = [-100 100]; % Range check on pH Ib, nano amps
 RC.IK    = [-100 100]; % Range check on pH Ik, nano amps
 
-UW_ID_str = regexp(MBARI_ID_str,'^\d+', 'once','match');
+%UW_ID_str = regexp(MBARI_ID_str,'^\d+', 'once','match');
 crazy_val = 99990;
 
 % ************************************************************************
@@ -311,7 +356,8 @@ end
 
 % TEST FOR FILE AGE LESS THEN 4 HOURS OLD
 % REMOVE THESE FILES FROM LIST
-age_limit = now - 4/24;
+%age_limit = now - 4/24;
+age_limit = now - 1/24;
 %age_limit = now; % no lag if you want an imediate process
 
 if ~isempty(mlist.list)
@@ -473,14 +519,18 @@ lr_ind_chk = 0; % indice toggle - find indices once per float
 BSL = dirs.BSL;
 
 for msg_ct = 1:size(msg_list,1)
-    clear LR HR INFO
+    
+    clear LR HR INFO SurfaceObs TRAJ
     msg_file = strtrim(msg_list(msg_ct,:));
     NO3_file = regexprep(msg_file,'msg','isus');
     % find block of numbers then look ahead to see if '.msg' follows
     cast_num = regexp(msg_file,'\d+(?=\.msg)','once','match');
     
     %disp(['Processing float ' cal.info.name, ' profile ',cast_num])
+    
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% PARSER
     d = parse_NAVISmsg4ARGO([dirs.temp,msg_file]);
+    
     if ~isempty(d.lr_hdr)
         if strcmp(d.lr_hdr{7},'Mch1') %Quick hack to get around different column headers in msg file for flbb!!
             d.lr_hdr{7} = 'Fl'; %'Mch1'
@@ -491,7 +541,6 @@ for msg_ct = 1:size(msg_list,1)
             d.hr_hdr{8} = 'Cdm'; %'Mch3'
         end
     end
-    
     
     %     % IF MSG FILE EXIST BUT NO LR DATA REMOVE FROM NEW LIST AND
     %     % PUT IN BAD LIST
@@ -530,7 +579,7 @@ for msg_ct = 1:size(msg_list,1)
     %make sure all files are present if float includes all sensors,
     %otherwise, end processing for this cycle (but if msg file is > 20 days old, and still no isus, then process as usual)
     if regexp(MBARI_ID_str, bad_no3_filter, 'once') % EXCEPTIONS
-        disp([MBARI_ID_str,' Nitrate sensor failed from the start & ', ...
+        disp([MBARI_ID_str,' Nitrate sensor died from the start & ', ...
             'never any isus files to  process'])
     else
         if (exist([dirs.temp, NO3_file],'file')==0 && isfield(cal,'N') && timediff<=20)
@@ -566,6 +615,18 @@ for msg_ct = 1:size(msg_list,1)
     INFO.cast     = d.cast;
     INFO.gps      = d.gps;
     
+    yesBSAMLcyc=0;
+    if yesBSAML==1
+        SbsIND = find(strcmp(num2str(INFO.cast),dirs.BSAML.list(:,ibsCYC)));
+        if ~isempty(SbsIND)
+            tmpBSAML = dirs.BSAML;
+            tmpBSAML.list = tmpBSAML.list(SbsIND,:);
+            yesBSAMLcyc = 1;
+        else
+            yesBSAMLcyc = 0;
+        end
+    end
+    
     INFO.INST_ID  = cal.info.INST_ID;
     INFO.name   = cal.info.name;
     INFO.WMO_ID = cal.info.WMO_ID;
@@ -592,8 +653,8 @@ for msg_ct = 1:size(msg_list,1)
     end
     
     hr_d  = d.hr_d; % HR DATA, BUT COULD BE EMPTY
-    [r_lr, c_lr] = size(lr_d);   % low res data dimmensions
-    [r_hr, c_hr] = size(hr_d); % high res data dimmensions
+    [r_lr, c_lr] = size(lr_d);   % low res data dimensions
+    [r_hr, c_hr] = size(hr_d); % high res data dimensions
     
     % if nitrate add col to high res data
     if r_hr > 0 && sum(strcmp('no3', d.lr_hdr)) == 1
@@ -629,6 +690,14 @@ for msg_ct = 1:size(msg_list,1)
         iNB_MCOM  = find(strcmp('nbin MCOMS',  d.hr_hdr) == 1); % CTD P
         iNB_PH    = find(strcmp('nbin pH',     d.hr_hdr) == 1); % CTD P
         
+        %         if ~isempty(ippht)
+        %             continue
+        %         else
+        %             disp(' no phT on this one, sorry folks');
+        %         end
+        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+        
         % GET FLOATVIZ DATA - REG AND QC
         % WILL BE USED TO EXTRACT QF DATA FLAGS LATER
         FVQC_flag = 1;
@@ -652,12 +721,15 @@ for msg_ct = 1:size(msg_list,1)
     
     lr_potT   = theta(lr_d(:,iP), lr_d(:,iT), lr_d(:,iS),0);
     lr_den    = density(lr_d(:,iS), lr_potT); % kg/ m^3, pot den
+    
     if r_hr > 0
         hr_potT   = theta(hr_d(:,iP), hr_d(:,iT), hr_d(:,iS),0);
         hr_den    = density(hr_d(:,iS), hr_potT); % kg/ m^3, pot den
     end
     
     % P, T, S
+    
+    %%%%%%%%%%%%%%%%%%%%%%%%%% LOW RES
     LR.PRES  = lr_d(:,iP);
     LR.PRES_QC          = fill0 + fv.QC;
     LR.PRES_ADJUSTED    = LR.PRES;
@@ -694,6 +766,31 @@ for msg_ct = 1:size(msg_list,1)
     LR.PSAL_ADJUSTED_QC(t_bio) = LR.PSAL_ADJUSTED_QC(t_bio) * ...
         ~BSLflag + BSLflag*theflag;% GOOD
     
+    if yesBSAML == 1 && yesBSAMLcyc==1
+        SbsIND = find(strcmp('S',tmpBSAML.list(:,ibsSENS)));
+        if ~isempty(SbsIND)
+            TMPsbs = dirs.BSAML.list(SbsIND,:);
+            singleBADs = TMPsbs(:,ibsD);
+            singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+            rangeBADs = TMPsbs(:,ibsDB);
+            rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+            if ~isempty(singleBADs{1})
+                xxtmp = find(LR.PRES == singleBADs{1});
+                if isempty(xxtmp)
+                    disp('WARNING!! PSAL PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                else
+                    if LR.PSAL~=fv.bio
+                        LR.PSAL_QC(xxtmp) = singleBADSflags;
+                    end
+                    if LR.PSAL_ADJUSTED~=fv.bio
+                        LR.PSAL_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    end
+                end
+            end
+            LR.PSAL_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2) & LR.PSAL~=fv.bio) = rangeBADsflags;
+            LR.PSAL_ADJUSTED_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2)& LR.PSAL_ADJUSTED~=fv.bio) = rangeBADsflags;
+        end
+    end
     
     [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
     LRQF_T  = LR.TEMP < RCR.T(1) | LR.TEMP > RCR.T(2);
@@ -707,7 +804,8 @@ for msg_ct = 1:size(msg_list,1)
     LR.TEMP_ADJUSTED_QC(t_bio) = LR.TEMP_ADJUSTED_QC(t_bio) * ...
         ~BSLflag + BSLflag*theflag;
     
-    % HIGH RES DATA
+    
+    %%%%%%%%%%%%%%%%% HIGH RES DATA
     if r_hr > 0
         HR.PRES = hr_d(:,iP);
         HR.PRES_ADJUSTED = HR.PRES;
@@ -716,7 +814,6 @@ for msg_ct = 1:size(msg_list,1)
         HR.PSAL_ADJUSTED = HR.PSAL;
         HR.TEMP = hr_d(:,iT);
         HR.TEMP_ADJUSTED = HR.TEMP;
-        
         
         HR.PRES_QC = fill0_hr + fv.QC; % Predimmension QF's
         HR.PRES_ADJUSTED_QC = HR.PRES_QC;
@@ -733,8 +830,6 @@ for msg_ct = 1:size(msg_list,1)
         HR.PRES_ADJUSTED_QC(HRQF_P)  = 4;  % BAD
         HR.PRES_ADJUSTED_QC(~HRQF_P & HR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD
         
-        
-        
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
         HRQF_S  = HR.PSAL < RCR.S(1) | HR.PSAL > RCR.S(2);
         t_bio   = HR.PSAL ~= fv.bio;
@@ -746,6 +841,33 @@ for msg_ct = 1:size(msg_list,1)
         HR.PSAL_ADJUSTED_QC(~HRQF_S & HR.PSAL_ADJUSTED ~= fv.bio) = 1; % GOOD
         HR.PSAL_ADJUSTED_QC(t_bio) = HR.PSAL_ADJUSTED_QC(t_bio) * ...
             ~BSLflag + BSLflag*theflag;
+        
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('S',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(HR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! PSAL PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if HR.PSAL~=fv.bio
+                            HR.PSAL_QC(xxtmp) = singleBADSflags;
+                        end
+                        if HR.PSAL_ADJUSTED~=fv.bio
+                            HR.PSAL_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                HR.PSAL_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2) & HR.PSAL~=fv.bio) = rangeBADsflags;
+                HR.PSAL_ADJUSTED_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2)& HR.PSAL_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
         
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
         HRQF_T   = HR.TEMP < RCR.T(1) | HR.TEMP > RCR.T(2);
@@ -792,10 +914,16 @@ for msg_ct = 1:size(msg_list,1)
     % ****************************************************************
     if ~isempty(iPhase) % LR O2 data should exist
         
+        INFO.DOXY_SCI_CAL_EQU   = 'not applicable';
+        INFO.DOXY_SCI_CAL_COEF  = 'not applicable';
+        INFO.DOXY_SCI_CAL_COM   = 'not applicable';
+        INFO.DOXY_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
+        
         LR.PHASE_DELAY_DOXY     = fill0 + fv.bio; % predim
         LR.PHASE_DELAY_DOXY_QC  = fill0 + fv.QC;
         LR.TEMP_VOLTAGE_DOXY    = fill0 + fv.bio;
         LR.TEMP_VOLTAGE_DOXY_QC = fill0 + fv.QC;
+        LR.PPOX_DOXY                 = fill0 + fv.bio;
         LR.DOXY                 = fill0 + fv.bio;
         LR.DOXY_QC              = fill0 + fv.QC;
         LR.TEMP_DOXY            = fill0 + fv.bio;
@@ -803,15 +931,13 @@ for msg_ct = 1:size(msg_list,1)
         LR.DOXY_ADJUSTED        = fill0 + fv.bio;
         LR.DOXY_ADJUSTED_QC     = fill0 + fv.QC;
         LR.DOXY_ADJUSTED_ERROR  = fill0 + fv.bio;
-        INFO.DOXY_SCI_CAL_EQU   = 'not applicable';
-        INFO.DOXY_SCI_CAL_COEF  = 'not applicable';
-        INFO.DOXY_SCI_CAL_COM   = 'not applicable';
-        INFO.DOXY_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
+        
         
         HR.PHASE_DELAY_DOXY     = fill0_hr + fv.bio; % predim
         HR.PHASE_DELAY_DOXY_QC  = fill0_hr + fv.QC;
         HR.TEMP_VOLTAGE_DOXY    = fill0_hr + fv.bio;
         HR.TEMP_VOLTAGE_DOXY_QC = fill0_hr + fv.QC;
+        HR.PPOX_DOXY                 = fill0_hr + fv.bio;
         HR.DOXY                 = fill0_hr + fv.bio;
         HR.DOXY_QC              = fill0_hr + fv.QC;
         HR.TEMP_DOXY            = fill0_hr + fv.bio;
@@ -820,18 +946,27 @@ for msg_ct = 1:size(msg_list,1)
         HR.DOXY_ADJUSTED_QC     = fill0_hr + fv.QC;
         HR.DOXY_ADJUSTED_ERROR  = fill0_hr + fv.bio;
         
-        lr_nan = isnan(lr_d(:,iPhase)); % missing data?
-        lr_O2_matrix           = lr_d(:,[iP,iT,iS,iPhase,iTo]); % LR & HR
-        [ppoxdoxy, lr_O2_umolL, lr_O2_T] = Calc_SBE63_O2(lr_O2_matrix, cal.O);
-        lr_O2_umolkg           = lr_O2_umolL ./ lr_den *1000;
-        
+        %         lr_nan_i = isnan(lr_d(:,iPhase)); % missing data in intermediate params?
+        %         LR.PHASE_DELAY_DOXY(~lr_nan_i)     = lr_d(~lr_nan_i, iPhase); % predim
+        %         LR.PHASE_DELAY_DOXY_QC(~lr_nan_i)  = fv.QC;
+        %         LR.TEMP_VOLTAGE_DOXY(~lr_nan_i)    = lr_d(~lr_nan_i, iTo);
+        %         LR.TEMP_VOLTAGE_DOXY_QC(~lr_nan_i) = 3;
+        % % % %         lr_d(lr_d(:,iPhase)>99)=nan; %replace 99.999 values with NaN (essentially fill return from sensor)
+        lr_nan = isnan(lr_d(:,iPhase)); % missing data in intermediate params?
         LR.PHASE_DELAY_DOXY(~lr_nan)     = lr_d(~lr_nan, iPhase); % predim
         LR.PHASE_DELAY_DOXY_QC(~lr_nan)  = fv.QC;
         LR.TEMP_VOLTAGE_DOXY(~lr_nan)    = lr_d(~lr_nan, iTo);
         LR.TEMP_VOLTAGE_DOXY_QC(~lr_nan) = 3;
+        
+        lr_O2_matrix           = lr_d(:,[iP,iT,iS,iPhase,iTo]); % LR & HR
+        [ppoxdoxy, pH2O, lr_O2_umolL, lr_O2_T] = Calc_SBE63_O2(lr_O2_matrix, cal.O);
+        LR.PPOX_DOXY(~lr_nan) = ppoxdoxy(~lr_nan); %TM, for internal storage.
+        %lr_nan = isnan(lr_O2_umolL); % missing data on computed doxy (extra nans entered if false Tvolt results in imaginary values!)
+        lr_O2_umolkg           = lr_O2_umolL ./ lr_den *1000;
         LR.DOXY(~lr_nan)                 = lr_O2_umolkg(~lr_nan);
         tlrDOXY = abs(LR.DOXY) > crazy_val & ~lr_nan; % Unrealistic bad value
         LR.DOXY(tlrDOXY) = crazy_val; % SET TO crazy bad value
+        
         LR.DOXY_QC(~lr_nan)              = 3;
         %LR.DOXY_QC(tlrDOXY) = 4;
         LR.DOXY_QC(LRQF_S | LRQF_T)      = 4; % VERY BAD S or T
@@ -840,13 +975,12 @@ for msg_ct = 1:size(msg_list,1)
         clear lr_O2_matrix lr_O2_umolL lr_O2_T lr_O2_umolkg
         
         
-        
         if r_hr > 0 % HR DATA SHOULD EXIST TOO
             hr_nan = isnan(hr_d(:,iPhase)); % missing data?
             hr_O2_matrix           = hr_d(:,[iP,iT,iS,iPhase,iTo]); % HR
-            [ppoxdoxy, hr_O2_umolL, hr_O2_T] = Calc_SBE63_O2(hr_O2_matrix, cal.O);
+            [ppoxdoxy, pH2O, hr_O2_umolL, hr_O2_T] = Calc_SBE63_O2(hr_O2_matrix, cal.O);
             hr_O2_umolkg           = hr_O2_umolL ./ hr_den *1000;
-            
+            HR.PPOX_DOXY(~hr_nan) = ppoxdoxy(~hr_nan); % TM, for internal storage.
             HR.PHASE_DELAY_DOXY(~hr_nan)     = hr_d(~hr_nan, iPhase); % predim
             HR.PHASE_DELAY_DOXY_QC(~hr_nan)  = fv.QC;
             HR.TEMP_VOLTAGE_DOXY(~hr_nan)    = hr_d(~hr_nan, iTo);
@@ -863,7 +997,6 @@ for msg_ct = 1:size(msg_list,1)
         
         clear hr_O2_matrix hr_O2_umolL hr_O2_T hr_O2_umolkg
         
-        
         if isfield(QC,'O')
             % !! ONE TIME GAIN CORRECTION ONLY !!
             %             LR.DOXY_ADJUSTED(~lr_nan)  = LR.DOXY(~lr_nan) .* QC.O.steps(3);
@@ -873,7 +1006,14 @@ for msg_ct = 1:size(msg_list,1)
             LR.DOXY_ADJUSTED(tlrDOXY_ADJ) = crazy_val; % SET TO crazy bad value
             LR.DOXY_ADJUSTED_QC(~lr_nan) = 1; % 2 = probably good
             %LR.DOXY_ADJUSTED_QC(tlrDOXY_ADJ) = 4; % crazy val bad
-            LR.DOXY_ADJUSTED_ERROR(~lr_nan) = LR.DOXY_ADJUSTED(~lr_nan) * 0.01;
+            %LR.DOXY_ADJUSTED_ERROR(~lr_nan) = LR.DOXY_ADJUSTED(~lr_nan) * 0.01;
+            steptmp = find(QC.O.steps(:,2)<=INFO.cast,1,'last');
+            juld_prof = INFO.sdn-datenum(1950,01,01); %convert to JULD
+            
+            juld_init = QC.O.steps(steptmp,1)-datenum(1950,01,01); %convert to JULD
+            juld_end = QC.date -datenum(1950,01,01); %date at last DMQC
+            
+            
             if r_hr> 0
                 %HR.DOXY_ADJUSTED(~hr_nan)  = HR.DOXY(~hr_nan) .* QC.O.steps(3);
                 QCD = [HR.PRES(~hr_nan), HR.TEMP(~hr_nan), HR.PSAL(~hr_nan), HR.DOXY(~hr_nan)];
@@ -883,28 +1023,51 @@ for msg_ct = 1:size(msg_list,1)
                 HR.DOXY_ADJUSTED_QC(~hr_nan) = 1; % 2 = probably good
                 %HR.DOXY_ADJUSTED_QC(thrDOXY_ADJ) = 4; % crazyval bad
                 HR.DOXY_ADJUSTED_QC(HRQF_S | HRQF_T) = 4; % VERY BAD S or T
-                HR.DOXY_ADJUSTED_ERROR(~hr_nan) = HR.DOXY_ADJUSTED(~hr_nan) * 0.01;
+                %HR.DOXY_ADJUSTED_ERROR(~hr_nan) = HR.DOXY_ADJUSTED(~hr_nan) * 0.01;
+                if ~isempty(d.air)
+                    HR.DOXY_ADJUSTED_ERROR(~hr_nan) = convert_O2mb_error_to_conc(HR.TEMP(~hr_nan),HR.PSAL(~hr_nan),2);
+                else
+                    HR.DOXY_ADJUSTED_ERROR(~hr_nan) = convert_O2mb_error_to_conc(HR.TEMP(~hr_nan),HR.PSAL(~hr_nan),5);
+                end
+                if juld_prof>juld_end
+                    extra_error_ppox = 1.*(juld_prof-juld_end)./365; %1 mb per year error inflation per Argo rec
+                    HRO2error = convert_O2mb_error_to_conc(HR.TEMP(~hr_nan),HR.PSAL(~hr_nan),extra_error_ppox);
+                    HR.DOXY_ADJUSTED_ERROR(~hr_nan) = HR.DOXY_ADJUSTED_ERROR(~hr_nan)+HRO2error;
+                end
+            end
+            INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G; G = G_INIT + G_DRIFT*(JULD_PROF - JULD_INIT)/365';
+            
+            % QC matrix entry relevant to current cycle.
+            if ~isempty(d.air)
+                LR.DOXY_ADJUSTED_ERROR(~lr_nan) = convert_O2mb_error_to_conc(LR.TEMP(~lr_nan),LR.PSAL(~lr_nan),2);
+            else
+                LR.DOXY_ADJUSTED_ERROR(~lr_nan) = convert_O2mb_error_to_conc(LR.TEMP(~lr_nan),LR.PSAL(~lr_nan),5);
             end
             
-            %             INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G';
-            %             INFO.DOXY_SCI_CAL_COEF = ['G=', ...
-            %                 num2str(QC.O.steps(1,3),'%0.4f')];
-            INFO.DOXY_SCI_CAL_EQU  = 'DOXY_ADJUSTED=DOXY*G; G = G_INIT + G_DRIFT*(JULD_PROF - JULD_INIT)/365';
-            % QC matrix entry relevant to current cycle.
-            steptmp = find(QC.O.steps(:,2)<=INFO.cast,1,'last');
-            juld_prof = INFO.sdn-datenum(1950,01,01); %convert to JULD
-            juld_init = QC.O.steps(steptmp,1)-datenum(1950,01,01); %convert to JULD
+            % LOW RES doxy adj error
+            if juld_prof>juld_end
+                extra_error_ppox = 1.*(juld_prof-juld_end)./365; %1 mb per year error inflation per Argo rec
+                LRO2error = convert_O2mb_error_to_conc(LR.TEMP(~lr_nan),LR.PSAL(~lr_nan),extra_error_ppox);
+                LR.DOXY_ADJUSTED_ERROR(~lr_nan) = LR.DOXY_ADJUSTED_ERROR(~lr_nan)+LRO2error;
+            end
+            
             INFO.DOXY_SCI_CAL_COEF = ['G_INIT = ', ...
                 num2str(QC.O.steps(steptmp,3),'%0.4f'),...
                 '; G_DRIFT = ',num2str(QC.O.steps(steptmp,5),'%0.4f'),...
                 '; JULD_PROF = ',num2str(juld_prof,'%9.4f'),...
                 '; JULD_INIT = ',num2str(juld_init,'%9.4f')];
+            
+            if isfield(cal.O,'SVUFoilCoef') && ~strcmp(cal.O.type,'SBE83')
+                O2_cal_str = 'SVU Foil calibration coeficients were used. ';
+            else
+                O2_cal_str = 'Polynomial calibration coeficients were used. ';
+            end
             if ~isempty(d.air)
-                INFO.DOXY_SCI_CAL_COM  = ['G determined from float' ...
-                    ' measurements in air. See Johnson et al.,2015,', ...
+                INFO.DOXY_SCI_CAL_COM  = [O2_cal_str,'G determined from ',...
+                    'float  measurements in air. See Johnson et al.,2015,', ...
                     'doi:10.1175/JTECH-D-15-0101.1'];
             else
-                INFO.DOXY_SCI_CAL_COM  = ['G determined by surface' ...
+                INFO.DOXY_SCI_CAL_COM  = [O2_cal_str,'G determined by surface' ...
                     ' measurement comparison to World Ocean Atlas 2009.', ...
                     'See Takeshita et al.2013,doi:10.1002/jgrc.20399'];
             end
@@ -912,19 +1075,106 @@ for msg_ct = 1:size(msg_list,1)
         
         if ~isempty(d.air) & sum(d.air) ~= 0 % 0 means ice detection on
             zero_fill = d.air(:,1) * 0; % make array of zeros
-            O2 = calc_O2_4ARGO(zero_fill, d.air(:,1), zero_fill, ...
-                d.air(:,2), cal.O);
-            AIR_O2 = O2; % µmol/L still
-            clear O2
+            myadata = [zero_fill d.air(:,2) zero_fill d.air(:,1) d.air(:,2)]; %use optode T here for CTD T input?
+            [ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myadata, cal.O);
+            %             AIR_O2 = O2; % µmol/L still NOT USED YET
+            SurfaceObs.RAW = d.air; %raw in-air measurements associated with the telemetry cycle (NOT the in-air "series")
+            SurfaceObs.TEMP_DOXY = d.air(:,1);
+            SurfaceObs.TPHASE_DOXY = d.air(:,2);
+            SurfaceObs.RPHASE_DOXY = d.air(:,3);
+            SurfaceObs.PPOX_DOXY = ppoxdoxy; %last column is pO2
+            % initialize qc variables and perform qc:
+            SurfaceObs.PPOX_DOXY_QC = ones(size(SurfaceObs.PPOX_DOXY))* 0 + fv.bio;
+            SurfaceObs.TEMP_DOXY_QC = ones(size(SurfaceObs.TEMP_DOXY))* 0 + fv.bio;
+            SurfaceObs.TPHASE_DOXY_QC = ones(size(SurfaceObs.TPHASE_DOXY))* 0 + fv.bio;
+            SurfaceObs.RPHASE_DOXY_QC = ones(size(SurfaceObs.RPHASE_DOXY))* 0 + fv.bio;
+            po2BAD = SurfaceObs.PPOX_DOXY < RCR.PO2(1) | SurfaceObs.PPOX_DOXY > RCR.PO2(2);
+            tempBAD = SurfaceObs.TEMP_DOXY < RCR.OT(1) | SurfaceObs.TEMP_DOXY > RCR.OT(2);
+            tphaseBAD = SurfaceObs.TPHASE_DOXY < RCR.OP(1) | SurfaceObs.TPHASE_DOXY > RCR.OP(2);
+            rphaseBAD = SurfaceObs.RPHASE_DOXY < RCR.OP(1) | SurfaceObs.RPHASE_DOXY > RCR.OP(2);
+            SurfaceObs.PPOX_DOXY_QC(po2BAD)=4;
+            SurfaceObs.PPOX_DOXY_QC(~po2BAD)=1;
+            SurfaceObs.TEMP_DOXY_QC(tempBAD)=4;
+            SurfaceObs.TEMP_DOXY_QC(~tempBAD)=1;
+            SurfaceObs.TPHASE_DOXY_QC(tphaseBAD)=4;
+            SurfaceObs.TPHASE_DOXY_QC(~tphaseBAD)=1;
+            SurfaceObs.RPHASE_DOXY_QC(rphaseBAD)=4;
+            SurfaceObs.RPHASE_DOXY_QC(~rphaseBAD)=1;
+            clear O2 po2BAD tempBAD tphaseBAD rphaseBAD
         end
-        
+        % % % %         %%% TM 12/16/21 D.AIRCAL NOT PRESENT CURRENTLY IN NAVIS PARSER
+        % % % %         %%% RETURN.  KEEP AS PLACEHOLDER FOR NOW (IF/WHEN SBE83 ON NAVIS?)
+        % % % %         % NEW AIR CAL MEASUREMEMTS 4 just below surf and 8 above
+        % % % %         % 0 for phase means ice detection on
+        % % % %         % aircal = [sdn, bladder(?), pres, temperature, Tphase, Rphase]
+        % % % %         if ~isempty(d.aircal) % Not sure why the second part of this was needed?  When would all phase meas be zero??  & sum(d.aircal(:,5)) ~= 0
+        % % % %             zero_fill = d.aircal(:,1) * 0; % make array of zeros
+        % % % %             %             tpress    = d.aircal(:,3) > 0; % find poss press
+        % % % %             tzmin     = lr_d(:,iP) == min(lr_d(:,iP)); % shallowest value
+        % % % %             S0 = zero_fill + nanmean(lr_d(tzmin,iS)); % surface salinity.  Needed in O2 calc for near sfc in-air sequence samples
+        % % % %             % TM 5/25/21; reorganize the in-air data structures for Annie
+        % % % %             % to access.  The in-air PPOX_DOXY will be used for populating
+        % % % %             % the Dtraj files.  The variables will require QC as well.
+        % % % %             %AIRCAL_O2 = [d.aircal(:,1:3),O2]; % µmol/L still NOT USED YET.
+        % % % %
+        % % % %             %run the check on nearsfc & in-air based on pneumatic pressure
+        % % % %             diffPneuPres = abs(diff(d.aircal(:,2)));
+        % % % %             Xmax = find(diffPneuPres == nanmax(diffPneuPres));
+        % % % %             MAXind = Xmax+1; %index of end of near sfc data  Should reflect a large shift in pneumatic pressure.
+        % % % %             Bdef_s = Xmax; %indices of air-cal surface samples
+        % % % %             Bdef_a = Xmax+1:size(d.aircal,1);
+        % % % %             inair_bin = zeros(size(d.aircal,1),1); %inair_bin is the last column in the raw_inair_series and will serve as a logical indicator of true "in-air" part of the series (1=inair; 0=nearsurface)
+        % % % %             inair_bin(Bdef_a) = 1;
+        % % % %             raw_inair_series = [d.aircal inair_bin];
+        % % % %             if strcmp(cal.O.type,'SBE83')
+        % % % %                 myadata = [zero_fill d.aircal(:,4) S0.*~logical(inair_bin) d.aircal(:,5) d.aircal(:,4)]; %use optode T here for CTD T input?
+        % % % %                 [ppoxdoxy, O2_uM, O2_T] = Calc_SBE63_O2(myadata, cal.O);
+        % % % %             else
+        % % % %                 O2 = calc_O2_4ARGO(zero_fill, d.aircal(:,4), zero_fill, ...
+        % % % %                     d.aircal(:,5), cal.O);
+        % % % %                 ppoxdoxy = O2(:,end);
+        % % % %             end
+        % % % %             OptodeAirCal.RAW = raw_inair_series; %store the raw data;
+        % % % %             OptodeAirCal.JULD = raw_inair_series(:,1)-datenum(1950,01,01); %convert to JULD
+        % % % %             OptodeAirCal.PRES = raw_inair_series(:,3);
+        % % % %             OptodeAirCal.TEMP_DOXY = raw_inair_series(:,4);
+        % % % %             OptodeAirCal.TPHASE_DOXY = raw_inair_series(:,5);
+        % % % %             OptodeAirCal.RPHASE_DOXY = raw_inair_series(:,6);
+        % % % %             OptodeAirCal.IN_AIR_LOGICAL = raw_inair_series(:,end);
+        % % % %             OptodeAirCal.PPOX_DOXY = ppoxdoxy; %This is pO2 returned from calc_O2_4ARGO (or Calc_SBE63_O2 for the SBE83s)
+        % % % %             %initialize qc vars and check qc
+        % % % %             OptodeAirCal.PPOX_DOXY_QC = ones(size(OptodeAirCal.PPOX_DOXY))* 0 + fv.bio;
+        % % % %             OptodeAirCal.TEMP_DOXY_QC = ones(size(OptodeAirCal.TEMP_DOXY))* 0 + fv.bio;
+        % % % %             OptodeAirCal.TPHASE_DOXY_QC = ones(size(OptodeAirCal.TPHASE_DOXY))* 0 + fv.bio;
+        % % % %             OptodeAirCal.RPHASE_DOXY_QC = ones(size(OptodeAirCal.RPHASE_DOXY))* 0 + fv.bio;
+        % % % %             po2BAD = OptodeAirCal.PPOX_DOXY < RCR.PO2(1) | OptodeAirCal.PPOX_DOXY > RCR.PO2(2);
+        % % % %             tempBAD = OptodeAirCal.TEMP_DOXY < RCR.OT(1) | OptodeAirCal.TEMP_DOXY > RCR.OT(2);
+        % % % %             tphaseBAD = OptodeAirCal.TPHASE_DOXY < RCR.OP(1) | OptodeAirCal.TPHASE_DOXY > RCR.OP(2);
+        % % % %             rphaseBAD = OptodeAirCal.RPHASE_DOXY < RCR.OP(1) | OptodeAirCal.RPHASE_DOXY > RCR.OP(2);
+        % % % %             %             save('tanyatemp.mat','AIRCAL_O2')
+        % % % %             if str2num(INFO.INST_ID)>18000 %cludgy for now until we get more guidance from Dana...Apex starting at 18000 series (Apf11) have valid pneumatic pres range for in-air data as
+        % % % %                 pneupresBAD = (OptodeAirCal.RAW(:,end)==1 & OptodeAirCal.RAW(:,2)>160) | (OptodeAirCal.RAW(:,end)==1 & OptodeAirCal.RAW(:,2)<150); %column 2 is pneumpres.  Only due this check on the "inair" part of the series.
+        % % % %             else
+        % % % %                 pneupresBAD = false(size(OptodeAirCal.PPOX_DOXY));
+        % % % %             end
+        % % % %             OptodeAirCal.PPOX_DOXY_QC(po2BAD)=4;
+        % % % %             OptodeAirCal.PPOX_DOXY_QC(~po2BAD)=1;
+        % % % %             OptodeAirCal.PPOX_DOXY_QC(pneupresBAD)=4;
+        % % % %             OptodeAirCal.TEMP_DOXY_QC(tempBAD) = 4;
+        % % % %             OptodeAirCal.TPHASE_DOXY_QC(tphaseBAD) = 4;
+        % % % %             OptodeAirCal.RPHASE_DOXY_QC(rphaseBAD) = 4;
+        % % % %             OptodeAirCal.TEMP_DOXY_QC(~tempBAD) = 1;
+        % % % %             OptodeAirCal.TPHASE_DOXY_QC(~tphaseBAD) = 1;
+        % % % %             OptodeAirCal.RPHASE_DOXY_QC(~rphaseBAD) = 1;
+        % % % %             clear O2 diffPneuPres inair_bin raw_inair_series po2BAD pneupresBAD Xmax MAXind Bdef_s Bdef_a tempBAD tphaseBAD rphaseBAD
+        % % % %         end
+        %%
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'O');
         t_bio = LR.DOXY ~= fv.bio;
         tST   = LR.PSAL_QC == 4 | LR.TEMP_QC == 4 | LR.PRES_QC == 4; % Bad S or T will affect O2
         t_chk = t_bio & (LR.DOXY < RCR.O(1)|LR.DOXY > RCR.O(2) | tST);
         tz = LR.PRES == max(LR.PRES) & t_bio; % 1st sample at depth always bad on NAVIS
-        
         
         LR.DOXY_QC(t_chk) = 4;
         LR.DOXY_QC(tz) = 4;
@@ -933,8 +1183,6 @@ for msg_ct = 1:size(msg_list,1)
         LR.DOXY_QC(t_bio) = LR.DOXY_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         LR.PHASE_DELAY_DOXY_QC(t_bio) = LR.PHASE_DELAY_DOXY_QC(t_bio) * ...
             ~BSLflag + BSLflag*theflag;
-        
-        
         
         t_bio = LR.DOXY_ADJUSTED ~= fv.bio;
         tST   = LR.PSAL_ADJUSTED_QC == 4 | LR.TEMP_ADJUSTED_QC == 4 | ...
@@ -946,6 +1194,7 @@ for msg_ct = 1:size(msg_list,1)
         LR.DOXY_ADJUSTED_QC(tz) = 4;
         LR.DOXY_ADJUSTED_QC(t_bio) = LR.DOXY_ADJUSTED_QC(t_bio) * ...
             ~BSLflag + BSLflag*theflag;
+        
         
         if r_hr > 0
             t_bio = HR.DOXY ~= fv.bio;
@@ -989,6 +1238,7 @@ for msg_ct = 1:size(msg_list,1)
             %             disp(['NO LR.DOXY_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
         end
         clear QCscreen_O QCscreenOadj
+        
         %
         % RUN TEST ON HR DOXY AND DOXY_ADJUSTED
         QCscreen_O = HR.DOXY_QC == 4; % screen for BAD data already assigned.
@@ -1009,6 +1259,60 @@ for msg_ct = 1:size(msg_list,1)
         end
         clear QCscreen_O QCscreenOadj
         % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
+        
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('O',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(LR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! DOXY PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if LR.DOXY~=fv.bio
+                            LR.DOXY_QC(xxtmp) = singleBADSflags;
+                        end
+                        if LR.DOXY_ADJUSTED~=fv.bio
+                            LR.DOXY_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                LR.DOXY_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2) & LR.DOXY~=fv.bio) = rangeBADsflags;
+                LR.DOXY_ADJUSTED_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2)& LR.DOXY_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
+        
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('O',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(HR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! DOXY PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if HR.DOXY~=fv.bio
+                            HR.DOXY_QC(xxtmp) = singleBADSflags;
+                        end
+                        if HR.DOXY_ADJUSTED~=fv.bio
+                            HR.DOXY_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                HR.DOXY_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2) & HR.DOXY~=fv.bio) = rangeBADsflags;
+                HR.DOXY_ADJUSTED_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2)& HR.DOXY_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
     end
     clear lr_nan hr_nan
     
@@ -1084,14 +1388,14 @@ for msg_ct = 1:size(msg_list,1)
             
             LR.CHLA_ADJUSTED(~lr_nan) = (lr_d(~lr_nan,iChl) - ...
                 CHL_DC) .* cal.CHL.ChlScale ./ 2;
-            LR.CHLA_ADJUSTED_QC(~lr_nan) =  2;
+            LR.CHLA_ADJUSTED_QC(~lr_nan) =  1;
             LR.CHLA_ADJUSTED_ERROR(~lr_nan) = ...
                 abs(LR.CHLA_ADJUSTED(~lr_nan) * 2);
             
             if r_hr > 0 % ONLY NEED TO DO NPQ ON HR DATA, LR DEEP ONLY
                 HR.CHLA_ADJUSTED(~hr_nan) = (hr_d(~hr_nan,iChl) - ...
                     CHL_DC) .* cal.CHL.ChlScale ./ 2;
-                HR.CHLA_ADJUSTED_QC(~hr_nan) =  2;
+                HR.CHLA_ADJUSTED_QC(~hr_nan) =  1;
                 
                 % NPQ NEXT
                 NPQ_CHL = HR.CHLA_ADJUSTED;
@@ -1163,6 +1467,65 @@ for msg_ct = 1:size(msg_list,1)
                 end
             end
         end
+        
+        %-------------------------------------------------------------------------
+        % CHECK FOR BAD SAMPLES ON 'BAD SAMPLE LIST'
+        
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('CHL',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(LR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! CHLA PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if LR.CHLA~=fv.bio
+                            LR.CHLA_QC(xxtmp) = singleBADSflags;
+                        end
+                        if LR.CHLA_ADJUSTED~=fv.bio
+                            LR.CHLA_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                LR.CHLA_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2) & LR.CHLA~=fv.bio) = rangeBADsflags;
+                LR.CHLA_ADJUSTED_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2)& LR.CHLA_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
+        %-------------------------------------------------------------------------
+        % CHECK FOR BAD SAMPLES ON 'BAD SAMPLE LIST'
+        
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('CHL',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(HR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! CHLA PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if HR.CHLA~=fv.bio
+                            HR.CHLA_QC(xxtmp) = singleBADSflags;
+                        end
+                        if HR.CHLA_ADJUSTED~=fv.bio
+                            HR.CHLA_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                HR.CHLA_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2) & HR.CHLA~=fv.bio) = rangeBADsflags;
+                HR.CHLA_ADJUSTED_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2)& HR.CHLA_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
         clear lr_nan hr_nan
     end
     
@@ -1322,6 +1685,62 @@ for msg_ct = 1:size(msg_list,1)
             HR.BBP700_ADJUSTED_QC(t_chk) = 4;
         end
         
+        %----------------------------------------------------------------
+        % CHECK FOR BAD SAMPLES ON THE 'BAD-SAMPLE LIST'
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('BBP',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(LR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! BBP700 PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if LR.BBP700~=fv.bio
+                            LR.BBP700_QC(xxtmp) = singleBADSflags;
+                        end
+                        if LR.BBP700_ADJUSTED~=fv.bio
+                            LR.BBP700_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                LR.BBP700_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2) & LR.BBP700~=fv.bio) = rangeBADsflags;
+                LR.BBP700_ADJUSTED_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2)& LR.BBP700_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
+        %----------------------------------------------------------------
+        % CHECK FOR BAD SAMPLES ON THE 'BAD-SAMPLE LIST'
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('BBP',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(HR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! BBP700 PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if HR.BBP700~=fv.bio
+                            HR.BBP700_QC(xxtmp) = singleBADSflags;
+                        end
+                        if HR.BBP700_ADJUSTED~=fv.bio
+                            HR.BBP700_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                HR.BBP700_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2) & HR.BBP700~=fv.bio) = rangeBADsflags;
+                HR.BBP700_ADJUSTED_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2)& HR.BBP700_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
         clear LR_BETA_SW HR_BETA_SW BETA_SW_ind X HR_VSF LR_VSF
         clear lr_nan hr_nan ct b90sw bsw
         
@@ -1418,6 +1837,59 @@ for msg_ct = 1:size(msg_list,1)
             HR.CDOM_ADJUSTED_QC(t_bio) = HR.CDOM_ADJUSTED_QC(t_bio) *  ...
                 ~BSLflag + BSLflag*theflag;
             HR.CDOM_ADJUSTED_QC(t_chk) = 4;
+        end
+        
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('CHL',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(LR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! CDOM PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if LR.CDOM~=fv.bio
+                            LR.CDOM_QC(xxtmp) = singleBADSflags;
+                        end
+                        if LR.CDOM_ADJUSTED~=fv.bio
+                            LR.CDOM_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                LR.CDOM_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2) & LR.CDOM~=fv.bio) = rangeBADsflags;
+                LR.CDOM_ADJUSTED_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2)& LR.CDOM_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
+        
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('CHL',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(HR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! CDOM PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if HR.CDOM~=fv.bio
+                            HR.CDOM_QC(xxtmp) = singleBADSflags;
+                        end
+                        if HR.CDOM_ADJUSTED~=fv.bio
+                            HR.CDOM_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                HR.CDOM_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2) & HR.CDOM~=fv.bio) = rangeBADsflags;
+                HR.CDOM_ADJUSTED_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2)& HR.CDOM_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
         end
         
         clear QCD lr_nan hr_nan
@@ -1575,7 +2047,7 @@ for msg_ct = 1:size(msg_list,1)
         clear LR_BETA_SW HR_BETA_SW BETA_SW_ind X HR_VSF LR_VSF
         clear lr_nan hr_nan ct b90sw bsw
     end
-    
+    %%
     % ****************************************************************
     % CALCULATE pH (µmol / kg scale)
     % ****************************************************************
@@ -1758,20 +2230,41 @@ for msg_ct = 1:size(msg_list,1)
                 apply_QC_corr(QCD, d.sdn, QC.pH);
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~lr_nan)  = 1;
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(LRQF_S | LRQF_T | LRQF_P)  = 4;
-            LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~lr_nan) = 0.02;
+            %LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~lr_nan) = 0.02;
             
             LR.PH_IN_SITU_TOTAL_ADJUSTED(LR_inf) = 20.1; %UNREAL #
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(LR_inf) = 4;
             
-            INFO.PH_SCI_CAL_EQU  = ['PH_ADJUSTED=PH+[PUMP_OFFSET', ...
-                '-SUM(OFFSET(S)+DRIFT(S))]* TCOR'];
-            INFO.PH_SCI_CAL_COEF = ['PUMP_OFFSET=Pump may add ', ...
-                'interfernece in CP mode,OFFSET(S) and DRIFT(S) from ',...
-                'climatology comparisons at 1000m or 1500m,','TCOR=', ...
-                '(2+273.15)./(T+273.15)'];
-            INFO.PH_SCI_CAL_COM  =['Contact Tanya Maurer ',...
-                '(tmaurer@mbari.org) or Josh Plant (jplant@mbari.org) ',...
-                'for more information'];
+            step_tmpPH = find(QC.pH.steps(:,2)<=INFO.cast,1,'last');
+            
+            
+            
+            
+            juld_prof = INFO.sdn-datenum(1950,01,01); %convert to JULD
+            juld_init = QC.pH.steps(step_tmpPH,1)-datenum(1950,01,01); %convert to JULD
+            juld_end = QC.date - datenum(1950,01,01); %date at last DMQC, converted to JULD
+            LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = 0.01 + LR.DOXY_ADJUSTED_ERROR.*0.0016;
+            if juld_prof>juld_end
+                LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR + 0.03.*(juld_prof-juld_end)./365;
+            end
+            LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(lr_nan) = fv.bio;
+            
+            
+            INFO.PH_SCI_CAL_EQU  = ['PH_IN_SITU_TOTAL_ADJUSTED=', ...
+                '[PH_IN_SITU_TOTAL+[PUMP_OFFSET - [OFFSET + DRIFT(JULD-JULD_PIVOT)/365]*TCOR]]/GAIN;',...
+                'TCOR=(TREF+273.15)./(TEMP+273.15);  TREF = TEMP at 1500m.'];
+            INFO.PH_SCI_CAL_COEF = ['PUMP_OFFSET = ',num2str(QC.pH.pHpumpoffset),...
+                '; OFFSET = ',num2str(QC.pH.steps(step_tmpPH,4),'%6.4f'),...
+                '; DRIFT = ',num2str(QC.pH.steps(step_tmpPH,5),'%6.4f'),...
+                '; GAIN = ',num2str(QC.pH.steps(step_tmpPH,3),'%6.4f'),...
+                '; JULD = ',num2str(juld_prof,'%9.4f'),...
+                '; JULD_PIVOT = ',num2str(juld_init,'%9.4f')];
+            INFO.PH_SCI_CAL_COM  =['PUMP_OFFSET derived manually, applied to data above 980m.  OFFSET and DRIFT derived following '...
+                'Maurer et al., 2021 (https://doi.org/10.3389/fmars.2021.683207).'...
+                'Contact: Tanya Maurer (tmaurer@mbari.org).'];
+            if regexp(MBARI_ID_str, bad_O2_filter, 'once')
+                [LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR, INFO.PH_SCI_CAL_COMtmp,~,~] = Reassign_ArgoSpecs_LIReqn8(MBARI_ID_str,INFO.cast,LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR,INFO.PH_SCI_CAL_COM,0,0);
+            end
             
             % TEMPORARY ADJUSTED pH FIX 08/02/2016
             % FLOATVIZ pH CALCULATED WITH OLDER FUNCTION. QC STEPS
@@ -1791,10 +2284,20 @@ for msg_ct = 1:size(msg_list,1)
                 
                 HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~hr_nan)    = 1;
                 HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(HRQF_S | HRQF_T | HRQF_P)  = 4;
-                HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~hr_nan) = 0.02;
+                %HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~hr_nan) = 0.02;
                 
                 HR.PH_IN_SITU_TOTAL_ADJUSTED(HR_inf) = 20.1; %UNREAL #
                 HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(HR_inf) = 4;
+                HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = 0.02 + HR.DOXY_ADJUSTED_ERROR.*0.0016;
+                if juld_prof>juld_end
+                    HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR + 0.03.*(juld_prof-juld_end)./365;
+                end
+                HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(hr_nan) = fv.bio;
+                
+                
+                if regexp(MBARI_ID_str, bad_O2_filter, 'once')
+                    [HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR, INFO.PH_SCI_CAL_COM,~,~] = Reassign_ArgoSpecs_LIReqn8(MBARI_ID_str,INFO.cast,HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR,INFO.PH_SCI_CAL_COM,0,0);
+                end
                 
                 % TEMPORARY ADJUSTED pH FIX 08/02/2016
                 % FLOATVIZ pH CALCULATED WITH OLDER FUNCTION. QC STEPS
@@ -1920,8 +2423,66 @@ for msg_ct = 1:size(msg_list,1)
         % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         
+        %------------------------------------------------------------------
+        % OK NOW MARK BAD SAMPLES AS LISTED ON THE BAD SAMPLE LIST!
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('PH',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(LR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! PH PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if LR.PH_IN_SITU_TOTAL~=fv.bio
+                            LR.PH_IN_SITU_TOTAL_QC(xxtmp) = singleBADSflags;
+                        end
+                        if LR.PH_IN_SITU_TOTAL_ADJUSTED~=fv.bio
+                            LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                LR.PH_IN_SITU_TOTAL_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2) & LR.PH_IN_SITU_TOTAL~=fv.bio) = rangeBADsflags;
+                LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2)& LR.PH_IN_SITU_TOTAL_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
+        %------------------------------------------------------------------
+        % OK NOW MARK BAD SAMPLES AS LISTED ON THE BAD SAMPLE LIST!
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('PH',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(HR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! PH PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if HR.PH_IN_SITU_TOTAL~=fv.bio
+                            HR.PH_IN_SITU_TOTAL_QC(xxtmp) = singleBADSflags;
+                        end
+                        if HR.PH_IN_SITU_TOTAL_ADJUSTED~=fv.bio
+                            HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                HR.PH_IN_SITU_TOTAL_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2) & HR.PH_IN_SITU_TOTAL~=fv.bio) = rangeBADsflags;
+                HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2)& HR.PH_IN_SITU_TOTAL_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
         clear lr_phfree lr_phtot hr_phfree hr_phtot QCD
     end
+    
+    %%
     
     % ****************************************************************
     % CALCULATE NITRATE (µmol / kg scale)
@@ -2057,19 +2618,33 @@ for msg_ct = 1:size(msg_list,1)
                 LR.NITRATE_ADJUSTED_QC(~t_nan & tABS11) = 4; % Really bad abs or RMS
                 LR.NITRATE_ADJUSTED_QC(LRQF_S | LRQF_T) = 4;
                 
-                LR.NITRATE_ADJUSTED_ERROR = (abs(LR.NITRATE - ...
-                    LR.NITRATE_ADJUSTED)) * 0.1 + 0.5;
+                %LR.NITRATE_ADJUSTED_ERROR = (abs(LR.NITRATE - ...
+                %    LR.NITRATE_ADJUSTED)) * 0.1 + 0.5;
+                %LR.NITRATE_ADJUSTED_ERROR(t_nan) = fv.bio;
+                step_tmpN = find(QC.N.steps(:,2)<=INFO.cast,1,'last');
+                juld_prof = INFO.sdn-datenum(1950,01,01); %convert to JULD
+                juld_init = QC.N.steps(step_tmpN,1)-datenum(1950,01,01); %convert to JULD
+                juld_end = QC.date - datenum(1950,01,01); %date at last DMQC
+                LR.NITRATE_ADJUSTED_ERROR = 1 + LR.DOXY_ADJUSTED_ERROR./10;
+                if juld_prof>juld_end
+                    LR.NITRATE_ADJUSTED_ERROR = LR.NITRATE_ADJUSTED_ERROR + 1.*(juld_prof-juld_end)./365;
+                end
                 LR.NITRATE_ADJUSTED_ERROR(t_nan) = fv.bio;
-                
                 INFO.NITRATE_SCI_CAL_EQU  = ['NITRATE_ADJUSTED=', ...
-                    '[NITRATE-SUM(OFFSET(S)+DRIFT(S))]/GAIN'];
-                INFO.NITRATE_SCI_CAL_COEF = ['OFFSET(S) and DRIFT(S) ', ...
-                    'from climatology comparisons at 1000m or 1500m. GAIN ',...
-                    'from surface/deep comparison where surface values ',...
-                    'are known'];
-                INFO.NITRATE_SCI_CAL_COM  =['Contact Tanya Maurer ',...
-                    '(tmaurer@mbari.org) or Josh Plant (jplant@mbari.org) ',...
-                    'for more information'];
+                    '[NITRATE-[OFFSET + DRIFT(JULD-JULD_PIVOT)/365]]/GAIN'];
+                INFO.NITRATE_SCI_CAL_COEF = ['OFFSET = ', ...
+                    num2str(QC.N.steps(step_tmpN,4),'%6.4f'),...
+                    '; DRIFT = ',num2str(QC.N.steps(step_tmpN,5),'%6.4f'),...
+                    '; GAIN = ',num2str(QC.N.steps(step_tmpN,3),'%6.4f'),...
+                    '; JULD = ',num2str(juld_prof,'%9.4f'),...
+                    '; JULD_PIVOT = ',num2str(juld_init,'%9.4f')];
+                INFO.NITRATE_SCI_CAL_COM  =['Adjustments derived following '...
+                    'Maurer et al., 2021 (https://doi.org/10.3389/fmars.2021.683207).'...
+                    'Contact Tanya Maurer (tmaurer@mbari.org) ',...
+                    'for more information.'];
+                if regexp(MBARI_ID_str, bad_O2_filter, 'once')
+                    [~, ~, LR.NITRATE_ADJUSTED_ERROR, INFO.NITRATE_SCI_CAL_COM] = Reassign_ArgoSpecs_LIReqn8(MBARI_ID_str,INFO.cast,0,0,LR.NITRATE_ADJUSTED_ERROR,INFO.NITRATE_SCI_CAL_COM);
+                end
             end
             clear QCD NO3 UV_INTEN
         end
@@ -2144,6 +2719,62 @@ for msg_ct = 1:size(msg_list,1)
         end
         % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         
+        %------------------------------------------------------------------
+        % NOW MARK BAD SAMPLES AS LISTED ON THE BAD-SAMPLE-LIST
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('N',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(LR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! PH PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if LR.NITRATE~=fv.bio
+                            LR.NITRATE_QC(xxtmp) = singleBADSflags;
+                        end
+                        if LR.NITRATE_ADJUSTED~=fv.bio
+                            LR.NITRATE_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                LR.NITRATE_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2) & LR.NITRATE~=fv.bio) = rangeBADsflags;
+                LR.NITRATE_ADJUSTED_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2)& LR.NITRATE_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
+        %------------------------------------------------------------------
+        % NOW MARK BAD SAMPLES AS LISTED ON THE BAD-SAMPLE-LIST
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('N',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                if ~isempty(singleBADs{1})
+                    xxtmp = find(HR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! PH PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if HR.NITRATE~=fv.bio
+                            HR.NITRATE_QC(xxtmp) = singleBADSflags;
+                        end
+                        if HR.NITRATE_ADJUSTED~=fv.bio
+                            HR.NITRATE_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        end
+                    end
+                end
+                HR.NITRATE_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2) & HR.NITRATE~=fv.bio) = rangeBADsflags;
+                HR.NITRATE_ADJUSTED_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2)& HR.NITRATE_ADJUSTED~=fv.bio) = rangeBADsflags;
+            end
+        end
+        
         clear tchk tABS08 tABS11 NO3
     end
     
@@ -2189,7 +2820,7 @@ for msg_ct = 1:size(msg_list,1)
                     ODV_QF  = [FV_cast(:,6),FV_cast(:,8), ...
                         FV_cast(:,indQF(QF_ct))]; % P, T & QC
                     % CONVERT BACK TO ARGO VALUES
-                    if strcmp(QCvars{ind,2},'BBP700') == 1 || strcmp(QCvars{ind,2},'BBP532') == 1 
+                    if strcmp(QCvars{ind,2},'BBP700') == 1 || strcmp(QCvars{ind,2},'BBP532') == 1
                         ODV_QF(ODV_QF(:,3) == 4,3) = 2;
                         ODV_QF(ODV_QF(:,3) == 8,3) = 4;
                     else
@@ -2270,7 +2901,7 @@ for msg_ct = 1:size(msg_list,1)
                 if sum(ind) > 0 && isfield(LR,[QCvars{ind,2},'_ADJUSTED'])
                     ODV_QF  = [FVQC_cast(:,6), FVQC_cast(:,8), ...
                         FVQC_cast(:,indQF(QF_ct))];% P&T&QC
-                    if strcmp(QCvars{ind,2},'BBP700') == 1 || strcmp(QCvars{ind,2},'BBP532') == 1 
+                    if strcmp(QCvars{ind,2},'BBP700') == 1 || strcmp(QCvars{ind,2},'BBP532') == 1
                         ODV_QF(ODV_QF(:,3) == 4,3) = 2;
                         ODV_QF(ODV_QF(:,3) == 8,3) = 4;
                     else
@@ -2338,8 +2969,6 @@ for msg_ct = 1:size(msg_list,1)
         end
     end
     
-    
-    
     %-----------------------------------------------------------
     % Add LR(HR).parameter_DATA_MODE for each parameter.  12/21/17
     
@@ -2348,8 +2977,9 @@ for msg_ct = 1:size(msg_list,1)
     
     % OXYGEN
     if isfield(cal,'O')
-        XEMPT_O = find(HR.DOXY ~= 99999,1); % if empty, then cycle has no data
-        if isempty(QC) || isempty(XEMPT_O) % no adjustments have been made yet, or all data is 99999
+        XEMPT_Ohr = find(HR.DOXY ~= 99999,1); % if empty, then HR cycle has no data
+        XEMPT_Olr = find(LR.DOXY ~= 99999,1); % if empty, then LR cycle has no data
+        if isempty(QC) || (isempty(XEMPT_Ohr) && isempty(XEMPT_Olr)) % no adjustments have been made yet, or all data is 99999
             INFO.DOXY_DATA_MODE = 'R';
         elseif ~isempty(QC) && isfield(QC,'O')
             if cycdate > QC.date
@@ -2399,9 +3029,9 @@ for msg_ct = 1:size(msg_list,1)
     %         INFO.BBP700_DATA_MODE = 'R';
     %     end
     % CDOM (or BBP532)
-    if isfield(cal,'CDOM') && strcmp(UW_ID_str,'0565')~=1
+    if isfield(cal,'CDOM') && isempty(strfind(MBARI_ID_str,'0565'))
         INFO.CDOM_DATA_MODE = 'R';
-    elseif isfield(cal,'CDOM') && strcmp(UW_ID_str,'0565')==1
+    elseif isfield(cal,'CDOM') && ~isempty(strfind(MBARI_ID_str,'0565'))
         if sum(LR.BBP532_ADJUSTED<99999)>0 || sum(HR.BBP532_ADJUSTED<99999)>0 % there is data for that profile --> adjustment has been made
             INFO.BBP532_DATA_MODE = 'A';
         else
@@ -2419,11 +3049,307 @@ for msg_ct = 1:size(msg_list,1)
         end
     end
     %-----------------------------------------------------------
+    %%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%%%%%%%%%%%             PARK DATA PROCESSING              %%%%%%%%%%%%%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
+    if isempty(d.pk_d) % CHECK FOR DATA
+        disp(['Missing park data in message file for ', ...
+            strtrim(msg_list(msg_ct,:))])
+    end
+    pk_d    = d.pk_d;
+    [r_pk, c_pk] = size(pk_d); % park data dimensions
     
+    if r_pk > 0
+        ipdate =  find(strcmp('Date', d.pk_hdr) == 1);
+        ipp = find(strcmp('p',d.pk_hdr) == 1);
+        ipt = find(strcmp('t',d.pk_hdr) == 1);
+        ips = find(strcmp('s',d.pk_hdr) == 1);
+        
+        iPPhase = find(strcmp('O2ph',d.pk_hdr) == 1);
+        iPTo = find(strcmp('O2tV',d.pk_hdr) == 1);
+        ipphv = find(strcmp('phV',d.pk_hdr) == 1);
+        if isempty(ipphv)
+            ipphv   = find(strcmp('phVrs', d.pk_hdr) == 1); % pH volts
+        end
+        ippht   = find(strcmp('phT', d.pk_hdr) == 1); % pH Temp
+        
+        fill0_pk = ones(r_pk,1)*0; % ZERO ARRAY, AN ARRAY FILLER
+        
+        TRAJ.PARK.SDN = pk_d(:, ipdate);
+        
+        Pp =  pk_d(:, ipp);
+        Pt = pk_d(:, ipt);
+        Ps = pk_d(:, ips);
+        Po2p = pk_d(:, iPPhase);
+        Po2t = pk_d(:, iPTo);
+        mdata = [Pp, Pt, Ps, Po2p, Po2t];
+        
+        pk_potT = theta(Pp, Pt, Ps, 0);
+        pk_den    = density(Ps, pk_potT); % kg/ m^3, pot den
+        
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%% PARK DATA
+        TRAJ.PARK.PRES  = pk_d(:,ipp);
+        TRAJ.PARK.PRES_QC          = fill0_pk + fv.QC;
+        TRAJ.PARK.PRES_ADJUSTED    = TRAJ.PARK.PRES;
+        TRAJ.PARK.PRES_ADJUSTED_QC = fill0_pk + fv.QC;
+        
+        TRAJ.PARK.PSAL             = pk_d(:,ips);
+        TRAJ.PARK.PSAL_QC          = fill0_pk + fv.QC;
+        TRAJ.PARK.PSAL_ADJUSTED    = TRAJ.PARK.PSAL;
+        TRAJ.PARK.PSAL_ADJUSTED_QC = fill0_pk + fv.QC;
+        
+        TRAJ.PARK.TEMP             = pk_d(:,ipt);
+        TRAJ.PARK.TEMP_QC          = fill0_pk + fv.QC;
+        TRAJ.PARK.TEMP_ADJUSTED    = TRAJ.PARK.TEMP;
+        TRAJ.PARK.TEMP_ADJUSTED_QC = fill0_pk + fv.QC;
+        
+        % CHECK FOR BAD PRESS VALUES
+        PKQF_P = TRAJ.PARK.PRES < RCR.P(1) | TRAJ.PARK.PRES > RCR.P(2);
+        TRAJ.PARK.PRES_QC(PKQF_P)  = 4;  % BAD
+        TRAJ.PARK.PRES_QC(~PKQF_P & TRAJ.PARK.PRES ~= fv.bio) = 1; % GOOD
+        TRAJ.PARK.PRES_ADJUSTED_QC(PKQF_P)  = 4;  % BAD
+        TRAJ.PARK.PRES_ADJUSTED_QC(~PKQF_P & TRAJ.PARK.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD
+        % ADD SALINITY & TEMP QF BECAUSE BAD S PERCOLATES TO
+        % O, N and pH, density
+        
+        PKQF_S   = TRAJ.PARK.PSAL < RCR.S(1) | TRAJ.PARK.PSAL > RCR.S(2);
+        pt_bio  = TRAJ.PARK.PSAL ~= fv.bio;
+        TRAJ.PARK.PSAL_QC(PKQF_S)  = 4;  % BAD
+        TRAJ.PARK.PSAL_QC(~PKQF_S & TRAJ.PARK.PSAL ~= fv.bio) = 1; % GOOD
+        TRAJ.PARK.PSAL_ADJUSTED_QC(PKQF_S)  = 4;  % BAD
+        TRAJ.PARK.PSAL_ADJUSTED_QC(~PKQF_S & TRAJ.PARK.PSAL_ADJUSTED ~= fv.bio) = 1;
+        
+        PKQF_T  = TRAJ.PARK.TEMP < RCR.T(1) | TRAJ.PARK.TEMP > RCR.T(2);
+        pt_bio   = TRAJ.PARK.TEMP ~= fv.bio;
+        TRAJ.PARK.TEMP_QC(PKQF_T)  = 4;  % BAD
+        TRAJ.PARK.TEMP_QC(~PKQF_T & TRAJ.PARK.TEMP ~= fv.bio) = 1; % GOOD
+        TRAJ.PARK.TEMP_ADJUSTED_QC(PKQF_T)  = 4;  % BAD
+        TRAJ.PARK.TEMP_ADJUSTED_QC(~PKQF_T & TRAJ.PARK.TEMP_ADJUSTED ~= fv.bio) = 1; % GOOD
+        
+        %% ***************************************************************
+        % CALCULATE PARK OXYGEN CONCENTRATION
+        % ****************************************************************
+        TRAJ.PARK.PHASE_DELAY_DOXY     = fill0_pk + fv.bio; % predim
+        TRAJ.PARK.PHASE_DELAY_DOXY_QC  = fill0_pk + fv.QC;
+        TRAJ.PARK.TEMP_VOLTAGE_DOXY    = fill0_pk + fv.bio;
+        TRAJ.PARK.TEMP_VOLTAGE_DOXY_QC = fill0_pk + fv.QC;
+        TRAJ.PARK.DOXY                 = fill0_pk + fv.bio;
+        TRAJ.PARK.DOXY_QC              = fill0_pk + fv.QC;
+        TRAJ.PARK.TEMP_DOXY            = fill0_pk + fv.bio;
+        TRAJ.PARK.TEMP_DOXY_QC         = fill0_pk + fv.QC;
+        TRAJ.PARK.DOXY_ADJUSTED        = fill0_pk + fv.bio;
+        TRAJ.PARK.DOXY_ADJUSTED_QC     = fill0_pk + fv.QC;
+        TRAJ.PARK.DOXY_ADJUSTED_ERROR  = fill0_pk + fv.bio;
+        
+        pk_nan = isnan(pk_d(:,iPPhase));
+        TRAJ.PARK.PHASE_DELAY_DOXY(~pk_nan)     = pk_d(~pk_nan, iPPhase); % predim
+        TRAJ.PARK.PHASE_DELAY_DOXY_QC(~pk_nan)  = fv.QC;
+        TRAJ.PARK.TEMP_VOLTAGE_DOXY(~pk_nan)    = pk_d(~pk_nan, iPTo);
+        TRAJ.PARK.TEMP_VOLTAGE_DOXY_QC(~pk_nan) = 3;
+        
+        pk_O2_matrix      = pk_d(:,[ipp, ipt, ips, iPPhase, iPTo]); % LR & HR
+        
+        [ppoxdoxy, pH2O, pk_O2_umolL, pk_O2_T] = Calc_SBE63_O2(pk_O2_matrix, cal.O);
+        pk_O2_umolkg           = pk_O2_umolL ./ pk_den *1000;
+        TRAJ.PARK.DOXY(~pk_nan)                 = pk_O2_umolkg(~pk_nan);
+        pktlrDOXY = abs(TRAJ.PARK.DOXY) > crazy_val & ~pk_nan; % Unrealistic bad value
+        TRAJ.PARK.DOXY(pktlrDOXY) = crazy_val; % SET TO crazy bad value
+        
+        TRAJ.PARK.DOXY_QC(~pk_nan)              = 3;
+        TRAJ.PARK.DOXY_QC(PKQF_S | PKQF_T)      = 4; % VERY BAD S or T
+        TRAJ.PARK.TEMP_DOXY(~pk_nan)            = pk_O2_T(~pk_nan);
+        TRAJ.PARK.TEMP_DOXY_QC(~pk_nan)         = 3;
+        clear pk_O2_matrix pk_O2_umolL pk_O2_T pk_O2_umolkg pt_bio
+        
+        if isfield(QC,'O')
+            juld_pk =   TRAJ.PARK.SDN-datenum(1950,01,01); %convert to JULD
+            juld_end = QC.date -datenum(1950,01,01); %date at last DMQC
+            
+            % QC matrix entry relevant to current cycle.
+            if ~isempty(d.air)
+                TRAJ.PARK.DOXY_ADJUSTED_ERROR(~pk_nan) = convert_O2mb_error_to_conc(TRAJ.PARK.TEMP(~pk_nan),TRAJ.PARK.PSAL(~pk_nan),2);
+            else
+                TRAJ.PARK.DOXY_ADJUSTED_ERROR(~pk_nan) = convert_O2mb_error_to_conc(TRAJ.PARK.TEMP(~pk_nan),TRAJ.PARK.PSAL(~pk_nan),5);
+            end
+            
+            % PARK doxy adj error
+            if juld_pk>juld_end
+                extra_error_ppox = 1.*(juld_pk-juld_end)./365; %1 mb per year error inflation per Argo rec
+                PKO2error = convert_O2mb_error_to_conc(TRAJ.PARK.TEMP(~pk_nan),TRAJ.PARK.PSAL(~pk_nan),extra_error_ppox);
+                TRAJ.PARK.DOXY_ADJUSTED_ERROR(~pk_nan) = TRAJ.PARK.DOXY_ADJUSTED_ERROR(~pk_nan)+PKO2error;
+            end
+            
+            PQCD = [TRAJ.PARK.PRES(~pk_nan), TRAJ.PARK.TEMP(~pk_nan), TRAJ.PARK.PSAL(~pk_nan), TRAJ.PARK.DOXY(~pk_nan)];
+            TRAJ.PARK.DOXY_ADJUSTED(~pk_nan) = apply_QC_corr(PQCD, d.sdn, QC.O);
+            tprDOXY_ADJ = abs(TRAJ.PARK.DOXY_ADJUSTED) > crazy_val & ~pk_nan;
+            TRAJ.PARK.DOXY_ADJUSTED(tprDOXY_ADJ) = crazy_val; % SET TO crazy bad value
+            TRAJ.PARK.DOXY_ADJUSTED_QC(~pk_nan) = 1; % 2 = probably good
+        end
+        
+        t_bio = TRAJ.PARK.DOXY ~= fv.bio;
+        tST   = TRAJ.PARK.PSAL_QC == 4 | TRAJ.PARK.TEMP_QC == 4 | TRAJ.PARK.PRES_QC == 4; % Bad S or T will affect O2
+        t_chk = t_bio & (TRAJ.PARK.DOXY < RCR.O(1)| TRAJ.PARK.DOXY > RCR.O(2) | tST);
+        
+        TRAJ.PARK.DOXY_QC(t_chk) = 4;
+        TRAJ.PARK.PHASE_DELAY_DOXY_QC(t_chk) = 4;
+        
+        t_bio = TRAJ.PARK.DOXY_ADJUSTED ~= fv.bio;
+        tST   = TRAJ.PARK.PSAL_ADJUSTED_QC == 4 | TRAJ.PARK.TEMP_ADJUSTED_QC == 4 | ...
+            TRAJ.PARK.PRES_ADJUSTED_QC == 4 ; % Bad S or T will affect O2
+        t_chk = t_bio & ...
+            (TRAJ.PARK.DOXY_ADJUSTED < RC.O(1)|TRAJ.PARK.DOXY_ADJUSTED > RC.O(2) | tST);
+        TRAJ.PARK.DOXY_ADJUSTED_QC(t_chk) = 4;
+        
+        %%  *****************************************************************
+        %    CALCULATE PARK PH new
+        %   ****************************************************************
+        if ~isempty(ipphv)
+            TRAJ.PARK.VRS_PH                          = fill0_pk + fv.bio;
+            TRAJ.PARK.VRS_PH_QC                       = fill0_pk + fv.QC;
+            TRAJ.PARK.TEMP_PH                         = fill0_pk + fv.bio;
+            TRAJ.PARK.TEMP_PH_QC                      = fill0_pk + fv.QC;
+            TRAJ.PARK.PH_IN_SITU_FREE                 = fill0_pk + fv.bio;
+            TRAJ.PARK.PH_IN_SITU_FREE_QC              = fill0_pk + fv.QC;
+            TRAJ.PARK.PH_IN_SITU_TOTAL                = fill0_pk + fv.bio;
+            TRAJ.PARK.PH_IN_SITU_TOTAL_QC             = fill0_pk + fv.QC;
+            TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED       = fill0_pk + fv.bio;
+            TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_QC    = fill0_pk + fv.QC;
+            TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = fill0_pk + fv.bio;
+            
+            pk_nan = isnan(pk_d(:,ipphv));
+            
+            TRAJ.PARK.VRS_PH(~pk_nan)     = pk_d(~pk_nan, ipphv);
+            TRAJ.PARK.VRS_PH_QC(~pk_nan)  = fv.QC;
+            
+            % Newer NAVIS are not using pH temp, using CTD temp instead
+            % but the header is there and data = -9.9999 (SBE fill value?)
+            % do some book keeping to get CTD temp if no real pH temp
+            ph_or_ctd_T = 1;
+            
+            if isempty(ippht) % looking to the future: SBE might eliminate pHT
+                pk_wrk_temp  = TRAJ.PARK.TEMP;
+                ph_or_ctd_T = 0;
+            else
+                TRAJ.PARK.TEMP_PH(~pk_nan) = pk_d(~pk_nan,ippht);
+                TRAJ.PARK.TEMP_PH(TRAJ.PARK.TEMP_PH == -9.9999) = fv.bio; % Set SBE fill value to argo fill Value
+                TRAJ.PARK.TEMP_PH_QC(~pk_nan) = fv.QC; % I don't think this is needed - already defined -jp
+                if all(TRAJ.PARK.TEMP_PH(~pk_nan) == fv.bio)
+                    pk_wrk_temp = TRAJ.PARK.TEMP; % no pH temp use CTD temp
+                    ph_or_ctd_T = 0;
+                else
+                    chk_phT = TRAJ.PARK.TEMP_PH ~= fv.bio & (TRAJ.PARK.TEMP_PH < RCR.PHT(1) ...
+                        | TRAJ.PARK.TEMP_PH > RCR.PHT(2));
+                    TRAJ.PARK.TEMP_PH_QC(chk_phT) = 4;
+                    TRAJ.PARK.TEMP_PH_QC(TRAJ.PARK.TEMP_PH ~= fv.bio & TRAJ.PARK.TEMP_PH_QC ~=4) = 1;
+                    pk_wrk_temp = TRAJ.PARK.TEMP_PH;
+                end
+            end
+            
+            [pk_phfree, pk_phtot] = phcalc(TRAJ.PARK.VRS_PH(~pk_nan), ...
+                TRAJ.PARK.PRES(~pk_nan), pk_wrk_temp(~pk_nan), TRAJ.PARK.PSAL(~pk_nan), ...
+                cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
+            
+            if isfield(cal.pH,'secondary_pcoefs')
+                [pk_phfree2, pk_phtot2] = phcalc(TRAJ.PARK.VRS_PH(~pk_nan), ...
+                    TRAJ.PARK.PRES(~pk_nan), pk_wrk_temp(~pk_nan), TRAJ.PARK.PSAL(~pk_nan),...
+                    cal.pH.k0, cal.pH.k2, cal.pH.secondary_pcoefs);
+                
+                tz_ph = TRAJ.PARK.PRES(~pk_nan) >= cal.pH.secondary_Zlimits(1) & ...
+                    TRAJ.PARK.PRES(~pk_nan) <= cal.pH.secondary_Zlimits(2);
+                
+                if cal.pH.secondary_Zlimits(1) == 0 % match bottom bound
+                    ind = find(TRAJ.PARK.PRES(~pk_nan) <= ...
+                        cal.pH.secondary_Zlimits(2),1,'last');
+                else
+                    ind = find(TRAJ.PARK.PRES(~pk_nan) >= ...
+                        cal.pH.secondary_Zlimits(1),1,'first');
+                end
+                free_offset =  pk_phfree(ind) - pk_phfree2(ind);
+                tot_offset  =  pk_phtot(ind)  - pk_phtot2(ind);
+                
+                pk_phfree(tz_ph) = pk_phfree2(tz_ph) + free_offset;
+                pk_phtot(tz_ph)  = pk_phtot2(tz_ph)  + tot_offset;
+            end
+            
+            TRAJ.PARK.PH_IN_SITU_FREE(~pk_nan)     = pk_phfree; % I param
+            TRAJ.PARK.PH_IN_SITU_FREE_QC(~pk_nan)  = fv.QC;
+            TRAJ.PARK.PH_IN_SITU_FREE_QC(PKQF_S | PKQF_T | PKQF_P) = 4;
+            TRAJ.PARK.PH_IN_SITU_TOTAL(~pk_nan)    = pk_phtot;
+            TRAJ.PARK.PH_IN_SITU_TOTAL_QC(~pk_nan) = 3;
+            TRAJ.PARK.PH_IN_SITU_TOTAL_QC(PKQF_S | PKQF_T | PKQF_P) = 4;
+            
+            PK_inf = isinf(TRAJ.PARK.PH_IN_SITU_FREE); % happens if S = 0
+            TRAJ.PARK.PH_IN_SITU_FREE(PK_inf)     = 20.1; %UNREAL #
+            TRAJ.PARK.PH_IN_SITU_FREE_QC(PK_inf)  = 4;
+            TRAJ.PARK.PH_IN_SITU_TOTAL(PK_inf)    = 20.1; %UNREAL #
+            TRAJ.PARK.PH_IN_SITU_TOTAL_QC(PK_inf) = 4;
+            
+            if isfield(QC,'pH')
+                QCD = [TRAJ.PARK.PRES(~pk_nan), pk_wrk_temp(~pk_nan), ...
+                    TRAJ.PARK.PSAL(~pk_nan), TRAJ.PARK.PH_IN_SITU_TOTAL(~pk_nan)];
+                TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED(~pk_nan) = ...
+                    apply_QC_corr(QCD, d.sdn, QC.pH);
+                TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_QC(~pk_nan)  = 1;
+                TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_QC(PKQF_S | PKQF_T | PKQF_P)  = 4;
+                TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED(PK_inf) = 20.1; %UNREAL #
+                TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_QC(PK_inf) = 4;
+                
+                step_tmpPH = find(QC.pH.steps(:,2)<=INFO.cast,1,'last');
+                
+                juld_pk =   TRAJ.PARK.SDN-datenum(1950,01,01); %convert to JULD
+                juld_end = QC.date - datenum(1950,01,01); %date at last DMQC, converted to JULD
+                
+                TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = 0.01 + TRAJ.PARK.DOXY_ADJUSTED_ERROR.*0.0016;
+                
+                if juld_pk>juld_end
+                    TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_ERROR + 0.03.*(juld_pk-juld_end)./365; % check adj error: should get greater as date changes along park sampling
+                end
+                
+                TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(pk_nan) = fv.bio;
+                
+                if regexp(MBARI_ID_str, bad_O2_filter, 'once')
+                    [TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_ERROR, INFO.PH_SCI_CAL_COMtmp,~,~] = Reassign_ArgoSpecs_LIReqn8(MBARI_ID_str,INFO.cast,TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_ERROR,INFO.PH_SCI_CAL_COM,0,0);
+                end
+                
+                % TEMPORARY ADJUSTED pH FIX 08/02/2016
+                % FLOATVIZ pH CALCULATED WITH OLDER FUNCTION. QC STEPS
+                % DETERMINED WITH OLD pH VALUES, BUT A CONSTANT OFFSET
+                % JP pH - FV pH = 0.0167)
+                % Commented out 9/28/16 doing Qc on JP files now
+                %             disp(['!!!! APPLYING TEMPORARY pH CORRECTION TO ADJUSTED',...
+                %                   ' VALUES (adj_pH = adj_pH - 0.0167)']);
+                %             LR.PH_IN_SITU_TOTAL_ADJUSTED(~lr_nan) = ...
+                %                 LR.PH_IN_SITU_TOTAL_ADJUSTED(~lr_nan) - 0.0167; % TEMPORARY FIX
+            end
+            
+            t_bio    = TRAJ.PARK.PH_IN_SITU_TOTAL ~= fv.bio;
+            chk_wrkT = pk_wrk_temp ~= fv.bio & (pk_wrk_temp < RCR.T(1) ...
+                | pk_wrk_temp > RCR.T(2));
+            tST     = TRAJ.PARK.PSAL_QC == 4 | chk_wrkT | TRAJ.PARK.PRES_QC ==4; % Bad S or T will affect pH
+            t_chk   = t_bio & (TRAJ.PARK.PH_IN_SITU_TOTAL < RCR.PH(1)| ...
+                TRAJ.PARK.PH_IN_SITU_TOTAL > RCR.PH(2) | tST);
+            
+            TRAJ.PARK.PH_IN_SITU_FREE_QC(t_chk) = 4;
+            TRAJ.PARK.PH_IN_SITU_TOTAL_QC(t_chk) = 4;
+            TRAJ.PARK.VRS_PH_QC(t_chk) = 4;
+            
+            t_bio   = TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
+            tST     = TRAJ.PARK.PSAL_ADJUSTED_QC == 4 | chk_wrkT | TRAJ.PARK.PRES_ADJUSTED_QC == 4; % Bad S or T will affect pH
+            t_chk = t_bio & (TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1)| ...
+                TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2) | tST);
+            TRAJ.PARK.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_chk) = 4;
+            
+            
+            clear pk_phfree pk_phtot QCD
+        end
+    end
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    %%%%%%%%%            END OF PARK DATA PROCESSING            %%%%%%%%%%%
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     
-    
-    
+    %%
     % *********************************************************************
     % SAVE THE PROFILE AS WMO_ID#.PROFILE.mat
     % THE *.mat file will contain 3 structures:
@@ -2432,8 +3358,12 @@ for msg_ct = 1:size(msg_list,1)
     %   info	float info that may be of use for ARGO data stream, also
     %           used to build ODV compatible text file from *.mat files
     % *********************************************************************
-    if exist('AIR_O2', 'var')
-        INFO.AIR_O2   = AIR_O2; % [p t s phase cor_phase uM uMsat pO2]
+    if exist('SurfaceObs', 'var')
+        TRAJ.SurfaceObs   = SurfaceObs; % [p t s phase cor_phase uM uMsat pO2]
+    end
+    if exist('OptodeAirCal', 'var')
+        % [sdn bladderPress P p t s phase cor_phase uM uMsat pO2]
+        TRAJ.OptodeAirCal   = OptodeAirCal;
     end
     
     %     WMO_chk = 0;
@@ -2445,13 +3375,16 @@ for msg_ct = 1:size(msg_list,1)
     %         WMO_chk = 1;
     %     end
     
-    
     save_str = [dirs.mat, WMO,'\', WMO,'.', cast_num,'.mat'];
-    save(save_str,'LR','HR','INFO');
+    if exist('TRAJ','var')
+        save(save_str,'LR','HR','INFO','TRAJ');
+    else
+        save(save_str,'LR','HR','INFO');
+    end
+    
     %     if msg_ct == 1
     %         copyfile(fp_cal, [dirs.mat, WMO,'\']); % copy over cal file
     %     end
-    
     
 end
 copyfile(fp_cal, [dirs.mat, WMO,'\']) % copy over cal file
@@ -2471,16 +3404,4 @@ end
 
 tf_float.status = 1;
 %end
-
-
-
-
-
-
-
-
-
-
-
-
 
