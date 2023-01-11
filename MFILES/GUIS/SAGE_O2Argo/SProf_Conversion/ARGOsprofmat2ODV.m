@@ -1,4 +1,4 @@
-function tf_odv = ARGOsprofmat2ODV(f_info, outputDIR)
+function tf_odv = ARGOsprofmat2ODV(WMO, DAC, local_Spath, outputDIR)
 
 % ************************************************************************
 % PURPOSE: 
@@ -9,20 +9,16 @@ function tf_odv = ARGOsprofmat2ODV(f_info, outputDIR)
 %
 %
 % USAGE EXAMPLE:
-%           f_info.WMO        = '6901580';
-%           f_info.fn         = '6901580_Sprof.nc';
-%           f_info.dac_path   = '/ifremer/argo/etc/argo-synthetic-profile/';
-%           f_info.local_path = 'C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\DATA\ARGO_REPO\6901580\';
-%           f_info.dac = 'coriolis';
-%           tf_odv = ARGOsprofmat2ODV(f_info, f_info.local_path)
+%           WMO        = '6901580';
+%           DAC = 'coriolis';
+%           local_Spath = 'C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\DATA\ARGO_REPO\6901580\';
+%           tf_odv = ARGOsprofmat2ODV(WMO,DAC,local_Spath, local_Spath)
 %
 % INPUTS:
 %   f_info: a structure containing the following:
-%       f_info.WMO = WMO number (string) of float of interest 
-%       f_info.fn = Sprof file name of interest (to convert)
-%       f_info.dac_path = path to GDAC where Sprof file lives
-%       f_info.local_path = Local path where Sprof file lives
-%       f_info.dac = dac that 'owns' the float.
+%       WMO         = WMO number (string) of float of interest 
+%       local_Spath = Local path where Sprof file lives
+%       DAC         = dac that 'owns' the float.
 %
 %   outputDIR =  A string defining where the
 %               ODV ascii file will be written. 
@@ -37,10 +33,22 @@ function tf_odv = ARGOsprofmat2ODV(f_info, outputDIR)
 %              QF to ODV QF conversion, added missing position interpolation,  Also renamed to "ARGOsprofmat2ODV.m" to distinguish from MBARI internal version.
 % 3/25/21 - TM - Forced all fopen writes to UTF-8, because that is the
 %    new default for Matlab 2020 and better cross platform sharing
-% TESTING
-%dirs =[]
-
+% 01/11/23 - TM - Simplified user inputs just a bit...
 %
+%--------------------------------------------------------------------------
+%
+% setup f_info structure (inputs have been simplified, so let's build
+% f_info here, as it's still required in the subroutine).
+if ischar(WMO)~=1
+    f_info.WMO = num2str(WMO);
+else
+    f_info.WMO = WMO;
+end
+f_info.fn         = [f_info.WMO,'_Sprof.nc'];
+f_info.dac = DAC;
+f_info.local_path = local_Spath;  %ie 'C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\DATA\ARGO_REPO\6901580\';
+
+
 d = ARGOSprof2mat(f_info);
 info = d.INFO;
 rdata = d.data; % row data from Sprof netcdf
@@ -93,7 +101,6 @@ QC_lat(tnan_lat) = 99;
 rhdr    = [rhdr(1:iLAT),'Lat_QC', rhdr(iLAT+1:raw_c)]; % raw data
 rdata   = [rdata(:,1:iLAT),QC_lat , rdata(:,iLAT+1:raw_c)]; % ARGO QF's,
 [raw_r,raw_c] = size(rdata);
-
 [~,ia,~] = unique(rdata(:,2)); % unique casts
 pos_fix  = rdata(ia,1:6);   % WMO cast, profile, SDN, LON, LAT (position subset)
 

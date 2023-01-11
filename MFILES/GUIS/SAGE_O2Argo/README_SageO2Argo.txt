@@ -9,12 +9,12 @@ This is a text file with notes on how to effectively utilize the SAGE-O2 GUI for
 	SEAWATER (https://www.mathworks.com/matlabcentral/linkexchange/links/741)
 	nctoolbox-1.1.3 (https://github.com/nctoolbox/nctoolbox)
 3. Paths: The GUI runs best if you place the "ARGO_PROCESSING" directory in C:\Users\XXXX\Documents\MATLAB\ (where XXXX is your username)
-4. This GUI accesses the following Argo float file types, you must have each for each float of interest (although *BRtraj.nc is not needed for floats without air-cal).  I suggest storing them in float-specific subdirectories within a master folder repository.  For example, I keep mine in, C:\Users\tmaurer\Documents\ARGO\EXTERNAL_DACs\DAC_files\, with subdirectories 6900889, 6900890, etc.
-	*Mprof.nc
+4. This GUI accesses the following Argo float file types, you must have each for each float of interest (although *BRtraj.nc is not needed for floats without air-cal).  I suggest storing them in float-specific subdirectories within a master folder repository.  For example, I keep mine in, C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\DATA\ARGO_REPO\, with subdirectories ie 6900889, 6900890, etc.
+	*Sprof.nc
 	*meta.nc
 	*BRtraj.nc
 5. This GUI is most useful for floats that have produced 5 or more profiles.
-6. Comparisons to climatology are done using NCEP and ERA-interim reanalysis products.  Note that ERA-interim has an update delay of close to 4 months (longer than NCEP).  Due to the update delay, connection speeds, and access requirements at ECMWF, ERA datasets are no longer actively supported in this GUI.  Pre-downloaded datasets until March2017 are stored in \ARGO_PROCESSING\DATA\ERA_INT.  To augment this repository with more recent data than the time of this writing, you may try visiting http://apps.ecmwf.int/datasets/data/interim-full-daily/levtype=sfc/ NCEP data is stored C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\DATA\NCEP_TEMPORARY.  To change this directory, or download NCEP data in real time within the GUI, see lines 90-91 in C:\Users\tmaurer\Documents\MATLAB\ARGO_PROCESSING\MFILES\FLOATS\getNCEP.m
+6. Comparisons to climatology are done using NCEP and WOA products. NCEP data is stored C:\Users\...\Documents\MATLAB\ARGO_PROCESSING\DATA\NCEP_TEMPORARY.  To change this directory, or download NCEP data in real time within the GUI, see example NCEP path assignments in C:\Users\...\Documents\MATLAB\ARGO_PROCESSING\MFILES\FLOATS\getNCEP.m
 7.  Steps to running GUI:
 	PREP GUI (TO BE DONE PRIOR TO FIRST USE):
 		a. install appropriate toolboxes (see 1., 2.)
@@ -23,7 +23,7 @@ This is a text file with notes on how to effectively utilize the SAGE-O2 GUI for
 		d. consider climatology reference preferences (if your float does not take air-cal measurements, GUI will default to World Ocean Atlas).
 	PREP DATA (TO BE DONE FOR EACH NEW FLOAT YOU'D LIKE TO VISUALIZE)
 		a. organize files defined in 4., may need to download from GDAC (ftp.ifremer.fr; or usgodae.org)
-		b. convert *Mprof.nc to ODV*.TXT by running mprof2mat.m followed by mprofmat2ODV.m (function, see inputs in file).  
+		b. convert *Sprof.nc to ODV*.TXT by running ARGOsprofmat2ODV.m (located in ...\ARGO_PROCESSING\MFILES\GUIS\SAGE_O2Argo\SProf_Conversion\, see inputs in file).  NOTE that this process takes some time...so you may want to run a loop for all floats you are interested in viewing in the background at your convenience, in advance of a DMQC session.  
 		c. be sure TXT file produced in b. is stored in float-specific directory described in 4.
 	RUN GUI
 		a. type >> sageO2Argo
