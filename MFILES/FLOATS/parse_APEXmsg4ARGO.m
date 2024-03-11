@@ -12,8 +12,8 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %	msg_name  = string of file name or  path\file name
 %
 % OUTPUTS:
-%       data =  a structure of the data and headers. Size varies depending
-%               on data flag.
+%    data =  a structure of the data and headers. Size varies depending
+%           on data flag.
 %           data.FwRev  = Firmware revision number
 %           data.CpActivationP =  Activation pressure (dbar) for cp?
 %           data.FlbbMode = Flag in newer firmware 1=Yes,0=NO,[] no exist
@@ -21,14 +21,14 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %           data.lr_d   = low res data matrix
 %           data.hr_hdr = high res header cell array
 %           data.hr_d   = high res data matrix
-%           data.pk_hdr = park sample header cell array               
-%           data.pk_d   = park sample data matrix                            
+%           data.pk_hdr = park sample header cell array
+%           data.pk_d   = park sample data matrix
 %           data.cast   = profile number
 %           data.sdn    = profile termination date [matlab sdn]
 %           data.ice_flag = UnderIceEvasion y/n
 %           data.ice_hex = UnderIceEvasion status for the previous 8 cycles
 %           data.gps    = gps location fix [lon, lat]
-%			data.irid   = iridium location fix (newer floats)
+%           data.irid   = iridium location fix (newer floats)
 %           data.air    = Air oxygen measurements [Temp phase (Rphase)]
 %           data.EOT    = flag count of EOT occurances
 % EXAMPLES:
@@ -61,6 +61,16 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %   02/07/22 - EC added parser section for ParkPt and ParkPtFLBB
 %   02/19/22 - EC added IceEvasionRecord in 8-digit and current status flag
 %   04/27/22 - TM; incorporated the iridium fix positioning into parser (newer floats).
+%   05/16/23 - JP; FL2BB parsing added (park & profile), 2 fluor channels ch0 = 470nm, ch1 = 435nm
+%              also added code to capture park pressure. A little clean up
+%              to processing to reduce overhead & spped up a bit
+%              (hopefully)
+%   05/16/23 - TM; modifications for 6-sensor APEX with OCR.  OCR data
+%                  exists in low-res data an optode-air-cal samples.
+%   06/08/23 - JP - Minor fixes to clear bugs incurred from JP's previuos
+%              updates
+%   06/14/23 - TM; small bug fix to the single air-measurement extraction
+%   section (formatting irregularities on the SBS83 test floats!!)
 
 %----------------
 % FOR TESTING
@@ -76,6 +86,17 @@ function data = parse_APEXmsg4ARGO(msg_file)
 
 % 10/28/2020 JP testing
 % msg_file = 'c:\temp\12652.036.msg';
+
+% 07/05/2022 9095 cycle 125 gps fix bug testing
+% msg_file = 'c:\temp\9095.125.msg';
+
+% 05/16/2023 20974 FL2BB msg file parser testing
+%msg_file = 'c:\temp\20974.006.msg'; % FL2BB test msg
+%msg_file = 'c:\temp\9630.004.msg';
+%msg_file = 'c:\temp\9630.000.msg';
+%msg_file = 'c:\temp\20974.010.msg'; % 6 sensor test msg w OCR
+%msg_file = 'c:\temp\19806.040.msg';
+%msg_file = 'c:\temp\12688.074.msg';
 %----------------
 
 
@@ -93,8 +114,8 @@ function data = parse_APEXmsg4ARGO(msg_file)
 
 
 % PREDIMENSION OUTPUT STRUCTURE
-data.pk_hdr = {}; % park data header cell array                 % NEW NEW
-data.pk_d   = []; % park data matrix                                     % NEW NEW
+data.pk_hdr = {}; % park data header cell array
+data.pk_d   = []; % park data matrix
 data.lr_hdr = {}; % low res header cell array
 data.lr_d   = []; % low res data matrix
 data.hr_hdr = {}; % high res header
@@ -107,48 +128,50 @@ data.irid   = []; % iridium location fix (only some floats)
 data.air    = []; % Air oxygen measurements
 data.aircal = []; % air calibration measurements{ w/ & w/o air inflation
 data.FwRev  = [];
+data.FwMod  = []; %Apf9 or Apf11?
 data.CpActivationP = [];
 data.FlbbMode = NaN;
-data.CTDtype = '';
-data.CTDsn   = '';
-data.EOT     = 0; % complete message file flag
-data.ice_flag = [];                 % NEW
-data.ice_hex = [];                   % NEW
+data.CTDtype  = '';
+data.CTDsn    = '';
+data.EOT      = 0; % complete message file flag
+data.ice_flag = [];
+data.ice_hex  = []; 
+data.ParkPressure  = [];
 
-f_aircal = '%*s%s%s%s%s%*f%f%f%f%f%f';
-f83_aircal = '%*s%s%s%s%s%*f%f%f%f%f';
+f_aircal         = '%*s%s%s%s%s%*f%f%f%f%f%f';
+f83_aircal       = '%*s%s%s%s%s%*f%f%f%f%f';
+sixsensor_aircal = '%*s%s%s%s%s%*f%f%f%f%f%f%8x%8x%8x%8x';
+high_res_format  = '%4x%4x%4x%2x';
 
+pk_ct = 0; % park sample counter
+lr_ct = 0; % low res sample counter
 
 % ************************************************************************
 % GET HEADER ROW & COLUMN INDICES FOR FLOAT VARS
 % ************************************************************************
-fid = fopen(msg_file);
-
+fid   = fopen(msg_file);
 tline = '';
 % header line starts with '$       p        t        s '
 % find out if the file is complete/ whether or not to proceed
 while isempty(regexp(tline,'p\s+t\s+s\s+','once')) % # find header line
     tline = fgetl(fid);
-    if isnumeric(tline)
+    if isnumeric(tline) % end of file & fgetl returns -1
         disp(['Incomplete message file! No profile data for ',msg_file])
         fclose(fid);
         return
     end
 end
-fclose(fid);
 
+% split by white spece blocks
+float_vars = regexp(tline,'\s+','split');
+float_vars = float_vars(2:end)'; % loose the dollar sign capture
 
-ind1       = regexp(tline,'\$\s+p\s+t\s+s','once'); % label title line
-% extract headers in a cell array
-msg_hdr    = textscan(tline(ind1+1:end),'%s');
-float_vars = msg_hdr{1,1}; % r x 1 cell array with header variables
+tf_OCR     = strncmp(float_vars,'Ocr',3); % logical size of float_vars
+OCR_mode   = sum(tf_OCR) >0;
 
 % BUILD LOW RES DATA FORMAT STRING - VARIES W/ FLOAT
-low_res_format  = '';
-for i =1:length(float_vars)
-    low_res_format = [low_res_format,'%f '];
-end
-clear ind1 i tline fid msg_hdr
+low_res_format = [repmat('%f', 1, size(float_vars(~tf_OCR),1)), ...
+    repmat('%8x', 1, size(float_vars(tf_OCR),1))];
 
 % ************************************************************************
 % ************************************************************************
@@ -156,40 +179,47 @@ clear ind1 i tline fid msg_hdr
 % ************************************************************************
 % ORDER = header, parkPt, termination time, cp data, gps fix, surf obs
 % ************************************************************************
-fid   = fopen(msg_file);
-tline = fgetl(fid);% initialize with first line
+frewind(fid); % go back to top of file
+tline = ' '; % reinitialize
 
 % FILE EXISTS BUT NO DATA OR NON STANDARD FILE FORMAT & FILE ENDED
-if tline == -1 % Go to next i
-    disp('File exists but empty inside - moving to next message file.')
-    fclose(fid);
-    data = []; % function will return empty value if no msg data
-    return;
-end
+% *** I don't think this ever happens now jp 05/17/23 ***
+% if tline == -1 % Go to next i
+%     disp('File exists but empty inside - moving to next message file.')
+%     fclose(fid);
+%     data = []; % function will return empty value if no msg data
+%     return;
+% end
 
 % CAST # FROM MESSAGE FILE NAME
-str      = regexp(msg_file,'\d{3}(?=\.msg)','match'); % pull the file name
-
-data.cast = str2double(str{1}); % cast # from file name
-clear str
+data.cast = str2double(regexp(msg_file,'\d{3}(?=\.msg)','match','once'));
 
 % ************************************************************************
 % ************************************************************************
 % PARSING MSG FILE
 % ************************************************************************
 % ************************************************************************
-data_chk   = 0;
+data_chk    = 0;
 alt_sdn_chk = 0;
-msg_task   = 'profile time';
-low_res    = [];
-high_res   = [];
-CpActP     = [];
-FwRev      = [];
-FlbbMode   = NaN;
-pk_data    = []; 
-ice_flag = 0;
-ice_hex = [];
+msg_task    = 'profile time';
+low_res     = [];
+high_res    = [];
+CpActP      = [];
+FwRev       = [];
+FwMod      = [];
+FlbbMode    = NaN;
+pk_data     = [];
+ice_flag    = 0;
+ice_hex     = [];
+pk_pres     = [];% $ ParkPressure(1000) [dbar]
 
+pk_ct   = 0;
+pk_chk  = 0;
+
+% col ct from format line & APEX should never have more than 70 LR samples
+low_res = nan(100, size(regexp(low_res_format,'\%'),2)); 
+
+% *************************************************************
 % STEP THROUGH PARK SAMPLES TO GET TO PROFILE TERMINATION TIME
 % AND START OF LOW RES SAMPLES
 
@@ -207,78 +237,72 @@ while ischar(tline)                                 % while each line starts w/ 
         CpActP = str2double(regexp(tline,'\d+','once','match'));
         clear CpAct_ind
     end
-    
+    % TM, added 6/20/23
+    FwMod_ind = regexp(tline,'Apf', 'once');
+    if ~isempty(FwMod_ind) % Firmware Model config
+        FwMod = regexp(tline,'(?<=Apf)\w+','once','match');
+        FwMod = ['Apf',FwMod];
+        clear FwMod_ind
+    end
+
     FlbbMode_ind = regexp(tline,'\$ FlbbMode', 'once');
     if ~isempty(FlbbMode_ind) % flag may exist stating whether flbb on
         FlbbMode = str2double(regexp(tline,'\d+','once','match'));
         clear FlbbMode_ind
     end
+
+    if ~isempty(regexp(tline,'\$\sParkPressure','once')) % find pkPressure
+        data.ParkPressure = str2double(regexp(tline,'\d+','once','match'));
+    end
+
     % ********************************************************************
     % ********************************************************************
     
     % GET PARK DATA
     % PARKPT
-    if regexp(tline,'^ParkPt\:', 'once')            % If the line starts w ParkPt (APEX)
-        
-        data.pk_d = regexp(tline,'\s+', 'split');% chunk up ParkPt line by whitespace
-        
-        if size(data.pk_d, 2) == 9                     % check for standard col # for ParkPt
-            
-            data.pk_hdr  = {'Date', 'p', 't'};          % manually set headers
-            pkdat = data.pk_d;
-            
-            d_str = [pkdat{2},' ',pkdat{3},' ',pkdat{4},' ', pkdat{5}]; %collect date chunks
-            try
-                sdn = datenum(d_str,'mmm dd yyyy HH:MM:SS');       % format date
-            catch
-                sdn = nan;
+    if regexp(tline,'^ParkPt', 'once') % a park data line of some flavor
+        pk_cell = regexp(tline,'\S+', 'match'); % chunk up ParkPt line by char groups (Big \S)
+
+        % Do some one time tests. There will always be a LR profile header
+        % row if you get here. Earlier floats had FLBB profile data but not park data
+        % Figure out park data flavor
+        if pk_chk == 0
+            pk_chk = 1;
+            if regexp(tline,'^ParkPt\:', 'once')
+                pk_hdr        = {'Date' 'p' 't'}; % T & S only
+                valid_pk_cols = 9;
+                keep_idx      = 8:9;
+            elseif regexp(tline,'^ParkPtFlbb\:', 'once') & sum(strcmp(float_vars,'FSig')) == 1
+                pk_hdr        = {'Date' 'p' 't', 'Fsig' 'Bbsig' 'Tsig'};
+                valid_pk_cols = 12;
+                keep_idx      = 8:12;
+            elseif regexp(tline,'^ParkPtFlbb\:', 'once') & sum(strcmp(float_vars,'FSig[0]')) == 1
+                pk_hdr        = {'Date' 'p' 't' 'FSig[0]' 'FSig[1]' 'BbSig'  'TSig'};
+                valid_pk_cols = 13;
+                keep_idx      = 8:13;
             end
-            
-            Pk_p = str2double(pkdat{8});
-            Pk_t = str2double(pkdat{9});
-            pk_keep = [Pk_p Pk_t];
-            
-            %                 pk_data = [pk_data; sdn pkdat{8}, pkdat{9}];     % fill pk data (empty matrix created before) with date&data
-            pk_data = [pk_data; sdn pk_keep];
-            
-        else
-            disp(['Uncharacteristic number of ParkPt columns, check for incomplete msg file'])
+            pk_data = ones(300,size(pk_hdr,2))*NaN; % predim output
         end
-        
-        % PARKPT FLBB
-    elseif regexp(tline,'^ParkPtFlbb\:', 'once')         % If the line starts w ParkPtFLBB (APEX)
-        
-        
-        %%%%%%%%%%%%%%%%%%%%%%%
-        data.pk_d = regexp(tline,'\s+', 'split');% chunk up ParkPt line by whitespace
-        
-        if size(data.pk_d, 2) == 12                     % check for standard col # for ParkPt
-            
-            data.pk_hdr  = {'Date', 'p', 't', 'Fsig', 'Bbsig', 'Tsig'};          % manually set headers
-            pkdat = data.pk_d;
-            
-            d_str = [pkdat{2},' ',pkdat{3},' ',pkdat{4},' ', pkdat{5}]; %collect date chunks
+
+        if size(pk_cell,2) ~= valid_pk_cols % valid col lengths defined above loop
+            disp(['Uncharacteristic number of ParkPt columns check ',...
+                'for incomplete msg file'])
+            continue % If not a valid park line you can go to the next line
+        end
+
+        d_str = strtrim(sprintf('%s ',pk_cell{2:5}));
+        try
             sdn = datenum(d_str,'mmm dd yyyy HH:MM:SS');       % format date
-            
-            Pk_p = str2double(pkdat{8});
-            Pk_t = str2double(pkdat{9});
-            Pk_Fs = str2double(pkdat{10});
-            Pk_Bbs = str2double(pkdat{11});
-            Pk_Ts = str2double(pkdat{12});
-            
-            pk_keep = [Pk_p Pk_t Pk_Fs Pk_Bbs Pk_Ts];  % assemble desired output vars
-            
-            pk_data = [pk_data; sdn pk_keep];  % assemble full output structure
-        else
-            disp(['Uncharacteristic number of ParkPt columns, check for incomplete msg file'])
+        catch
+            sdn = nan;
         end
-        
-        %%%%%%%%%%%%%%%%%
-        
+
+        pk_ct = pk_ct+1;
+        pk_data(pk_ct,:) = [sdn, str2double(pk_cell(keep_idx))];
     end
     
-    
     % ********************************************************************
+	% Below block turns on a discrete profile block switch looking for a couple flavors
     % ********************************************************************
     
     % this set of if statements is CONFUSING ME
@@ -311,23 +335,13 @@ while ischar(tline)                                 % while each line starts w/ 
             msg_task   = 'profile data';
             break
         end
-        
-        % ********************************************************************
-        % 04/28/2021 JP - this test is never reached becuase the while statement
-        % catches the -1 before the last elseif block
-        %     elseif isnumeric(tline) % tline = -1, end of file w/o termination time
-        %         disp(['No termination time found for ',file_name, ' NO DATA!'])
-        %         data = [];
-        %         return
     end
     tline = fgetl(fid);
 end
 
-
 % EXTRACT PROFILE DATA
 while ischar(tline)
-    tline = strtrim(tline);
-    
+    tline = strtrim(tline);  
     
       % ICE INFO        
     IceEvas_ind = regexp(tline,'IceEvasionRecord','once');
@@ -355,12 +369,21 @@ while ischar(tline)
             if isempty(regexp(tline,'^#','once')) % # means end of low res
                 ind1 = regexp(tline,'\(Park Sample\)$','once');
                 if isempty(ind1) && ~isempty(tline)
-                    tmp = textscan(tline,low_res_format,1,...
-                        'CollectOutput',1);
-                    low_res = [low_res; tmp{1}]; % tmp1: p, t, s, etc
+                    %lr_ct = lr_ct +1;
+                    tmp = sscanf(tline,low_res_format)';
+                    % jp 06/01/23 must have data & data line must have
+                    % PRES
+                    if ~isempty(tmp) && ~isnan(tmp(1))
+                        lr_ct = lr_ct +1;
+                        low_res(lr_ct,1:length(tmp)) = tmp;
+                    elseif ~isempty(tmp) && isnan(tmp(1)) 
+                        fprintf(['Discrete data line has no PRES value ',...
+                            'for %s and will be excluded\n'],msg_file);
+                    end
+                    %low_res(lr_ct,1:length(tmp)) = tmp;
                 end
-                %elseif ~isempty(regexp(tline,'Sbe41cpSerNo','once')) %cp hdr
             elseif ~isempty(regexpi(tline,'^#.+sbe','once')) %cp hdr
+
                 if alt_sdn_chk == 1 % 04/28/2021 JP no teminated time, get from SBE hdr
                     str = regexp(tline,'(?<=\#\s+)[\w\s\:]+(?=\s+Sbe)', ...
                         'once','match');
@@ -378,7 +401,6 @@ while ischar(tline)
         case 'cp_data'     % EXTRACT CP SAMPLE DATA
             % find cp data line & make sure hex characters only
             if length(tline) == 14 % right % of chars
-                high_res_format = '%04x%04x%04x%02x';
                 ind1 = regexp(tline,'[A-Z0-9]{14}','once'); % hex chars?
                 if ~isempty(ind1)
                     tmp = sscanf(tline,high_res_format);
@@ -399,13 +421,22 @@ while ischar(tline)
                 % appended further down.  (Perhaps a better way to do
                 % this!)
                 if (regexp(tline,'^OptodeAirCal','once'))
+                    if OCR_mode
+                        f_aircal = sixsensor_aircal; %sixsensor APEX with OCR!
+                    end
                     ac_tmp = textscan(tline,f_aircal,1,'collectoutput',1);
                     d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
                         ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
                     if ~isempty(ac_tmp{1,2})
-                        data.aircal =[data.aircal; ...
-                            datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
-                            ac_tmp{1,2}];
+                        if OCR_mode
+                            data.aircal =[data.aircal; ...
+                                datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+                                ac_tmp{1,2}, double(ac_tmp{1,3})];
+                        else
+                            data.aircal =[data.aircal; ...
+                                datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+                                ac_tmp{1,2}];
+                        end
                     end
                     clear ac_tmp d_str
                 end
@@ -456,7 +487,7 @@ while ischar(tline)
             
             % complete surf line is bounded by curly braces, count to check
             if ~isempty(regexp(tline,'^(SurfaceObs)','once')) && ...
-                    size(regexp(tline,'{|}'),2) == 2
+                    size(regexp(tline,'{|}'),2) >= 2 % why is this hear?
 
                 % use slash as delimiter to break up string
                 stmp = regexp(tline,'/','split');
@@ -481,16 +512,19 @@ while ischar(tline)
                     
                 % This is a patch for surface obs typo in msg file, 19746
                 % find numberC in middle
+                
                 elseif num_ct == 3 & regexp(O2_str,'\s[\d\.]+C\s', 'once')
                     tmp = sscanf(O2_str,'%f %fC %f')'; % T TPh RPh
                     
                 elseif num_ct == 3 % 3 #'s & "C" must be at begining
                     tmp = sscanf(O2_str,'%fC %f %f')'; % T TPh RPh
-                elseif num_ct == 2 && tf_endC % 2 #'s & "C" at end of string
+                elseif num_ct == 2 && tf_endC % 2 #'s & "C" at end of string; This is for the 2 APEX test floats (19065, 19727) with SBE83 -- they had the 'C' placed at the end next to the phase (erroneously).  These are anomalies. TM 6/14/23
                     tmp = sscanf(O2_str,'%f %fC')'; % phase, temp
-                    tmp = tmp([2,1]);            % temp, phase
+                    if ~strcmp(FwMod,'Apf11')
+                        tmp = tmp([2,1]);            % temp, phase % TM 6/20/23, for older 3830 with surfaceobs!  These are Apf9i.  ie 7620.
+                    end 
                 elseif num_ct == 2
-                    tmp = sscanf(O2_str,'%fC %f')'; % temp, phase
+                    tmp = sscanf(O2_str,'%fC %f')'; % temp, phase %This is the configuration for the 5-sensor APEX with SBS83 (17465)
                 else
                     disp('Could not parse surf obs')
                 end
@@ -499,13 +533,22 @@ while ischar(tline)
             
             
             if (regexp(tline,'^OptodeAirCal','once'))
+                if OCR_mode
+                    f_aircal = sixsensor_aircal; %sixsensor APEX with OCR!
+                end
                 ac_tmp = textscan(tline,f_aircal,1,'collectoutput',1);
                 d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
                     ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
                 if ~isempty(ac_tmp{1,2})
-                    data.aircal =[data.aircal; ...
-                        datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
-                        ac_tmp{1,2}];
+                    if OCR_mode
+                        data.aircal =[data.aircal; ...
+                            datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+                            ac_tmp{1,2}, double(ac_tmp{1,3})];
+                    else
+                        data.aircal =[data.aircal; ...
+                            datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+                            ac_tmp{1,2}];
+                    end
                 end
                 clear ac_tmp d_str
             end
@@ -569,20 +612,33 @@ clear tmp t0 t_hi t_low
 % ************************************************************************
 %  FILL OUTPUT STRUCTURE
 % ************************************************************************
+if pk_ct > 0 % Park data exist
+    data.pk_hdr  = pk_hdr;
+    data.pk_d    = pk_data(1:pk_ct,:);
+else
+    fprintf('No park data were detected for this file: %s\n', msg_file);
+    data.pk_d =[];
+end
+
+
 if isempty(low_res) && isempty(high_res)
     disp(['No data found in ',msg_file])
 else
     data.FwRev         = FwRev;
+    data.FwMod         = FwMod;
     data.CpActivationP = CpActP;
     data.FlbbMode      = FlbbMode;
-    data.ice_flag = ice_flag;                 % NEW
-    data.ice_hex = ice_hex;                   % NEW
+    data.OCRMode       = OCR_mode;
+    data.ice_flag      = ice_flag;                 % NEW
+    data.ice_hex       = ice_hex;  
+    data.ice_hex       = ice_hex; % NEW
     
-    if ~isempty(low_res)
-        tnan = all(isnan(low_res(:,1:3)),2); % MISSING PT&S?
+    if ~all(isnan(low_res(:)))
+    %if ~isempty(low_res)
+        tnan            = all(isnan(low_res(:,1:3)),2); % MISSING PT&S?
         low_res(tnan,:) = []; % If no PTS remove line
-        data.lr_hdr = float_vars;
-        data.lr_d = low_res;
+        data.lr_hdr     = float_vars;
+        data.lr_d       = low_res(1:lr_ct,:);
     else
         disp(['No low resolution data found for ',msg_file])
     end
@@ -597,13 +653,8 @@ else
     else
         disp(['No high resolution data found for ',msg_file])
     end
-    
-%     % Check ParkPt data status               TEST/UNCOMMENT
-%         if ~isempty(pk_data)                                      % is it full
-            data.pk_d = pk_data;
-%         else  disp([msg_file, ' park data is empty'])  % is it empty
-%         end
 end
+
 
 clearvars -except data 
 

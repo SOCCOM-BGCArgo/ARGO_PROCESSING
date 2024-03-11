@@ -62,6 +62,17 @@ function d = MBARI_float_list(dirs)
 %                for  20520 (5906483) for which there are no fixes for the first 3+
 %                cycles
 %   11/14/2022 - TM: Added list exceptions for upcoming redeployment of 18340 off the Palmer.
+%   02/13/2023 - JP: Added exception table for floats with no starting fix.
+%                The table suplies a position fix. This can eventually be
+%                used in our processing to add interpolated positions
+%   05/24/2023 - TM: Added NetCDF builder "Annie" types 15-17 (for new APEX test floats)
+%   07/24/2023 - TM: Moved to MBARI url for status table links!
+%   08/24/2023 - JP: Added 'ua21105' to the missing_pos cell array (missing 1st cycle position)
+% % 02/01/2024 TM, modifications in support of ss4003 Bfile type - solos
+% % 02/22/2024 TM, Added "R" option for dead_float_exp variable (was missing and 0949 on the non-program table was translating to active on the MBARI-float-list)
+
+% are still hard-coded!!  Not the best....
+
 
 % *************************************************************************
 % TESTING
@@ -118,12 +129,15 @@ sio_wmo_fn  = [dirs.cal,'SIO_WMO_list.mat'];
 whoi_wmo_fn = [dirs.cal,'WHOI_WMO_list.mat'];
 
 % URL TO SHARON & TANYA FLOAT STATUS TABLES
+% TM July 24.2023, move to MBARI url for stats tables!!!
 %dirs.sio_stats    = 'http://soccom.ucsd.edu/floats/SOCCOM_float_stats.html';
-dirs.sio_stats    = 'http://soccom.ucsd.edu/SOCCOM_float_performance.html';
-dirs.gobgc_stats    = 'http://go-bgc.ucsd.edu/GOBGC_float_performance.html';
+%dirs.sio_stats    = 'http://soccom.ucsd.edu/SOCCOM_float_performance.html';
+%dirs.gobgc_stats    = 'http://go-bgc.ucsd.edu/GOBGC_float_performance.html';
+dirs.sio_stats    = 'https://www3.mbari.org/soccom/tables/SOCCOM_float_performance.html';
+dirs.gobgc_stats    = 'https://www3.mbari.org/gobgc/tables/GOBGC_float_performance.html';
 dirs.mbari_stats  = ['https://www3.mbari.org/chemsensor/', ...
     'MBARI_float_table/mbari_float_table.html'];
-dead_float_exp    = '^D|^dead|^MPD|^recover'; % change as needed
+dead_float_exp    = '^D|^dead|^MPD|^recover|^R'; % change as needed
 
 % *************************************************************************
 %                  REGULAR EXPRESSION FILTERS
@@ -145,11 +159,32 @@ special_case(6,:) = {'un0948B', 'NO_WMO_' , 'UW\n0948\', 0};
 special_case(7,:) = {'un1173' , 'NO_WMO_' , '\\atlas\chem\tripleO2float\n1173\', 0};
 special_case(8,:) = {'ua18340G' , '5906243' , 'duplicate\UW\f18340\', 1}; %original CA deployment with first GDF prototype
 special_case(9,:) = {'ua18340' , '5906543' , 'UW\f18340\', 1};
-%special_case(8,:) = {'ua19727', '5906027' , 'UW\f19727\', 0}; %SBE83 test float. 6/2/21 TM; Wait on pushing to Argo; need to do some parameter & type template checking...
-%special_case(9,:) = {'ua19065', '5906028' , 'UW\f19065\', 0}; %SBE83 test float. 6/2/21 TM; Wait on pushing to Argo; need to do some parameter & type template checking...
-%special_case(8,:) = {'ua19314', '5906446' , 'UW\f19314\', 0}; %OCR test float. 6/14/21 TM; Wait on pushing to Argo; need to do some parameter & type template checking...
+special_case(10,:) = {'ua21291', '5907061' , 'UW\f21291\', 0}; %FL2BB test float; 5/30/23 TM; Wait on pushing to Argo; need to sort out the aux dir transfer route
+special_case(11,:) = {'ua21910', '4903590' , 'UW\f21910\', 0}; %FL2BB test float; 5/30/23 TM; Wait on pushing to Argo; need to sort out the aux dir transfer route
+special_case(12,:) = {'ua19483', '5906481' , 'UW\f19843\', 0}; %Dual O2 test float; 12/5/23 TM; Wait on pushing to Argo; AOML & UW collaborating on RT & DM GDAC transfers per 12/5/23 email correspondence
+special_case(13,:) = {'ua19298', '5906482' , 'UW\f19298\', 0}; %Dual O2 test float; 12/5/23 TM; Wait on pushing to Argo; AOML & UW collaborating on RT & DM GDAC transfers per 12/5/23 email correspondence
 %special_case(9,:) = {'ua19191', '5906320' , 'UW\f19191\', 0}; %OCR test float. 9/16/21 TM; Wait on pushing to Argo; need to do some parameter & type template checking...
 % special_case(11,:) = {'ua8482', '5906041' , 'UW\f8482\', 0};
+
+
+% *************************************************************************
+%                  MISSING START FIXES
+% For floats with missing start lat & lon this table can be used
+% to fill in the blanks
+% *************************************************************************
+% MBARI_ID, WMO, LON, LAT, DATE & TIME, COMMENTS
+missing_pos(1,:) = {'ua12768' '5905634' -170.00 -71.01 '03/22/2018 095206' 'Position from 000.msg & time from 001.msg'};
+missing_pos(2,:) = {'ua20520' '5906483' -100.23  12.32 '01/09/2022 063856' 'Position from 000.msg & time from 001.msg'};
+missing_pos(3,:) = {'ua17545' '5906555' -144  -60 '01/03/2023 000000' 'http://soccom.ucsd.edu/SOCCOM_data_reference.html'};
+missing_pos(4,:) = {'ua19045' '5906495' 27.0783  -68.7133 '04/08/2022 023511' 'time from 001.msg, position from http://soccom.ucsd.edu/SOCCOM_data_reference.html'};
+missing_pos(5,:) = {'ua21105' '2903457' -174.7050 -47.675 '01/03/2023 000000' 'from L. Talley deployment notification email June 5, 2023'};
+%missing_pos(6,:) = {'un0511' '5904478' -174.7050 -47.675 '01/03/2023 000000' 'from L. Talley deployment notification email June 5, 2023'};
+
+
+% %  1351, 19061 & 18340 have zero msg files returned so no header info either
+% missing_pos(5,:) = {'wn1353' '5906341' -23.0415  -1.9788 '11/13/2022 224130' 'info from 000.msg, no profiles ever returned'};
+% missing_pos(6,:) = {'ua19061' '5906341' -52.285  35.960 '03/27/2021 152050' 'info from 000.msg, no profiles ever returned'};
+% missing_pos(7,:) = {'ua18340' '5906543' -124.9996  -57.6994 '11/25/2022 000000' 'http://soccom.ucsd.edu/SOCCOM_data_reference.html'};
 
 
 % *************************************************************************
@@ -167,7 +202,7 @@ else
     tmp = dir([dirs.config,'*FloatConfig.txt']);
     config_names  = {tmp.name}';
     float_names   = regexprep(config_names,'_FloatConfig.txt','');
-    
+
     % FILTER MASTER LIST WITH LOGICAL TESTS & PULL INST_ID FROM MBARI NAME
     t1 = ~cellfun(@isempty,regexp(float_names, mbari_id_exp,'once')); % desired floats
     t2 =  cellfun(@isempty,regexpi(float_names,exclude_expr,'once')); %exluded floats
@@ -400,9 +435,9 @@ for i = 1:r
     config_name = cfg_fnames{i};
     inst_num   = regexp(float_name,'\d+','once','match');
     wmo        = '';
-    
+
     tSpecial = strcmp(special_case(:,1), float_name);
-    
+
     if sum(tSpecial) == 1
         if strcmp(special_case{tSpecial,2},'NO_WMO_')
             wmo = {[special_case{tSpecial,2}, float_name]};
@@ -425,7 +460,7 @@ for i = 1:r
         elseif float_name(2) == 'a'
             flt_type = 'APEX'; % CHECK IF MORE TO STRING?
         end
-        
+
         % TRY AND GET WMO USING INSTITUTE ID & FLOAT TYPE
         api_call = sprintf(api_call_str, dirs.WHOI_DOM,'wmo', inst_num, flt_type);
         try
@@ -437,7 +472,7 @@ for i = 1:r
     elseif regexp(float_name,'^s','once') % SIO WMO lookup
         t1  = strcmp(inst_num, sio_wmo(:,1));
         wmo = sio_wmo(t1,2);
-        
+
         if isempty(wmo) % try meta looking for WMO in meta file in cal dir
             fp = fullfile(dirs.msg,'SIO\', float_name,'cals\');
             meta_fn = ls([fp,'*.meta']);
@@ -473,7 +508,7 @@ for i = 1:r
             end
         end
     end
-    
+
     if ~isempty(wmo) % remove duplicates but keep order (WHOI issue)
         wmo = unique(wmo,'stable');
         WMO_ID{i} = wmo{1,1};
@@ -485,17 +520,17 @@ for i = 1:r
         log{log_ct} = str;
         disp(str)
     end
-    
+
     % CHECK TO SEE IF FLOAT IS DEAD (ONLY TESTING SOCCOM FOR NOW)
     if sum(strcmp(dead_WMO, wmo{1,1}),1) == 1
         tf_dead(i) = 1;
     end
-    
+
     % CHECK TO SEE IF NO3 CAL EXISTS
     if isfile([dirs.cal,'NO3_CAL\',float_name,'.cal'])
         tf_NO3(i) = 1;
     end
-    
+
     % LOOK FOR PROGRAM & REGION STRINGS & SENSOR INFO IN FLOAT CONFIG FILES
     fid = fopen([dirs.cal,'FLOAT_CONFIG\',config_name]);
     tline = '';
@@ -505,7 +540,7 @@ for i = 1:r
                 'match','once');
         elseif regexp(tline,'^Region','once')
             region{i} = regexp(tline,'(?<=^Region\:\s*)\w+[\w-\s]*','match','once');
-            
+
         elseif regexp(tline,'^pH sensor|number of cal','once')
             tf_pH(i) = 1;
         elseif regexp(tline,'^MCOMS|FLBB|^ECO','once')
@@ -555,7 +590,7 @@ for i = 1:r
     float_name = mbari_id{i};
     inst_name  = INST_ID{i};
     clear msg_dirs dp mdir
-    
+
     % IDENTIFY INSTITUTION PATH
     if regexp(float_name,'^u','once') % Univ of Wash msg dir
         msg_dirs  = uw_dirs;
@@ -570,11 +605,11 @@ for i = 1:r
         dp = [dirs.msg,'SIO\'];
         inst_str = '';
     end
-    
+
     tf_dir   = ~cellfun(@isempty, regexp(msg_dirs,[inst_str,'[fnsa]', ...
         inst_name], 'once'));
     tSpecial = strcmp(special_case(:,1), float_name);
-    
+
     if sum(tSpecial) == 1 % special case floats take priority
         special_dir = special_case{tSpecial,3};
         if strncmp(special_dir,'\\',2) % Entire path
@@ -674,6 +709,18 @@ APEX_types(13,:) = {13,'Phase T83',-99, -99, ''};
 % OCR only (NO other BGCm Example: 19191 and 19314 test floats)
 APEX_types(14,:) = {14,'',-99, -99, ''};
 
+% APEX TYPE 15:
+% Six-sensor APEX with OCR!  OCR [380; 443; 490; PAR], and Aanderaa optode
+APEX_types(15,:) = {15,'Topt TPhase RPhase no3 pH(V) FSig BbSig TSig Ocr[0] Ocr[1] Ocr[2] Ocr[3]',1, -99, ''};
+
+% APEX TYPE 16:
+% Five-sensor APEX with SBE83 oxygen optode
+APEX_types(16,:) = {16,'T83 Phase no3 pH(V) FSig BbSig TSig',1, -99, ''};
+
+% APEX TYPE 17:
+% Five-sensor APEX with FL2BB (435 channel) with Aanderaa optode
+APEX_types(17,:) = {17,'Topt TPhase RPhase no3 pH(V) FSig[0] FSig[1] BbSig  TSig',1, -99, ''};
+
 % ************************************************************************
 % NAVIS FLOAT DEFINITIONS: annie type, hdr vars, FlbbMode, PalMode, flt filter
 % ************************************************************************
@@ -722,26 +769,26 @@ disp('Assigning Bfile skeleton types.....')
 annie_types  = ones(size(out(:,1)))*0; % predim
 
 for fct = 1:size(out,1)
-    
+
     flbb_mode = -99;
     pal_mode  = -99;
     tf_type   = 0;
     tf_hdr    = 0;
     tf_gps    = 0;
-    
+
     float_name = out{fct,I.MBA};
     inst_name  = out{fct,I.INS};
     msg_folder = out{fct,I.MSG};
     wmo        = out{fct,I.WMO};
     disp(float_name)
-    
+
     tSpecial = strcmp(special_case(:,1), float_name);
     if sum(tSpecial) == 1 %special case
         tf_Bfile(fct) = special_case{tSpecial,4};
     elseif strncmp(wmo, 'NO_WMO',6) % no wmo assigned yet
         tf_Bfile(fct) = -1;
     end
-    
+
     if strcmp(msg_folder, 'UNKNOWN')
         str = ['msg file directory unknown for: ',float_name, ...
             ' skipping type ID'];
@@ -757,14 +804,18 @@ for fct = 1:size(out,1)
         disp(str)
         continue
     end
-    
+
     if strcmp(out{fct,I.TYP},'APEX')
         FLOAT_types = APEX_types;
     elseif strcmp(out{fct,I.TYP},'NAVIS')
         FLOAT_types = NAVIS_types;
     elseif strcmp(out{fct,I.TYP},'SOLO')
         FLOAT_types = SOLO_types;
-        annie_types(fct) = 1; %hard code solotype1 for now for ss0001... TM 2/10/22
+        if strcmp(float_name,'ss4003')
+            annie_types(fct) = 2;
+        else
+            annie_types(fct) = 1; %hard code solotype1 for now for ss0001... TM 2/10/22
+        end
     else
         str = ['Unknown float type - skipping type ID for: ', float_name];
         log_ct = log_ct+1;
@@ -772,22 +823,22 @@ for fct = 1:size(out,1)
         disp(str)
         continue
     end
-    
+
     hdr_lines   = regexprep(FLOAT_types(:,2),' ',''); % remove spaces from hdr patterns
-    
+
     % CHECK FOR SPECIAL CASE MCOMS (2 BBP SENSORS)
     % Check if float is an MCOMS special case if not isempty = 1
     tf_flt_filt = strcmp(FLOAT_types(:,5), inst_name);
     if sum(tf_flt_filt) == 0
         tf_flt_filt = cellfun(@isempty,FLOAT_types(:,5));
     end
-    
+
     % GET MSG LIST WHICH WILL BE USED TO GET SOME FLOAT CYCLE STATS / LISTS
     % AND ANNIE FLOAt TYPE
-    
+
     cal_info.msg_dir = msg_folder;
     cal_info.name    = float_name;
-    
+
     if ~strcmp(out{fct,I.TYP},'SOLO')
         d        = get_msg_list(cal_info, 'msg');
         dlist    = d.list;
@@ -797,7 +848,7 @@ for fct = 1:size(out,1)
         dlist    = d.list;
         cycles   = str2double(regexp(dlist(:,1),'\d{3}(?=\.phy)','match','once'));
     end
-    
+
     if isempty(dlist)
         str = ['msg directory exists for: ',float_name,' but no msg ',...
             'files inside - skiping type ID'];
@@ -806,7 +857,7 @@ for fct = 1:size(out,1)
         disp(str)
         continue
     end
-    
+
     %cycles   = str2double(regexp(dlist(:,1),'\d{3}(?=\.msg)','match','once'));
     tmax     = cycles == max(cycles); % max msg file cycle in respository
     fmod_sdn = cell2mat(dlist(:,3));
@@ -816,16 +867,16 @@ for fct = 1:size(out,1)
             'time stamps'])
         tlast = tlast & cycles == max(cycles(tlast));
     end
-    
+
     MaxMsgF(fct)   = cycles(tmax);
     MaxMsgFD(fct)  = fmod_sdn(tmax);
     LastMsgF(fct)  = cycles(tlast);
     LastMsgFD(fct) = fmod_sdn(tlast);
-    
+
     tAnnie         = cycles > 0 & cycles < 6; % look for 1st 6 cycles
-    
+
     clear cal_info d cycles tmax fmod_sdn tlast
-    
+
     % GET LAST PROCESSED CYCLE NUMBER & DATE
     fp_mat = [dirs.mat, wmo,'\'];
     if isfolder(fp_mat)
@@ -836,40 +887,33 @@ for fct = 1:size(out,1)
                 'match','once'));
             tmax        =   mat_cycles == max(mat_cycles);
             load([fp_mat, ProcCycList{tmax}],'INFO');
-            
+
             MaxProcCyc(fct)  = mat_cycles(tmax);
             MaxProcCycD(fct) = INFO.sdn;
-            
+
             clear fp_mat ProcCycList mat_cycles tmax INFO
         else
             clear tmp
         end
     end
-    
-    
-    
+
+
+
     % LOOK IN MSG FILES FOR INFO
-    msg_files = dlist(tAnnie,:);
-    %     if isempty(msg_files)
-    %         str = ['msg directory exists for: ',float_name,' but no msg ',...
-    %             'files inside - skiping type ID'];
-    %         log_ct = log_ct+1;
-    %         log{log_ct} = str;
-    %         disp(str)
-    %         continue
-    %     end
+    msg_files = dlist(tAnnie,:); % 1st 6
+
     sensors_str    = '(?<=AXIS\:).+(?=\])|SBE\w+'; % for SOLO
     hdr_line = '';
     for ct = 1:size(msg_files,1) % Try 1st 3 msg files for header line
         msg_fn = msg_files{ct,1};
         fp = fullfile(msg_files{ct,2}, msg_fn);
-        
+
         if isfile(fp)
             temp_fp = [dirs.temp, msg_fn];
             copyfile(fp, temp_fp);
             fid   = fopen(temp_fp);
             tline = ' ';
-            
+
             while ischar(tline)
                 % TEST FOR FLBBMODE LINE
                 tflbb = regexp(tline,'(?<=^\$\s+FlbbMode\()\d+','match','once');
@@ -884,26 +928,28 @@ for fct = 1:size(out,1)
                 if ~isempty(tpal)
                     pal_mode = str2double(tpal);
                 end
-                
-                
+
+
                 % TEST FOR DISCRETE SAMPLE HEADER LINE APEX & NAVIS
                 % 07/12/21 JP \* instead of \+ , 0 or more for 19314 p, t,s
                 % only irradiance float
                 %thdr = regexp(tline,'^\$\s+p\s+t\s+s\s+', 'once','end');
                 thdr = regexp(tline,'^\$\s+p\s+t\s+s\s*', 'once','end');
+%                 tline
+%                 pause
                 if ~isempty(thdr)
                     hdr_line = tline;
                     hdr_start = thdr;
                     tf_hdr = 1;
                     %break % header line found so stop looking for it
                 end
-                
+
                 if tf_hdr == 0 && ~isempty(regexp(tline,'^.+VERTICAL','once')) % SOLO BGC PARAMS
                     hdr_line = [hdr_line, ' ',...
                         regexp(tline,sensors_str,'match','once')];
-                    
+
                 end
-                
+
                 if regexp(tline,'^NUMBER OF COLUMNS','once') % BGC SOLO
                     tf_hdr    = 1;
                     hdr_start = 0;
@@ -911,57 +957,64 @@ for fct = 1:size(out,1)
                         flbb_mode = 1;
                     end
                 end
-                
+
                 % TEST FOR GPS FIX LINE with valid position fix APEX / NAVIS
                 if regexp(tline, '(?<=^Fix:\s+)[-\d]','once')
                     gps_line = tline;
                     tf_gps = 1;
                     gps = regexp(gps_line,'\s+','split');
                 end
-                
+
                 if strncmp(tline,'MC703',5) % BGC SOLO GPS FIX
                     gps = regexp(tline,'\s+','split');
                     if size(gps,2) == 10 % all good
                         tf_gps = 1;
                     end
                 end
-                
-                
+
+
                 if tf_hdr == 1 && tf_gps == 1
                     break
                 end
-                
+
                 tline = fgetl(fid);
             end
             fclose(fid);
             delete(temp_fp)
             clear tflbb tpal fid
-            
-            %             if tf_hdr == 0 && tline == -1 % no header & GPS line found try another msg file
-            %                 continue
-            %             end
-            
-            % no header & GPS line found try another msg file
-            if strcmp(wmo,'5906483') %override this for this case.
-                tf_gps = 1;
+
+            % if strcmp(wmo,'5905364'), pause, end % TESTING
+
+            if tf_gps == 0 % NO STARTING GPS FIX FOUND - CHECK MISSING POS TABLE
+                t1 = strcmp(missing_pos(:,2),wmo);
+                if sum(t1) > 0
+                    tf_gps = 1;
+                    gps = '';
+                    mis_pos = [cell2mat(missing_pos(t1,3:4)), ...
+                        datenum(missing_pos(t1,5),'mm/dd/yyyy HHMMSS')];
+                    fprintf('1st position fix from missing start position list\n');
+                end
             end
-            if tline == -1 & (tf_hdr == 0 || tf_gps == 0)
-                continue
-            end
-            
-            % IF YOU GET HERE ALL IS GOOD - NOW TRY AND MATCH TO ANNIE TYPES
-            % AND ADD PROFILE GPS INFO
-            % TM, Float 20520 (5906483) does not have gps the first few cycles, manually enter this info!
-            if strcmp(wmo,'5906483') == 1
-                GPS_fix(fct,:) = [-100.2330  12.3223 datenum('01/08/2022 133130','mm/dd/yyyy HHMMSS')]; %from the log file; why isn't this in the msg file?
-            else
+
+                        if tline == -1 & (tf_hdr == 0 || tf_gps == 0)
+                            continue
+                        end
+
+
+
+                % IF YOU GET HERE ALL IS GOOD - NOW TRY AND MATCH TO ANNIE TYPES
+                % AND ADD PROFILE GPS INFO
+                % TM, Float 20520 (5906483) does not have gps the first few cycles, manually enter this info!
+
                 if size(gps,2) == 10 % SOLO
                     %GPS_fix(fct,1:2) = str2double(gps(2:3)); % lon and lat recovered
                     GPS_fix(fct,1:2) = str2double(gps([3,2])); % lon and lat recovered
                 elseif size(gps,2) >= 3 % APEX or NAVIS
                     GPS_fix(fct,1:2) = str2double(gps(2:3)); % lon and lat recovered
+                elseif isempty(gps)
+                    GPS_fix(fct,1:3) = mis_pos; % lon, lat, sdn
                 end
-                
+
                 if size(gps,2) >=5
                     dstr = [gps{4},' ',gps{5}]; % date & time to one string
                     if ~strcmp(out{fct,I.TYP},'SOLO')
@@ -977,21 +1030,21 @@ for fct = 1:size(out,1)
                         GPS_fix(fct,3) = datenum(dvec) + 1024*7;
                     end
                 end
-            end
-            
-            
-            hdr_str     = regexprep(hdr_line(hdr_start+1:end),' ',''); %remove spaces
-            tf_flt_type = strcmp(hdr_lines, hdr_str);  % match header params
-            tflbb       = cell2mat(FLOAT_types(:,3)) == flbb_mode;
-            tpal        = cell2mat(FLOAT_types(:,4)) == pal_mode;
-            ttype       = tf_flt_type & tflbb & tpal & tf_flt_filt;
-            
-            
-            if sum(ttype) == 1 % A MATCH!
-                annie_types(fct) = cell2mat(FLOAT_types(ttype,1));
-                tf_type   = 1; % SUCCESS!
-                break % get out of msg file loop & go to next float
-            end
+% 
+% if strcmp(float_name,'ss4003')
+% keyboard
+% end
+                hdr_str     = regexprep(hdr_line(hdr_start+1:end),' ',''); %remove spaces
+                tf_flt_type = strcmp(hdr_lines, hdr_str);  % match header params
+                tflbb       = cell2mat(FLOAT_types(:,3)) == flbb_mode;
+                tpal        = cell2mat(FLOAT_types(:,4)) == pal_mode;
+                ttype       = tf_flt_type & tflbb & tpal & tf_flt_filt;
+
+                if sum(ttype) == 1 % A MATCH!
+                    annie_types(fct) = cell2mat(FLOAT_types(ttype,1));
+                    tf_type   = 1; % SUCCESS!
+                    break % get out of msg file loop & go to next float
+                end
         else
             str = ['Msg file ', fp, ' not found'];
             log_ct = log_ct+1;
@@ -999,7 +1052,7 @@ for fct = 1:size(out,1)
             disp(str)
         end
     end
-    
+
     if tf_type == 0
         if tf_hdr == 1
             str = ['Header line found but no match for ',float_name, ...

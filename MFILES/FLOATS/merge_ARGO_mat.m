@@ -28,12 +28,17 @@ function d = merge_ARGO_mat(WMO_ID, dirs)
 %       .MBARI_ID_str
 %       .CTDtype
 %       .CTDsn
+%       .PSAL_PROXY_USE (1 = yes, psal proxy is used for at least 1 cycle)
 %
 %    d.rhdr    = raw data header
 %    d.rdata   = raw data
 %    d.ahdr    = adjusted data header
 %    d.adata   = adjusted data
 %    d.hrrdata = high resoltion raw data
+%    d.psalprox = ARMOR3D psal when needed (identified within
+%       Process_*_Float).  Entries are NaN for cycles with good PSAL.
+%       Variable does not exist if float has all cycles with good PSAL.
+%       This variable is needed only by the argo2odv routines.
 %
 % ************************************************************************
 % CHANGE HISTORY
@@ -49,6 +54,10 @@ function d = merge_ARGO_mat(WMO_ID, dirs)
 %   merging LR & HR cp BGC data. This fixes merging bug when dealing with
 %   un1114 when O2 sensor fails
 % 02/01/22 JP - Added DOX2 as another parameter
+% 05/31/23 JP - Added CHL435 as another parameter
+% 05/31/23 TM - Added OCR443 as another parameter
+% 06/21/23 TM - Added psal-proxy (ARMOR3D) capabilities.
+
 %
 % ************************************************************************
 %TESTING
@@ -59,6 +68,7 @@ function d = merge_ARGO_mat(WMO_ID, dirs)
 % WMO_ID     = '5906320'; % ua19191 OCR APEX
 % WMO_ID = '5906481'; % ua19842 2XO2 float
 % WMO_ID     = '5906341';
+% WMO_ID     = 'NO_WMO_ua21291';
 % dirs =[];
 % *************************************************************************
 %  SET DATA DIRS AND PATHS
@@ -144,22 +154,27 @@ raw_vars(11,1)  = {'NITRATE'};
 raw_vars(12,1)  = {'NITRATE_QC'}; 
 raw_vars(13,1)  = {'CHLA'};  
 raw_vars(14,1)  = {'CHLA_QC'};
-raw_vars(15,1) = {'BBP700'};
-raw_vars(16,1) = {'BBP700_QC'};
-raw_vars(17,1) = {'CDOM'};   
-raw_vars(18,1) = {'CDOM_QC'};  
-raw_vars(19,1) = {'BBP532'};
-raw_vars(20,1) = {'BBP532_QC'};
-raw_vars(21,1) = {'PH_IN_SITU_TOTAL'}; 
-raw_vars(22,1) = {'PH_IN_SITU_TOTAL_QC'}; 
-raw_vars(23,1) = {'DOWN_IRRADIANCE380'};
-raw_vars(24,1) = {'DOWN_IRRADIANCE380_QC'};
-raw_vars(25,1) = {'DOWN_IRRADIANCE412'}; 
-raw_vars(26,1) = {'DOWN_IRRADIANCE412_QC'};  
-raw_vars(27,1) = {'DOWN_IRRADIANCE490'}; 
-raw_vars(28,1) = {'DOWN_IRRADIANCE490_QC'}; 
-raw_vars(29,1) = {'DOWNWELLING_PAR'};
-raw_vars(30,1) = {'DOWNWELLING_PAR_QC'}; 
+raw_vars(15,1)  = {'CHLA435'};  
+raw_vars(16,1)  = {'CHLA435_QC'};
+raw_vars(17,1) = {'BBP700'};
+raw_vars(18,1) = {'BBP700_QC'};
+raw_vars(19,1) = {'CDOM'};   
+raw_vars(20,1) = {'CDOM_QC'};  
+raw_vars(21,1) = {'BBP532'};
+raw_vars(22,1) = {'BBP532_QC'};
+raw_vars(23,1) = {'PH_IN_SITU_TOTAL'}; 
+raw_vars(24,1) = {'PH_IN_SITU_TOTAL_QC'}; 
+raw_vars(25,1) = {'DOWN_IRRADIANCE380'};
+raw_vars(26,1) = {'DOWN_IRRADIANCE380_QC'};
+raw_vars(27,1) = {'DOWN_IRRADIANCE412'}; 
+raw_vars(28,1) = {'DOWN_IRRADIANCE412_QC'};  
+raw_vars(29,1) = {'DOWN_IRRADIANCE443'}; 
+raw_vars(30,1) = {'DOWN_IRRADIANCE443_QC'};
+raw_vars(31,1) = {'DOWN_IRRADIANCE490'}; 
+raw_vars(32,1) = {'DOWN_IRRADIANCE490_QC'}; 
+raw_vars(33,1) = {'DOWNWELLING_PAR'};
+raw_vars(34,1) = {'DOWNWELLING_PAR_QC'};
+
 
 adj_vars(1,1)  = {'PRES_ADJUSTED'}; % ADJUSTED VARIABLES
 adj_vars(2,1)  = {'PRES_ADJUSTED_QC'}; 
@@ -175,22 +190,26 @@ adj_vars(11,1)  = {'NITRATE_ADJUSTED'};
 adj_vars(12,1)  = {'NITRATE_ADJUSTED_QC'};
 adj_vars(13,1)  = {'CHLA_ADJUSTED'};
 adj_vars(14,1)  = {'CHLA_ADJUSTED_QC'};
-adj_vars(15,1) = {'BBP700_ADJUSTED'};
-adj_vars(16,1) = {'BBP700_ADJUSTED_QC'};
-adj_vars(17,1) = {'CDOM_ADJUSTED'};
-adj_vars(18,1) = {'CDOM_ADJUSTED_QC'};
-adj_vars(19,1) = {'BBP532_ADJUSTED'};
-adj_vars(20,1) = {'BBP532_ADJUSTED_QC'};
-adj_vars(21,1) = {'PH_IN_SITU_TOTAL_ADJUSTED'};
-adj_vars(22,1) = {'PH_IN_SITU_TOTAL_ADJUSTED_QC'};  
-adj_vars(23,1) = {'DOWN_IRRADIANCE380_ADJUSTED'};
-adj_vars(24,1) = {'DOWN_IRRADIANCE380_ADJUSTED_QC'};
-adj_vars(25,1) = {'DOWN_IRRADIANCE412_ADJUSTED'}; 
-adj_vars(26,1) = {'DOWN_IRRADIANCE412_ADJUSTED_QC'};  
-adj_vars(27,1) = {'DOWN_IRRADIANCE490_ADJUSTED'}; 
-adj_vars(28,1) = {'DOWN_IRRADIANCE490_ADJUSTED_QC'}; 
-adj_vars(29,1) = {'DOWNWELLING_PAR_ADJUSTED'};
-adj_vars(30,1) = {'DOWNWELLING_PAR_ADJUSTED_QC'}; 
+adj_vars(15,1)  = {'CHLA435_ADJUSTED'};  
+adj_vars(16,1)  = {'CHLA435_ADJUSTED_QC'};
+adj_vars(17,1) = {'BBP700_ADJUSTED'};
+adj_vars(18,1) = {'BBP700_ADJUSTED_QC'};
+adj_vars(19,1) = {'CDOM_ADJUSTED'};
+adj_vars(20,1) = {'CDOM_ADJUSTED_QC'};
+adj_vars(21,1) = {'BBP532_ADJUSTED'};
+adj_vars(22,1) = {'BBP532_ADJUSTED_QC'};
+adj_vars(23,1) = {'PH_IN_SITU_TOTAL_ADJUSTED'};
+adj_vars(24,1) = {'PH_IN_SITU_TOTAL_ADJUSTED_QC'};  
+adj_vars(25,1) = {'DOWN_IRRADIANCE380_ADJUSTED'};
+adj_vars(26,1) = {'DOWN_IRRADIANCE380_ADJUSTED_QC'};
+adj_vars(27,1) = {'DOWN_IRRADIANCE412_ADJUSTED'}; 
+adj_vars(28,1) = {'DOWN_IRRADIANCE412_ADJUSTED_QC'};  
+adj_vars(29,1) = {'DOWN_IRRADIANCE443_ADJUSTED'}; 
+adj_vars(30,1) = {'DOWN_IRRADIANCE443_ADJUSTED_QC'};  
+adj_vars(31,1) = {'DOWN_IRRADIANCE490_ADJUSTED'}; 
+adj_vars(32,1) = {'DOWN_IRRADIANCE490_ADJUSTED_QC'}; 
+adj_vars(33,1) = {'DOWNWELLING_PAR_ADJUSTED'};
+adj_vars(34,1) = {'DOWNWELLING_PAR_ADJUSTED_QC'}; 
 
 raw_vars_ct = size(raw_vars,1);
 adj_vars_ct = size(adj_vars,1);
@@ -205,6 +224,7 @@ end
 CTD_flag = 0; % Will go to 1 if CTD type & SN recovered
 rdata = [];
 adata = [];
+psalprox = [];
 hrrdata = [];
 disp(' ');
 disp(['Merging float profiles for ' ,MBARI_ID_str,':'])
@@ -268,7 +288,6 @@ for file_ct = 1 : r_list
         rhdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' rhdr];
         ahdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' ahdr];
     end
-   
 
     % ********************************************************************
     % IF NAVIS FLOAT MAKE HR NITRATE, MERGE DEEP LR WITH HR, & THEN SET 
@@ -284,15 +303,29 @@ for file_ct = 1 : r_list
         HR.NITRATE_ADJUSTED_QC = HR_fill0 + 99;
 
         for i = 1: size(LR.PRES,1)
-            if LR.DOXY(i) == 99999
-                abs_diff = abs(HR.PRES - LR.PRES(i));
-                min_diff = min(abs_diff);
-                ind = find(abs_diff == min_diff); % 2 m max diff
-                if min_diff < 2 % A MATCH!
-                    HR.NITRATE(ind(1))    = LR.NITRATE(i);
-                    HR.NITRATE_QC(ind(1)) = LR.NITRATE_QC(i);
-                    HR.NITRATE_ADJUSTED(ind(1))    = LR.NITRATE_ADJUSTED(i);
-                    HR.NITRATE_ADJUSTED_QC(ind(1)) = LR.NITRATE_ADJUSTED_QC(i);                    
+            if isfield(INFO,'CpActivationP') && ~isempty(INFO.CpActivationP)
+                if LR.PRES(i) < INFO.CpActivationP
+                    abs_diff = abs(HR.PRES - LR.PRES(i));
+                    min_diff = min(abs_diff);
+                    ind = find(abs_diff == min_diff); % 2 m max diff
+                    if min_diff < 2 % A MATCH!
+                        HR.NITRATE(ind(1))    = LR.NITRATE(i);
+                        HR.NITRATE_QC(ind(1)) = LR.NITRATE_QC(i);
+                        HR.NITRATE_ADJUSTED(ind(1))    = LR.NITRATE_ADJUSTED(i);
+                        HR.NITRATE_ADJUSTED_QC(ind(1)) = LR.NITRATE_ADJUSTED_QC(i);
+                    end
+                end
+            else
+                if LR.DOXY(i) == 99999
+                    abs_diff = abs(HR.PRES - LR.PRES(i));
+                    min_diff = min(abs_diff);
+                    ind = find(abs_diff == min_diff); % 2 m max diff
+                    if min_diff < 2 % A MATCH!
+                        HR.NITRATE(ind(1))    = LR.NITRATE(i);
+                        HR.NITRATE_QC(ind(1)) = LR.NITRATE_QC(i);
+                        HR.NITRATE_ADJUSTED(ind(1))    = LR.NITRATE_ADJUSTED(i);
+                        HR.NITRATE_ADJUSTED_QC(ind(1)) = LR.NITRATE_ADJUSTED_QC(i);
+                    end
                 end
             end
         end
@@ -313,12 +346,19 @@ for file_ct = 1 : r_list
         
         [~,LRHR_ind] = sort([LR.PRES(t1); HR.PRES],'ascend'); % sort ind's
         
+        % ----- FIRST, TAKE CARE OF ANY PSAL PROXY MERGE FOR NAVIS...
+        if isfield(LR,'PSAL_PROXY') && isfield(HR,'PSAL_PROXY') 
+            LR.PSAL_PROXY = [LR.PSAL_PROXY(t1); HR.PSAL_PROXY]; % deep LR + HR
+            LR.PSAL_PROXY = LR.PSAL_PROXY(LRHR_ind); % sorted
+        end
+        % ----- END
+
         for i = 1: hdr_size
             if isfield(LR,rhdr{i}) && isfield(HR,rhdr{i})
                 LR.(rhdr{i}) = [LR.(rhdr{i})(t1); HR.(rhdr{i})]; % deep LR + HR
                 LR.(rhdr{i}) = LR.(rhdr{i})(LRHR_ind); % sorted
             end
-
+           
            
             % DONT DO P TWICE  ADJUSTED & RAW HEADER NAME ARE EQUAL!
             % UPDATED 05/02/17 due to addind PSAl_ADJUSTED & TEMP_ADJUSTED
@@ -333,7 +373,6 @@ for file_ct = 1 : r_list
             %end
         end
     end
-    
     %if INFO.cast == 24, pause, end % TESTING
  
     
@@ -345,8 +384,13 @@ for file_ct = 1 : r_list
     
     rtmp = ones(sample_rows, hdr_size) * NaN;
     atmp = rtmp;
-    
+    psalproxtmp = ones(sample_rows,1) * NaN;
     ind = sample_rows:-1:1;
+    if isfield(LR,'PSAL_PROXY')
+         psalproxtmp(ind,1) = LR.PSAL_PROXY;
+    end
+
+%     ind = sample_rows:-1:1;
     for i = 1:hdr_size
         if isfield(LR,rhdr{i})
             rtmp(ind,i) = LR.(rhdr{i});
@@ -363,6 +407,7 @@ for file_ct = 1 : r_list
       
     rdata = [rdata; tmp,rtmp];
     adata = [adata; tmp,atmp];
+    psalprox = [psalprox; psalproxtmp]; %only need psal prox in one LR field for computation of derived parameters in argo2odv (not needed for HR files, as we won't be writing the psal-proxy itself to file, only used in derived param calcs.
     
     % ********************************************************************
     % NEXT MERGE HR APEX FLOAT DATA FOR HR+LR TXT FILES LATER (ALL DATA)
@@ -403,7 +448,6 @@ fprintf('\r\n ')
 rhdr = rhdr2; % Update with cast sdn lat lon
 ahdr = ahdr2; % Update with cast sdn lat lon
 
-
 % FILL STRUCTURE AND CLEAN UP
 d.INFO.INST_ID_num     = INST_ID_str;
 d.INFO.WMO           = WMO_ID;
@@ -412,6 +456,15 @@ d.INFO.MBARI_ID_str  = MBARI_ID_str;
 d.INFO.float_type    = INFO.float_type;
 d.INFO.CTDtype       = CTDtype;
 d.INFO.CTDsn         = CTDsn;
+% has psal proxy?
+ispsal = ~isnan(psalprox);
+if sum(ispsal)>0 %has psal-proxy entries for at least one cycle
+    d.INFO.PSAL_PROXY_USE = 1;
+    d.psalprox = psalprox;
+else
+    d.INFO.PSAL_PROXY_USE = 0;
+    clear psalprox psalproxtmp
+end
 
 d.rhdr  = rhdr;
 d.rdata = rdata;

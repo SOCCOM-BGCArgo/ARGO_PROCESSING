@@ -109,6 +109,7 @@ tf_NO3    = cell2mat(FLOAT_LIST(:,iTFNO3)) == 1;
 %--------------------------------------------------------------------------
 % sharonMasterURL = 'http://soccom.ucsd.edu/FLOAT_INFO/AllFloatInfo.m'; % This file loc just includes SOCCOM
 sharonMasterURL = 'http://go-bgc.ucsd.edu/FLOAT_INFO/SOCCOM_GOBGC_FloatInfo.m';  % This file loc includes SOCCOM & GOBGC (Sharon cats the 2 files together for us now).
+sharonMasterURL = 'https://www3.mbari.org/gobgc/tables/FLOAT_INFO/SOCCOM_GOBGC_FloatInfo.m';
 adopt_success = 0;
 try
     outfile = websave([dirs.temp,'Sharon_SOCCOMMasterFloatInfo.m'],sharonMasterURL);
@@ -129,7 +130,11 @@ if adopt_success == 1
     Fnm = fieldnames(FLOAT);
     for idn = 1:length(Fnm)
         tmpflt = FLOAT.(Fnm{idn});
+%         try
         fwmo = tmpflt.WMO;
+%         catch
+%             keyboard
+%         end
         if isempty(tmpflt.Adopt) %not adopted!
             fschl = ' ';
             fnam = ' ';

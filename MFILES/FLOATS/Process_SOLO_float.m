@@ -77,6 +77,13 @@ function tf_float = Process_SOLO_float(MBARI_ID_str, dirs, update_str)
 % 11/21/2022 TM, Finished brute force code for OCR implementation of bad
 %                  sample list.
 %
+% 3/6/2023 TM, Added error trapping for case where all pressure levels are
+%               missing in phy file.... 4903026.181...)
+% 05/11/23 TM, Amended code for bad-sample-list (was in error for multi-line entries of same float, same cycle, different pres levels)
+%
+% 11/06/23 TM  -- missing no3 spectra, so wait; should get returned with
+%           the next cycle.  ie solo 002.103
+% 02/01/2024 TM, modifications in support of ss4003.
 % ************************************************************************
 
 % ************************************************************************
@@ -123,11 +130,11 @@ if isempty(dirs)
     dirs.mat       = [user_dir,'FLOATS\'];
     dirs.cal       = [user_dir,'CAL\'];
     dirs.FV        = [user_dir,'FLOATVIZ\'];
-    
+
     dirs.QCadj     = [user_dir,'CAL\QC_LISTS\'];
     dirs.temp      = 'C:\temp\';
     dirs.msg       = '\\seaecho.shore.mbari.org\floats\';
-    
+
     dirs.log = [user_dir,'Processing_logs\'];
 elseif ~isstruct(dirs)
     disp('Check "dirs" input. Must be an empty variable or a structure')
@@ -208,6 +215,8 @@ RCR.IK   = [-100 100]; % Range check on pH Ik, nano amps
 RCR.OCR380 = [-1 1.7]; %from  https://doi.org/10.13155/62466 ;
 RCR.OCR412 = [-1 2.9];
 RCR.OCR490 = [-1 3.4];
+RCR.OCR443 = [-1 3.2]; 
+RCR.OCR555 = [-1 100]; % crude placeholder for now
 RCR.OCRPAR = [-1 4672];
 
 
@@ -240,24 +249,24 @@ if exist(fp_cal,'file') == 2
     disp(' ')
     disp(['FLOAT ',MBARI_ID_str, '(',cal.info.WMO_ID,')']);
     disp(['Existing calibration file loaded: ',fp_cal])
-    
+
     % IF TEMPORARY WMO STILL - TRY & UPDATE WITH ACTUAL WMO
-    
+
     if strncmp(cal.info.WMO_ID,'NO', 2) && cal.info.tf_bfile ~= 0
         disp(['Attempting to retrieve updated WMO num by deleting ', ...
             'and rebuilding cal file ',fp_cal])
         tmp_WMO = cal.info.WMO_ID; % need this to wipe old files if new WMO found
         delete(fp_cal)
-        cal = get_float_cals_jp(MBARI_ID_str, dirs); %
+        cal = get_float_cals(MBARI_ID_str, dirs);
         if regexp(cal.info.WMO_ID, '^\d{7}', 'once') % WMO found - update successful!
             update_str = 'all';
-            
+
         end
     end
 else % No cal file built so build it
     fprintf('\n\n');
     disp(['FLOAT ',MBARI_ID_str]);
-    cal = get_float_cals_jp(MBARI_ID_str, dirs);
+    cal = get_float_cals(MBARI_ID_str, dirs);
 end
 
 if isempty(cal)
@@ -382,7 +391,7 @@ disp(['Copying all relevant BGC-SOLO files to ', dirs.temp, '  .......'])
 
 for i6 = 1:length(FileList)
     if ~isempty(FileList{i6}.list)
-        
+
         % Check for old files in temp dir & delete if need be JP 06/15/22
         % add file dletion check in loop
         fn_tmp = FileList{i6}.list{1,1}; % get a file name to get extension
@@ -390,7 +399,7 @@ for i6 = 1:length(FileList)
         if ~isempty(ls([dirs.temp,'*.', ext]))
             delete([dirs.temp,'*.', ext])
         end
-        
+
         for i = 1:size(FileList{i6}.list,1)
             fp = fullfile(FileList{i6}.list{i,2}, FileList{i6}.list{i,1});
             copyfile(fp, dirs.temp);
@@ -498,7 +507,7 @@ for msg_ct = 1:size(msg_list,1)
     sensor_files(3,:)  = {regexprep(msg_file,'phy','dox'),'dox','O'}; %O2 file
     sensor_files(4,:)  = {regexprep(msg_file,'phy','eco'),'eco','CHL'}; %ECO file; use CHL for cal file chk
     sensor_files(5,:)  = {regexprep(msg_file,'phy','ocr'),'ocr','OCR'}; %OCR file
-    
+
     % find block of numbers then look ahead to see if '.phy' follows
     cast_num = regexp(msg_file,'\d+(?=\.phy)','once','match');
     if str2num(cast_num) == 0
@@ -511,24 +520,24 @@ for msg_ct = 1:size(msg_list,1)
     %         disp('TEMPORARILY SKIPPING CYCLE 44 DUE TO PRESSURE PROBLEM THAT IS CURRENTLY BEING INVESTIGATED BY IDG...')
     %         continue
     %     end
-    
+
     fileinfos = dir([dirs.temp,msg_file]);
     timestamps = fileinfos.date;
     timediff = now-datenum(timestamps); % use file-stamp
     %%%cycdate = datenum(timestamps); %use date when file came in, not internal cycle date (used for DATA-MODE assignments)
-    
+
     %----------------------------------------------------------------------
     %- Make sure ALL B-SOLO flat files are present if float includes all 6 sensors,
     %- otherwise, end processing for this cycle (but if msg file is > 20 days old, and still not complete, then process as usual)
     % timediff = 50; % FOR MANUAL PROCESSING OVERRIDE, UNCOMMENT THIS LINE
-    
+
     %%%%TM NOTE: if the B-SOLO deployments require any 'exceptions' down the road
     %(ie floats that never return any NO3 files, ie something unique happened
     %to the SUNA), then add those exceptions here (refer to
     %Process_APEX_float.m)
     Loop_CHK = 0;
     for isf = 1:length(sensor_files)
-        
+
         if strcmp(sensor_files{isf,2},'alk') == 1 && ~isempty(regexp(MBARI_ID_str, bad_ALK_filter,'once'))
             continue
         end
@@ -580,6 +589,15 @@ for msg_ct = 1:size(msg_list,1)
                 Loop_CHK = 1;
                 %                 continue
             else
+                % If missing spectra...wait.  TM. 11/6/23 solo 002.103;
+                % 002.111
+                %                 keyboard
+                tmpN = Dno3.data;
+                xtmpN = find(isnan(tmpN));
+                if ~isempty(xtmpN)
+                    tf_float.new_messages(t1) ={[char(tf_float.new_messages(t1)),' ','WAIT: Missing NO3 spectra.']}; %mark on list as in limbo
+                    continue
+                end
                 no3_rows = size(Dno3.data,1);
                 IX      = (no3_rows: -1 : 1)'; % build reverse indices - ARGO WANTS SHALLOW TO DEEP
                 no3_d    = Dno3.data(IX,:); % ARGO WANTS SHALLOW TO DEEP
@@ -622,7 +640,7 @@ for msg_ct = 1:size(msg_list,1)
         end
         continue
     end
-    
+
     %----------------------------------------------------------------------
     %%%%TM NOTE:
     %%%%% SAVE THIS BLOCK FOR NOW... DIRECT USE DOESN'T MAKE SENSE SINCE
@@ -644,10 +662,10 @@ for msg_ct = 1:size(msg_list,1)
     %                 return
     %             end
     %         end
-    
+
     % If made it here -- then cycle msg_ct has all necessary B-SOLO flat
     % files.  Now, time to parse all files and check for data!
-    
+
     %----------------------------------------------------------------------
     %%%%%
     % GATHER INFO FOR BUILDING ODV FILE LATER AND JUST TO MAKE LIFE
@@ -661,7 +679,7 @@ for msg_ct = 1:size(msg_list,1)
     if isfinite(INFO.FlbbMode)  && INFO.FlbbMode >0
         master_FLBB = 1;
     end
-    
+
     INFO.sdn      = Dphy.EOP_sdn;  %use end-of-profile time; within the ctd phy file.
     cycdate = INFO.sdn; %for DATA mode assignment.  try using cycle date.  For apex, we use date cycle came in but since John is always reprocessing this doesn't work.
     % % % %     % CHECK FOR BAD GPS TIME 10/30/19 -jp %%% TM NOTE: keep this in here
@@ -695,7 +713,7 @@ for msg_ct = 1:size(msg_list,1)
             yesBSAMLcyc = 0;
         end
     end
-    
+
     % % %     % NEED TO CORRECT GPS SDN FOR WEEK DAY ROLLOVER BUG TOO (ua9634 & ua8482)
     % % %     if ~isempty(first_sdn) && ~isempty(INFO.gps)
     % % %         dvec = datevec(INFO.gps(:,1));
@@ -711,7 +729,7 @@ for msg_ct = 1:size(msg_list,1)
     % % %             INFO.gps(:,1) = INFO.gps(:,1) + 1024*7;
     % % %         end
     % % %     end
-    
+
     INFO.INST_ID  = cal.info.INST_ID;
     INFO.name   = cal.info.name;
     INFO.WMO_ID = cal.info.WMO_ID;
@@ -722,22 +740,30 @@ for msg_ct = 1:size(msg_list,1)
     INFO.EOP_sdn_str = Dphy.EOP_sdn_str;
     INFO.sensors = Dphy.sensors;
     INFO.pres_axes_ct = Dphy.pres_axes_ct;
-    
+
     %%%%INFO.EOT    = d.EOT; %save for now.
-    
+
     %----------------------------------------------------------------------
     % DO A BUNCH OF ONE TIME TASKS - ONLY NEED TO DO THIS ONCE PER FLOAT
     % GET NUMBER OF PRESSURE AXES AND SORT OUT INDEXING!!
     % GET VARIABLE INDICES
-    
+
     %if phy_ind_chk <500 % some indexing issues due to sensor file format mods...?  Just check every time while SOLO output under dev...
     phy_ind_chk = phy_ind_chk+1;  %TM try check ind twice, in case faulty msg ie 000 skips index chk
-    
+
     %ctd inds: -------------------------------------------------------------
     iPhr   = find(strcmp('PRESSURE (dbar)',      Dphy.hdr) == 1); % CTD HR P
     iThr   = find(strcmp('TEMPERATURE-90 (degC)',      Dphy.hdr) == 1); % CTD HR T
     iShr   = find(strcmp('SALINITY (psu)',      Dphy.hdr) == 1); % CTD HR S
-    iPlr   = find(strcmp('PRESSURE2 (dbar)',      Dphy.hdr) == 1); % CTD HR P
+    iPlr   = find(strcmp('PRESSURE2 (dbar)',      Dphy.hdr) == 1); % CTD LR P
+    % At the start...check that low-res pressure exists!  If not, spit out
+    % a warning... ie ss0004.067, see John email from July 10 2023.
+    %     if isempty(iPlr)
+    %         Indext12 = strfind(tf_float.new_messages,msg_file);
+    %         t12 = find(not(cellfun('isempty',Indext12)));
+    %         tf_float.new_messages(t12) ={[char(tf_float.new_messages(t12)),' ','SKIP: No valid LR PRES']}; %mark on list as in limbo
+    %         continue
+    %     end
     iTlr   = find(strcmp('TEMPERATURE2-90 (degC)',      Dphy.hdr) == 1); % CTD HR T
     iSlr   = find(strcmp('SALINITY2 (psu)',      Dphy.hdr) == 1); % CTD HR S
     %pres inds: -------------------------------------------------------------
@@ -807,7 +833,7 @@ for msg_ct = 1:size(msg_list,1)
             end
         end
     end
-    
+
     % % % % % %         % GET FLOATVIZ DATA - REG AND QC & GET HR DATA TOO
     % % % % % %         % WILL BE USED TO EXTRACT QF DATA FLAGS LATER
     % % % % % %         % DATA IS BEING PULLED FROM SIROCCO
@@ -829,15 +855,15 @@ for msg_ct = 1:size(msg_list,1)
     % % % % % %         end
     % end
     INFO.bgc_pres_axes_ct = nBGCpres;
-    
+
     % *************************************************************************
     % ******************************CTD DATA***********************************
     % *************************************************************************
-    
+
     % *********************************************************************
     % START WITH HR CTD DATA;  DEFINE ARGO PARAMETERS----------------------
     % *********************************************************************
-    
+
     if isempty(phy_d) % CHECK FOR DATA
         disp(['No ctd data in message file for ', ...
             strtrim(msg_list(msg_ct,:))])
@@ -856,21 +882,21 @@ for msg_ct = 1:size(msg_list,1)
         HR.TEMP = phy_d(:,iThr);
         HR.TEMP_ADJUSTED = HR.TEMP;
         %         HR.NBIN_CTD = hr_d(:,iBIN);
-        
+
         HR.PSAL_QC = HR.PRES * 0 + fv.QC; % Predimmension QF's
         HR.PSAL_ADJUSTED_QC = HR.PSAL_QC;
         HR.TEMP_QC = HR.PSAL_QC;
         HR.TEMP_ADJUSTED_QC = HR.PSAL_QC;
         HR.PRES_QC = HR.PSAL_QC;
         HR.PRES_ADJUSTED_QC = HR.PSAL_QC;
-        
+
         HRQF_P  = HR.PRES < RC.P(1) | HR.PRES > RC.P(2); % BAD HR S
         t_bio  = HR.PRES ~= fv.bio;
         HR.PRES_QC(HRQF_P)  = 4;  % BAD
         HR.PRES_QC(~HRQF_P & HR.PRES ~= fv.bio) = 1; % GOOD
         HR.PRES_ADJUSTED_QC(HRQF_P)  = 4;  % BAD
         HR.PRES_ADJUSTED_QC(~HRQF_P & HR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD
-        
+
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
         HRQF_S  = HR.PSAL < RC.S(1) | HR.PSAL > RC.S(2); % BAD HR S
         t_bio  = HR.PSAL ~= fv.bio;
@@ -880,33 +906,39 @@ for msg_ct = 1:size(msg_list,1)
         HR.PSAL_ADJUSTED_QC(HRQF_S)  = 4;  % BAD
         HR.PSAL_ADJUSTED_QC(~HRQF_S & HR.PSAL_ADJUSTED ~= fv.bio) = 1; % GOOD
         HR.PSAL_ADJUSTED_QC(t_bio) = HR.PSAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-        
+
         if yesBSAML == 1 && yesBSAMLcyc==1
             SbsIND = find(strcmp('S',tmpBSAML.list(:,ibsSENS)));
             if ~isempty(SbsIND)
-                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                TMPsbs = tmpBSAML.list(SbsIND,:);
                 singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                singleBADSflags = TMPsbs(:,ibsFL);
                 rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADsflags = TMPsbs(:,ibsFL);
                 if ~isempty(singleBADs{1})
-                    xxtmp = find(HR.PRES == singleBADs{1});
-                    if isempty(xxtmp)
-                        disp('WARNING!! PSAL PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                    else
-                        if HR.PSAL ~= fv.bio
-                            HR.PSAL_QC(xxtmp) = singleBADSflags;
-                        end
-                        if HR.PSAL_ADJUSTED ~=fv.bio
-                            HR.PSAL_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    for i2 = 1:length(singleBADs)
+                        xxtmp = find(HR.PRES == singleBADs{1});
+                        if isempty(xxtmp)
+                            disp('WARNING!! PSAL PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if HR.PSAL ~= fv.bio
+                                HR.PSAL_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
+                            if HR.PSAL_ADJUSTED ~=fv.bio
+                                HR.PSAL_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
                         end
                     end
+                    clear i2
                 end
-                HR.PSAL_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2) & HR.PSAL~=fv.bio) = rangeBADsflags;
-                HR.PSAL_ADJUSTED_QC(HR.PRES>=rangeBADs{1}(1) & HR.PRES<=rangeBADs{1}(2) & HR.PSAL_ADJUSTED~=fv.bio) = rangeBADsflags;
+                for i3 = 1:length(rangeBADs)
+                    HR.PSAL_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2) & HR.PSAL~=fv.bio) = str2double(rangeBADsflags{i3});
+                    HR.PSAL_ADJUSTED_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2) & HR.PSAL_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
             end
         end
-        
+
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
         HRQF_T  = HR.TEMP < RC.T(1) | HR.TEMP > RC.T(2); % BAD HR T
         t_bio   = HR.TEMP ~= fv.bio;
@@ -916,57 +948,84 @@ for msg_ct = 1:size(msg_list,1)
         HR.TEMP_ADJUSTED_QC(HRQF_T)  = 4;  % BAD
         HR.TEMP_ADJUSTED_QC(~HRQF_T & HR.TEMP_ADJUSTED ~= fv.bio) = 1; % GOOD
         HR.TEMP_ADJUSTED_QC(t_bio) = HR.TEMP_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-        
+
         % % % % % %         % CHECK FOR ANY HIGH RESOLUTION RAW QUALITY FLAGS TO ADD
         % % % % % %         % TM NOTE:  LOOK BACK AT PROCESS_APEX_FLOAT WHEN READY TO
         % % % % % %         % REINSERT THIS CODE BLOCK FOR GRABBING SIROCCO
         % % % % % %         % HR QUALITY FLAGS...(trying to reduce clutter for now!)
         % % % % % %         if ~isempty(FV_HRdata)
         % % % % % %         ... ; end
-        
+
         clear HRQF_P HRQF_S HRQF_T
-        
+
     end
-    
-    
+
+
     % *********************************************************************
     % NOW DEFINE LR CTD DATA;  DEFINE ARGO PARAMETERS----------------------
     % *********************************************************************
+    % % %     LR.PRES      = phy_d(:,iPlr);
+    % % %     tpNan = isnan(LR.PRES);
+    % % %     LR.PRES = LR.PRES(~tpNan);
+    % % %     % MAKE AN ARRAY OF ZEROS FOR FILLING ARRAYS LATER
+    % % %     fill0  = ones(size(LR.PRES))* 0;
+    % % %
+    % % %     LR.PRES_QC          = fill0 + fv.QC;
+    % % %     LR.PRES_ADJUSTED    = LR.PRES;
+    % % %     LR.PRES_ADJUSTED_QC = fill0 + fv.QC;
+    % % %
+    % % %     LR.PSAL             = phy_d(~tpNan,iSlr);
+    % % %     LR.PSAL_QC          = fill0 + fv.QC;
+    % % %     LR.PSAL_ADJUSTED    = LR.PSAL;
+    % % %     LR.PSAL_ADJUSTED_QC = fill0 + fv.QC;
+    % % %
+    % % %     LR.TEMP             = phy_d(~tpNan,iTlr);
+    % % %     LR.TEMP_QC          = fill0 + fv.QC;
+    % % %     LR.TEMP_ADJUSTED    = LR.TEMP;
+    % % %     LR.TEMP_ADJUSTED_QC = fill0 + fv.QC;
+
     LR.PRES      = phy_d(:,iPlr);
     tpNan = isnan(LR.PRES);
-    LR.PRES = LR.PRES(~tpNan);
+    LR.PRES(tpNan) = fv.bio;
+    %     LR.PRES = LR.PRES(~tpNan);
     % MAKE AN ARRAY OF ZEROS FOR FILLING ARRAYS LATER
     fill0  = ones(size(LR.PRES))* 0;
-    
     LR.PRES_QC          = fill0 + fv.QC;
     LR.PRES_ADJUSTED    = LR.PRES;
     LR.PRES_ADJUSTED_QC = fill0 + fv.QC;
-    
-    LR.PSAL             = phy_d(~tpNan,iSlr);
+
+    LR.PSAL      = phy_d(:,iSlr);
+    tsNan = isnan(LR.PSAL);
+    LR.PSAL(tsNan) = fv.bio;
     LR.PSAL_QC          = fill0 + fv.QC;
     LR.PSAL_ADJUSTED    = LR.PSAL;
     LR.PSAL_ADJUSTED_QC = fill0 + fv.QC;
-    
-    LR.TEMP             = phy_d(~tpNan,iTlr);
+
+    LR.TEMP      = phy_d(:,iTlr);
+    ttNan = isnan(LR.TEMP);
+    LR.TEMP(ttNan) = fv.bio;
     LR.TEMP_QC          = fill0 + fv.QC;
     LR.TEMP_ADJUSTED    = LR.TEMP;
     LR.TEMP_ADJUSTED_QC = fill0 + fv.QC;
-    
+
+    % if INFO.cast  == 110
+    %     keyboard
+    % end
     % CHECK FOR BAD PRESS VALUES
     LRQF_P = LR.PRES < RCR.P(1) | LR.PRES > RCR.P(2);
     LR.PRES_QC(LRQF_P)  = 4;  % BAD
     LR.PRES_QC(~LRQF_P & LR.PRES ~= fv.bio) = 1; % GOOD
-    
+
     LR.PRES_ADJUSTED_QC(LRQF_P)  = 4;  % BAD
     LR.PRES_ADJUSTED_QC(~LRQF_P & LR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD
-    
+
     % FIND BAD SALINITY & TEMP QF BECAUSE BAD S PERCOLATES TO
     % O, N and pH, density
     % I don't think any change required to isbadsensor.m -JP 03/10/2021
     [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
     LRQF_S = LR.PSAL < RCR.S(1) | LR.PSAL > RCR.S(2);
     t_bio  = LR.PSAL ~= fv.bio;
-    
+
     LR.PSAL_QC(LRQF_S)  = 4;  % BAD
     LR.PSAL_QC(~LRQF_S & LR.PSAL ~= fv.bio) = 1; % GOOD
     LR.PSAL_QC(t_bio) = LR.PSAL_QC(t_bio) * ~BSLflag + BSLflag*theflag;
@@ -974,38 +1033,44 @@ for msg_ct = 1:size(msg_list,1)
     LR.PSAL_ADJUSTED_QC(~LRQF_S & LR.PSAL_ADJUSTED ~= fv.bio) = 1; % GOOD
     LR.PSAL_ADJUSTED_QC(t_bio) = LR.PSAL_ADJUSTED_QC(t_bio) * ...
         ~BSLflag + BSLflag*theflag;
-    
-    
+
+
     if yesBSAML == 1 && yesBSAMLcyc==1
         SbsIND = find(strcmp('S',tmpBSAML.list(:,ibsSENS)));
         if ~isempty(SbsIND)
-            TMPsbs = dirs.BSAML.list(SbsIND,:);
+            TMPsbs = tmpBSAML.list(SbsIND,:);
             singleBADs = TMPsbs(:,ibsD);
-            singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+            singleBADSflags = TMPsbs(:,ibsFL);
             rangeBADs = TMPsbs(:,ibsDB);
-            rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+            rangeBADsflags = TMPsbs(:,ibsFL);
             if ~isempty(singleBADs{1})
-                xxtmp = find(LR.PRES == singleBADs{1});
-                if isempty(xxtmp)
-                    disp('WARNING!! PSAL PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                else
-                    if LR.PSAL~=fv.bio
-                        LR.PSAL_QC(xxtmp) = singleBADSflags;
-                    end
-                    if LR.PSAL_ADJUSTED~=fv.bio
-                        LR.PSAL_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                for i2 = 1:length(singleBADs)
+                    xxtmp = find(LR.PRES == singleBADs{1});
+                    if isempty(xxtmp)
+                        disp('WARNING!! PSAL PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                    else
+                        if LR.PSAL~=fv.bio
+                            LR.PSAL_QC(xxtmp) = str2double(singleBADSflags{i2});
+                        end
+                        if LR.PSAL_ADJUSTED~=fv.bio
+                            LR.PSAL_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                        end
                     end
                 end
+                clear i2
             end
-            LR.PSAL_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2) & LR.PSAL~=fv.bio) = rangeBADsflags;
-            LR.PSAL_ADJUSTED_QC(LR.PRES>=rangeBADs{1}(1) & LR.PRES<=rangeBADs{1}(2)& LR.PSAL_ADJUSTED~=fv.bio) = rangeBADsflags;
+            for i3 = 1:length(rangeBADs)
+                LR.PSAL_QC(LR.PRES>=rangeBADs{i3}(1) & LR.PRES<=rangeBADs{i3}(2) & LR.PSAL~=fv.bio) = str2double(rangeBADsflags{i3});
+                LR.PSAL_ADJUSTED_QC(LR.PRES>=rangeBADs{i3}(1) & LR.PRES<=rangeBADs{i3}(2)& LR.PSAL_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+            end
+            clear i3
         end
     end
-    
+
     [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
     LRQF_T  = LR.TEMP < RCR.T(1) | LR.TEMP > RCR.T(2);
     t_bio   = LR.TEMP ~= fv.bio;
-    
+
     LR.TEMP_QC(LRQF_T)  = 4;  % BAD
     LR.TEMP_QC(~LRQF_T & LR.TEMP ~= fv.bio) = 1; % GOOD
     LR.TEMP_QC(t_bio) = LR.TEMP_QC(t_bio) * ~BSLflag + BSLflag*theflag;
@@ -1013,22 +1078,36 @@ for msg_ct = 1:size(msg_list,1)
     LR.TEMP_ADJUSTED_QC(~LRQF_T & LR.TEMP_ADJUSTED ~= fv.bio) = 1; % GOOD
     LR.TEMP_ADJUSTED_QC(t_bio) = LR.TEMP_ADJUSTED_QC(t_bio) * ...
         ~BSLflag + BSLflag*theflag;
-    
+
     clear LRQF_P LRQF_S LRQF_T
     % *************************************************************************
     % ***************************END CTD DATA**********************************
     % *************************************************************************
-    
-    
+
+
     % *************************************************************************
     % NOW DO NECESSARY T & S INTERPOLATIONS TO BGC PRESSURE AXES!
     % *************************************************************************
-    
+
+
+    % If NO pressure levels exist in HR, can't proceed!!  (ie
+    % 4903026.181...)
+    Anan = isnan(HR.PRES);
+    if sum(Anan)==length(HR.PRES)
+        disp(['Pressure is missing at all levels for HR Pressure axis!  CANNOT PROCEED for cycle ', strtrim(msg_list(msg_ct,:))])
+        %now remove from the final processed list
+        Indext11 = strfind(tf_float.new_messages,msg_file);
+        t1 = find(not(cellfun('isempty',Indext11)));
+        if ~isempty(t1)
+            tf_float.new_messages(t1) ={[char(tf_float.new_messages(t1)),' ','SKIP: No valid PRES']}; %mark on list as in limbo
+        end
+        continue
+    end
     for iB = 1:nBGCpres
         tmpKpres = phy_d(:,iPbgc(iB));
         [maxKP,indKP] = nanmax(tmpKpres);
         if isnan(maxKP) %ALL entries are NaN!!  Sensor not turned off, but no data was returned (so nan-filled file.  ie ss0001.047 no3)
-            
+
             Aint = int16.empty(0,1);
             Bdub = double.empty(size(Aint));
             eval(['BGC0',num2str(iB),' = struct("PRES",Bdub,"PRES_QC",Bdub,"PRES_ADJUSTED",Bdub,"PRES_ADJUSTED_QC",Bdub,"TEMPi",Bdub,"TEMPi_QC",Bdub,"PSALi",Bdub,"PSALi_QC",Bdub);'])
@@ -1039,28 +1118,29 @@ for msg_ct = 1:size(msg_list,1)
             tpkNan = kidpres(~inanp); %remove any other nans but only for the interpolation
             %         kidpres = kidpres(~tpkNan);
             fill0  = ones(size(kidpres))* 0;
-            
+
             kidpres_QC          = fill0 + fv.QC;
             kidpres_ADJUSTED    = kidpres;
             kidpres_ADJUSTED_QC = fill0 + fv.QC;
-            
+
             % CHECK FOR BAD PRESS VALUES
             kidQF_P = kidpres < RCR.P(1) | kidpres > RCR.P(2);
             kidpres_QC(kidQF_P)  = 4;  % BAD
             kidpres_QC(~kidQF_P & kidpres ~= fv.bio) = 1; % GOOD
-            
+
             kidpres_ADJUSTED_QC(kidQF_P)  = 4;  % BAD
             kidpres_ADJUSTED_QC(~kidQF_P & kidpres_ADJUSTED ~= fv.bio) = 1; % GOOD
             if iB == NO3AX %for nitrate
-                offset = 0.8; %positive offset.  ADD pressure to NO3 axis (SUNA sensor is deeper)
+                offset = 1.1; %positive offset.  ADD pressure to NO3 axis (SUNA sensor is deeper)
                 disp('*********************************************')
-                disp(['**NOTE: Adding 0.8m sensor offset to ',FLTsensors{iB+CTD_Nax},' pressure axis during T/S interpolation.'])
+                disp(['**NOTE: Adding 1.1m sensor offset to ',FLTsensors{iB+CTD_Nax},' pressure axis during T/S interpolation.'])
                 disp('*********************************************')
             else
                 offset = 0;
             end
             tol = 2;
             PST = [HR.PRES HR.PRES_QC HR.TEMP HR.TEMP_QC HR.PSAL HR.PSAL_QC];
+            %             keyboard
             newPTS = interp_SOLO_ST(PST,tpkNan,offset,tol);
             % TM aug22, now take care to match up pressures (want to preserve
             % missing pressures below max pres.)
@@ -1069,6 +1149,7 @@ for msg_ct = 1:size(msg_list,1)
             foxSalQ = NaN(length(kidpres),1);
             foxTmpQ = NaN(length(kidpres),1);
             [~, fox, ~] = intersect(kidpres,tpkNan);
+            %             keyboard
             foxSal(fox) = newPTS.PSALi;
             foxSalQ(fox) = newPTS.PSALi_QC;
             foxTmp(fox) = newPTS.TEMPi;
@@ -1080,13 +1161,13 @@ for msg_ct = 1:size(msg_list,1)
         end
         clear tpkNan fill0
     end
-    save('temp.mat')
-    
+    %     save('temp.mat')
+
     % *************************************************************************
     % NOW PROCESS EACH BGC PARAMETER IN TURN.  AT THE BEGINNING, PERFORM A
     % CHECK ON WHICH BGC AXIS THE PARAMTER BELONGS TO, AND PROCEED ACCORDINGLY.
     % *************************************************************************
-    
+
     if isfield(cal,'O')
         BGCIND = find(not(cellfun('isempty',strfind(FLTsensors,'DOX'))))-CTD_Nax; %#ok<STRCL1>
         eval(['DOXarray = BGC0',num2str(BGCIND),';']); %to reduce the number of eval calls, rename to temporary structure until all desired fields are populated.
@@ -1096,7 +1177,7 @@ for msg_ct = 1:size(msg_list,1)
         % USING POTENTIAL DENSITY ( per: Processing Argo OXYGEN data at the
         % DAC level Version 2.0 October 1st 2015, Chap 5)
         DOX_den = density(DOXarray.PSALi, potT); % potential density, kg /m^3
-        
+
         % ****************************************************************
         % CALCULATE OXYGEN CONCENTRATION
         % ****************************************************************
@@ -1110,7 +1191,7 @@ for msg_ct = 1:size(msg_list,1)
                 disp(['Out of range phase or optode T detected for ', ...
                     msg_file])
             end
-            
+
             if strcmp(cal.O.type,'SBE83')
                 DOXarray.PHASE_DELAY_DOXY            = fill0 + fv.bio;
                 DOXarray.PHASE_DELAY_DOXY_QC         = fill0 + fv.QC;
@@ -1129,7 +1210,8 @@ for msg_ct = 1:size(msg_list,1)
                 TRAJ.InAir.IN_AIR_LOGICAL = dox_InAir(:,1); %TM 3/28/22 add in-air logical per John's code modifications
                 if ~isempty(dox_InAir) & sum(dox_InAir(:)) ~= 0 % 0 means ice detection on
                     myadata = [zero_fill dox_InAir(:,iToAir) zero_fill dox_InAir(:,iPhaseAir) dox_InAir(:,iToAir)]; %use optode T here for CTD T input?
-                    [ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myadata, cal.O);
+                    [ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myadata, cal.O, 0); % jp 02/0924 looks like all SOLO's report Optode T  in deg C
+                    %[ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myadata, cal.O,cal.info.float_type);
                     TRAJ.InAir.TEMP_DOXY = dox_InAir(:,iToAir);
                     TRAJ.InAir.PHASE_DELAY_DOXY = dox_InAir(:,iPhaseAir);
                     TRAJ.InAir.PPOX_DOXY = ppoxdoxy;
@@ -1145,7 +1227,7 @@ for msg_ct = 1:size(msg_list,1)
                     TRAJ.InAir.PHASE_DELAY_DOXY_QC(~tphaseBAD)=1;
                     clear O2 po2BAD tempBAD tphaseBAD
                 end
-                
+
             else
                 disp('SBE83 optode not detected!!! Error in SOLO oxygen processing...')
             end
@@ -1160,9 +1242,11 @@ for msg_ct = 1:size(msg_list,1)
             INFO.DOXY_SCI_CAL_COEF = 'not applicable';
             INFO.DOXY_SCI_CAL_COM  = 'not applicable';
             INFO.DOXY_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
+
             if strcmp(cal.O.type,'SBE83')
                 myOdata = [DOXarray.PRES(~t_nan) DOXarray.TEMPi(~t_nan) DOXarray.PSALi(~t_nan) dox_d((~t_nan),iPhase),dox_d((~t_nan),iTo)];
-                [ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myOdata, cal.O);
+                [ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myOdata, cal.O, 0); % jp 02/0924 looks like all SOLO's report Optode T  in deg C
+                %[ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myOdata, cal.O,cal.info.float_type);
                 DOXarray.DOXY(~t_nan) = O2_uM ./ DOX_den(~t_nan) .* 1000; % µmol/kg
             else
                 disp('SBE83 not detected!!! Error in SOLO oxygen processing!')
@@ -1180,7 +1264,8 @@ for msg_ct = 1:size(msg_list,1)
             DOXarray.TEMP_DOXY_QC(~t_nan) = fv.QC;
             % Save O2sol, pO2?
             clear O2
-            
+
+
             if isfield(QC,'O')
                 % !! ONE TIME GAIN CORRECTION ONLY !!
                 %             LR.DOXY_ADJUSTED(~t_nan)  = LR.DOXY(~t_nan) .* QC.O.steps(1,3);
@@ -1202,23 +1287,23 @@ for msg_ct = 1:size(msg_list,1)
                 if juld_prof<juld_end
                     if ~isempty(dox_InAir)
                         DOXarray.DOXY_ADJUSTED_ERROR(~t_nan & ~t_nan_DOX) = convert_O2mb_error_to_conc(DOXarray.TEMPi(~t_nan & ~t_nan_DOX),DOXarray.PSALi(~t_nan & ~t_nan_DOX),2); %2mbar error spec for air-calibrated
-                        LAST_DOXY_ERROR = DOXarray.DOXY_ADJUSTED_ERROR;
+                        %                         LAST_DOXY_ERROR = DOXarray.DOXY_ADJUSTED_ERROR;
                     else
                         DOXarray.DOXY_ADJUSTED_ERROR(~t_nan & ~t_nan_DOX) = convert_O2mb_error_to_conc(DOXarray.TEMPi(~t_nan & ~t_nan_DOX),DOXarray.PSALi(~t_nan & ~t_nan_DOX),5); %4-6mbar error spec for air-calibrated
-                        LAST_DOXY_ERROR = DOXarray.DOXY_ADJUSTED_ERROR;
+                        %                         LAST_DOXY_ERROR = DOXarray.DOXY_ADJUSTED_ERROR;
                     end
                 else
                     extra_error_ppox = 1.*(juld_prof-juld_end)./365; %1 mb per year error inflation per Argo rec
                     O2error = convert_O2mb_error_to_conc(DOXarray.TEMPi(~t_nan & ~t_nan_DOX),DOXarray.PSALi(~t_nan & ~t_nan_DOX),extra_error_ppox);
-                    DOXarray.DOXY_ADJUSTED_ERROR(~t_nan & ~t_nan_DOX) = LAST_DOXY_ERROR(~t_nan & ~t_nan_DOX)+O2error;
+                    DOXarray.DOXY_ADJUSTED_ERROR(~t_nan & ~t_nan_DOX) = DOXarray.DOXY_ADJUSTED_ERROR(~t_nan & ~t_nan_DOX)+O2error;
                 end
-                
+
                 INFO.DOXY_SCI_CAL_COEF = ['G_INIT = ', ...
                     num2str(QC.O.steps(steptmp,3),'%0.4f'),...
                     '; G_DRIFT = ',num2str(QC.O.steps(steptmp,5),'%0.4f'),...
                     '; JULD_PROF = ',num2str(juld_prof,'%9.4f'),...
                     '; JULD_INIT = ',num2str(juld_init,'%9.4f')];
-                
+
                 if ~isempty(Ddox.InAir)
                     INFO.DOXY_SCI_CAL_COM  = ['G determined from ',...
                         'float  measurements in air. See Johnson et al.,2015,', ...
@@ -1229,27 +1314,27 @@ for msg_ct = 1:size(msg_list,1)
                         'See Takeshita et al.2013,doi:10.1002/jgrc.20399'];
                 end
             end
-            
-            
+
+
             % DO SOME FINAL CHECK ON VALUES, IF BAD SET QF = 4
             [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'O');
             t_bio = DOXarray.DOXY ~= fv.bio; % Non fill value samples
             tST   = DOXarray.PSALi_QC == 4 | DOXarray.TEMPi_QC == 4 | DOXarray.PRES_QC == 4; % Bad S or T will affect O2
             t_chk = DOXarray.DOXY < RCR.O(1)| DOXarray.DOXY > RCR.O(2); % range check
             t_chk = t_chk | O2_chk | tST; % BAD O2 T or phase
-            
+
             t_chk = t_chk & t_bio; % & not MVI either
-            
+
             if isfield(DOXarray,'TPHASE_DOXY')
                 DOXarray.TPHASE_DOXY_QC(t_bio) = DOXarray.TPHASE_DOXY_QC(t_bio) *  ...
                     ~BSLflag + BSLflag*theflag;
                 DOXarray.TPHASE_DOXY_QC(t_chk) = 4;
             end
-            
+
             % VERY BAD PSAL & TEMP = BAD O2 TOO
             DOXarray.DOXY_QC(t_bio) = DOXarray.DOXY_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             DOXarray.DOXY_QC(t_chk) = 4;
-            
+
             if isfield(QC,'O')
                 t_bio = DOXarray.DOXY_ADJUSTED ~= fv.bio;
                 %             tST   = DOXarray.PSALi_ADJUSTED_QC == 4 | DOXarray.TEMPi_ADJUSTED_QC == 4 ...
@@ -1257,39 +1342,45 @@ for msg_ct = 1:size(msg_list,1)
                 t_chk = DOXarray.DOXY_ADJUSTED < RC.O(1)| ...
                     DOXarray.DOXY_ADJUSTED > RC.O(2) | O2_chk;
                 t_chk = (t_chk | tST) & t_bio;
-                
+
                 DOXarray.DOXY_ADJUSTED_QC(t_bio) = DOXarray.DOXY_ADJUSTED_QC(t_bio) * ...
                     ~BSLflag + BSLflag*theflag;
                 DOXarray.DOXY_ADJUSTED_QC(t_chk) = 4;
             end
-            
+
             if yesBSAML == 1 && yesBSAMLcyc==1
                 SbsIND = find(strcmp('O',tmpBSAML.list(:,ibsSENS)));
                 if ~isempty(SbsIND)
-                    TMPsbs = dirs.BSAML.list(SbsIND,:);
+                    TMPsbs = tmpBSAML.list(SbsIND,:);
                     singleBADs = TMPsbs(:,ibsD);
-                    singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                    singleBADSflags = TMPsbs(:,ibsFL);
                     rangeBADs = TMPsbs(:,ibsDB);
-                    rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                    rangeBADsflags = TMPsbs(:,ibsFL);
                     if ~isempty(singleBADs{1})
-                        xxtmp = find(DOXarray.PRES == singleBADs{1});
-                        if isempty(xxtmp)
-                            disp('WARNING!! DOXY PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                        else
-                            if DOXarray.DOXY~=fv.bio
-                                DOXarray.DOXY_QC(xxtmp) = singleBADSflags;
-                            end
-                            if DOXarray.DOXY_ADJUSTED~=fv.bio
-                                DOXarray.DOXY_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        for i2=1:length(singleBADs)
+                            xxtmp = find(DOXarray.PRES == singleBADs{1});
+                            if isempty(xxtmp)
+                                disp('WARNING!! DOXY PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                            else
+                                if DOXarray.DOXY~=fv.bio
+                                    DOXarray.DOXY_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                end
+                                if DOXarray.DOXY_ADJUSTED~=fv.bio
+                                    DOXarray.DOXY_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                end
                             end
                         end
+                        clear i2
                     end
-                    DOXarray.DOXY_QC(DOXarray.PRES>=rangeBADs{1}(1) & DOXarray.PRES<=rangeBADs{1}(2) & DOXarray.DOXY~=fv.bio) = rangeBADsflags;
-                    DOXarray.DOXY_ADJUSTED_QC(DOXarray.PRES>=rangeBADs{1}(1) & DOXarray.PRES<=rangeBADs{1}(2)& DOXarray.DOXY_ADJUSTED~=fv.bio) = rangeBADsflags;
+                    for i3=1:length(rangeBADs)
+                        DOXarray.DOXY_QC(DOXarray.PRES>=rangeBADs{i3}(1) & DOXarray.PRES<=rangeBADs{i3}(2) & DOXarray.DOXY~=fv.bio) = str2double(rangeBADsflags{i3});
+                        DOXarray.DOXY_ADJUSTED_QC(DOXarray.PRES>=rangeBADs{i3}(1) & DOXarray.PRES<=rangeBADs{i3}(2)& DOXarray.DOXY_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                    end
+                    clear i3
                 end
             end
-            
-            
+
+
             % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
             % DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
             % (BAD).  BGC_spiketest screens for nans and fill values and pre-identified bad values.
@@ -1322,29 +1413,34 @@ for msg_ct = 1:size(msg_list,1)
             % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
             clear QCscreen_O QCscreenOadj spike_inds quality_flags
             %             end
-            
+
             % OXYGEN DATA-MODE
             XEMPT_O = find(DOXarray.DOXY ~= 99999,1); % if empty, then cycle has no data
-            if isempty(QC) || isempty(XEMPT_O) % no adjustments have been made yet, or all data is 99999
-                INFO.DOXY_DATA_MODE = 'R';
-            elseif ~isempty(QC) && isfield(QC,'O')
+            %             if isempty(QC) || isempty(XEMPT_O) % no adjustments have been made yet, or all data is 99999
+            %                 INFO.DOXY_DATA_MODE = 'R';
+            if ~isempty(QC) && isfield(QC,'O') && ~isempty(XEMPT_O)
                 %                 if cycdate > QC.date
-                
+
                 if str2num(cast_num) > QC.N.steps(end,2) %us last cycle assessed in Nitrate for O2 as well (O2 cycle listed in qc matrix is typically '1' if avg gain used)
                     INFO.DOXY_DATA_MODE = 'A';
                 else
                     INFO.DOXY_DATA_MODE = 'D';
                 end
+            else
+                INFO.DOXY_DATA_MODE = 'R';
+                INFO.DOXY_SCI_CAL_EQU  = 'not applicable';
+                INFO.DOXY_SCI_CAL_COEF = 'not applicable';
+                INFO.DOXY_SCI_CAL_COM  = 'not applicable';
             end
             eval(['BGC0',num2str(BGCIND),' = DOXarray;']); %reassign array structure name.
             clear BGCIND fill0
         end
     end
-    
+
     % ****************************************************************
     % CALCULATE CHLOROPHYLL CONCENTRATION (µg/L or mg/m^3)
     % ****************************************************************
-    
+
     if (~isempty(iChl) && master_FLBB ~= 0) || ...
             (~isempty(iChl) && ~isempty(regexp(MBARI_ID_str, bad_chl_filter,'once')))
         BGCIND = find(not(cellfun('isempty',strfind(FLTsensors,'ECO'))))-CTD_Nax; %#ok<STRCL1>
@@ -1356,7 +1452,7 @@ for msg_ct = 1:size(msg_list,1)
         % file header indicates that an FLBB exists but there isn't one on the
         % float. For these floats the FLBB_mode = 0 from the start maybe there
         % is a better way...
-        
+
         % Predim variables with fill values then adjust as needed
         ECOarray.FLUORESCENCE_CHLA    = fill0 + fv.bio;
         ECOarray.FLUORESCENCE_CHLA_QC = fill0 + fv.QC;
@@ -1369,31 +1465,31 @@ for msg_ct = 1:size(msg_list,1)
         INFO.CHLA_SCI_CAL_COEF  = 'not applicable';
         INFO.CHLA_SCI_CAL_COM   = 'not applicable';
         INFO.CHLA_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
-        
+
         t_nan = isnan(eco_d(:,iChl)); % NaN's in data if any
-        
+
         ECOarray.FLUORESCENCE_CHLA(~t_nan)    = eco_d(~t_nan,iChl);
         ECOarray.FLUORESCENCE_CHLA_QC(~t_nan) = fv.QC;
-        
+
         if isfield(cal,'CHL') % Sensor could be bad so maybe no cal info
             ECOarray.CHLA(~t_nan) = (eco_d(~t_nan,iChl) - cal.CHL.ChlDC) .* ...
                 cal.CHL.ChlScale;
             ECOarray.CHLA_QC(~t_nan) =  3; % 3 do not use w/o adjusting
-            
+
             % ADJUSTED DATA BASED ON ADMT18 CONCENSUS -WILL BE UPDATED
             % WITHIN THE YEAR - jp 12/13/2017
-            
+
             % 1st CHECK FOR IN SITU DARKS & TRY AND GET THEM IF NOT THERE
             if ~isfield(cal.CHL, 'SWDC')
                 %SWDC = get_CHLdark(MBARI_ID_str, dirs, 5); % 1st 5 good profiles
-                SWDC = get_CHLdark(cal.info, dirs, 5); % 1st 5 good profiles
+                SWDC = get_CHLdark(cal, dirs, 5); % 1st 5 good profiles
                 if ~isempty(SWDC)
                     cal.CHL.SWDC = SWDC; % add structure to cal file
                     save(fp_cal,'cal') % update cal file
                     disp(['Cal file updated: ',fp_cal]);
                 end
             end
-            
+
             % FIGURE OUT WHICH DC TO USE BUT ALWAYS CREATE ADJUSTED CHL
             % DATA IF RAW EXISTS
             if isfield(cal.CHL, 'SWDC')
@@ -1401,7 +1497,7 @@ for msg_ct = 1:size(msg_list,1)
             else
                 CHL_DC = cal.CHL.ChlDC; % NO IN SITU DARKS YET OR EVER
             end
-            
+
             ECOarray.CHLA_ADJUSTED(~t_nan) = (eco_d(~t_nan,iChl) - ...
                 CHL_DC) .* cal.CHL.ChlScale ./ 2;
             ECOarray.CHLA_ADJUSTED_QC(~t_nan) =  2;
@@ -1410,10 +1506,13 @@ for msg_ct = 1:size(msg_list,1)
             NPQ_CHL(t_nan) = NaN; % fill back to NaN
             %                 NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
             %                 %INFO.gps now includes sdn, TM 10/27/20
+            % %             if str2num(cast_num) == 80
+            % %             keyboard
+            % %             end
             NPQ = get_NPQcorr(nanmean(INFO.gps,1), ...
                 [[ECOarray.PRES,ECOarray.TEMPi,ECOarray.PSALi],NPQ_CHL], dirs);
             NPQ.data(t_nan,2:end) = fv.bio; % nan back to fill
-            
+
             if ~isempty(NPQ.data)
                 iXing   = find(strcmp('Xing_MLD',NPQ.hdr) == 1);
                 iSPIKE  = find(strcmp('CHLspike',NPQ.hdr) == 1);
@@ -1422,32 +1521,32 @@ for msg_ct = 1:size(msg_list,1)
                     NPQ.data(tNPQ & ~t_nan,iXing) + ...
                     NPQ.data(tNPQ & ~t_nan,iSPIKE);
                 ECOarray.CHLA_ADJUSTED_QC(tNPQ & ~t_nan) =  5;
-                
+
             end
             ECOarray.CHLA_ADJUSTED_ERROR(~t_nan) = ...
                 abs(ECOarray.CHLA_ADJUSTED(~t_nan) * 2);
-            
+
             INFO.CHLA_SCI_CAL_EQU  = ['CHLA_ADJUSTED=CHLA/A, '...
                 'NPQ corrected (Xing et al., 2012), spike profile ', ...
                 'added back in'];
             INFO.CHLA_SCI_CAL_COEF = 'A=2';
             INFO.CHLA_SCI_CAL_COM  =['A is best estimate ', ...
                 'from Roesler et al., 2017, doi: 10.1002/lom3.10185'];
-            
-            
-            
+
+
+
             % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
             [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'CHL');
             t_bio   = ECOarray.CHLA ~= fv.bio;
             ECOarray.FLUORESCENCE_CHLA_QC(t_bio) = ECOarray.FLUORESCENCE_CHLA_QC(t_bio) ...
                 * ~BSLflag + BSLflag*theflag;
             ECOarray.CHLA_QC(t_bio) = ECOarray.CHLA_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-            
+
             t_chk = t_bio & (ECOarray.CHLA < RCR.CHL(1)|ECOarray.CHLA > RCR.CHL(2));
             ECOarray.CHLA_QC(t_chk) = 4;
             ECOarray.FLUORESCENCE_CHLA_QC(t_chk) = 4;
-            
-            
+
+
             if isfield(cal.CHL, 'SWDC')
                 t_bio   = ECOarray.CHLA_ADJUSTED ~= fv.bio;
                 ECOarray.CHLA_ADJUSTED_QC(t_bio) = ECOarray.CHLA_ADJUSTED_QC(t_bio) ...
@@ -1456,34 +1555,39 @@ for msg_ct = 1:size(msg_list,1)
                     (ECOarray.CHLA_ADJUSTED < RC.CHL(1)|ECOarray.CHLA_ADJUSTED > RC.CHL(2));
                 ECOarray.CHLA_ADJUSTED_QC(t_chk) = 4;
             end
-            
+
             if yesBSAML == 1 && yesBSAMLcyc==1
                 SbsIND = find(strcmp('CHL',tmpBSAML.list(:,ibsSENS)));
                 if ~isempty(SbsIND)
-                    TMPsbs = dirs.BSAML.list(SbsIND,:);
+                    TMPsbs = tmpBSAML.list(SbsIND,:);
                     singleBADs = TMPsbs(:,ibsD);
-                    singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                    singleBADSflags = TMPsbs(:,ibsFL);
                     rangeBADs = TMPsbs(:,ibsDB);
-                    rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                    rangeBADsflags = TMPsbs(:,ibsFL);
                     if ~isempty(singleBADs{1})
-                        xxtmp = find(ECOarray.PRES == singleBADs{1});
-                        if isempty(xxtmp)
-                            disp('WARNING!! CHLA PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                        else
-                            if ECOarray.CHLA~=fv.bio
-                                ECOarray.CHLA_QC(xxtmp) = singleBADSflags;
-                            end
-                            if ECOarray.CHLA_ADJUSTED~=fv.bio
-                                ECOarray.CHLA_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                        for i2 = 1:length(singleBADs)
+                            xxtmp = find(ECOarray.PRES == singleBADs{1});
+                            if isempty(xxtmp)
+                                disp('WARNING!! CHLA PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                            else
+                                if ECOarray.CHLA~=fv.bio
+                                    ECOarray.CHLA_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                end
+                                if ECOarray.CHLA_ADJUSTED~=fv.bio
+                                    ECOarray.CHLA_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                end
                             end
                         end
                     end
-                    ECOarray.CHLA_QC(ECOarray.PRES>=rangeBADs{1}(1) & ECOarray.PRES<=rangeBADs{1}(2) & ECOarray.CHLA~=fv.bio) = rangeBADsflags;
-                    ECOarray.CHLA_ADJUSTED_QC(ECOarray.PRES>=rangeBADs{1}(1) & ECOarray.PRES<=rangeBADs{1}(2)& ECOarray.CHLA_ADJUSTED~=fv.bio) = rangeBADsflags;
+                    for i3 = 1:length(rangeBADs)
+                        ECOarray.CHLA_QC(ECOarray.PRES>=rangeBADs{i3}(1) & ECOarray.PRES<=rangeBADs{i3}(2) & ECOarray.CHLA~=fv.bio) = str2double(rangeBADsflags{i3});
+                        ECOarray.CHLA_ADJUSTED_QC(ECOarray.PRES>=rangeBADs{i3}(1) & ECOarray.PRES<=rangeBADs{i3}(2)& ECOarray.CHLA_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                    end
+                    clear i3
                 end
             end
         end
-        
+
         % CHL DATA_MODE
         if isfield(cal,'CHL')
             %         if isfield(cal.CHL,'SWDC') && isfield(cal.CHL.SWDC,'DC') && sum(LR.CHLA_ADJUSTED<99999)>0  % median dark count has been quantified (and there is data for that profile) --> adjustment has been made
@@ -1494,7 +1598,7 @@ for msg_ct = 1:size(msg_list,1)
             end
         end
     end
-    
+
     % ****************************************************************
     % CALCULATE PARTICLE BACKSCATTER COEFFICIENT FROM VOLUME
     % SCATTERING FUNCTION (VSF) (m^-1)
@@ -1516,9 +1620,9 @@ for msg_ct = 1:size(msg_list,1)
         INFO.BBP700_SCI_CAL_COEF  = 'not applicable';
         INFO.BBP700_SCI_CAL_COM   = 'not applicable';
         INFO.BBP700_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
-        
+
         t_nan = isnan(eco_d(:,iBb)); % NaN's in data if any
-        
+
         if isfield(cal,'BB') % Sensor could be bad so maybe no cal info
             % VOLUME SCATTERING FUNCTION (VSF) (m^-1 sr^-1)
             VSF(~t_nan) = (eco_d(~t_nan, iBb) - cal.BB.BetabDC) ...
@@ -1526,7 +1630,7 @@ for msg_ct = 1:size(msg_list,1)
             % NOW CALCULATE PARTICLE BACKSCATTER COEFFICIENT
             %X       = 1.13*2*pi; % (Barnes and Antoine, 2014)
             %X       = 1.17*2*pi; % (email from E. Boss 24 May 2016)
-            
+
             % (Proc. Bio-Argo particle backscattering at the DAC level
             % Version 1.2, July 21th 2016
             X      = 1.076*2*pi; % FLBBCD (three channel sensor) chi is 1.076 (for FLBBAP2 chi is 1.097)
@@ -1548,7 +1652,7 @@ for msg_ct = 1:size(msg_list,1)
             t_nan_BBP = isnan(ECOarray.BBP700);
             ECOarray.BBP700(t_nan_BBP) = fv.bio;
             ECOarray.BBP700_QC(~t_nan & ~t_nan_BBP) = 2; % 3 do not use w/o adjusting ... 6/10/21 modify qcraw flag from 3 to 2.
-            
+
             % CALCULATE ADJUSTED DATA _ NO ADJUSTMENTS AT THIS TIME
             % BUT...6/10/21 START POPULATING BBP700_ADJUSTED WITH BBP
             % DIRECTLY!!!  KEEP ORIGINAL BLOCK IN CASE AN ACTUAL ADJUSTMENT
@@ -1559,7 +1663,7 @@ for msg_ct = 1:size(msg_list,1)
             INFO.BBP700_SCI_CAL_EQU  = 'BBP700_ADJUSTED=BBP700';
             INFO.BBP700_SCI_CAL_COEF = [''];
             INFO.BBP700_SCI_CAL_COM  =['BBP700_ADJUSTED is being filled with BBP700 directly in real time.  Adjustment method may be enhanced in the future.'];
-            
+
             %             if isfield(QC,'BB')
             %                 QCD = [LR.PRES, LR.TEMP, LR.PSAL, LR.BBP700];
             %                 LR.BBP700_ADJUSTED(~t_nan) = ...
@@ -1575,53 +1679,59 @@ for msg_ct = 1:size(msg_list,1)
             %                     ' rosette cast'];
             %             end
         end
-        
+
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'BBP');
         t_bio   = ECOarray.BBP700 ~= fv.bio;
         ECOarray.BETA_BACKSCATTERING700_QC(t_bio) = ...
             ECOarray.BETA_BACKSCATTERING700_QC(t_bio) * ~BSLflag + BSLflag*theflag;
         ECOarray.BBP700_QC(t_bio) = ECOarray.BBP700_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-        
-        
+
+
         t_chk = t_bio & ...
             (ECOarray.BBP700 < RCR.BB700(1)| ECOarray.BBP700 > RCR.BB700(2));
         ECOarray.BBP700_QC(t_chk) = 4;
         ECOarray.BETA_BACKSCATTERING700_QC(t_chk) = 4;
-        
+
         t_bio = ECOarray.BBP700_ADJUSTED ~= fv.bio;
         ECOarray.BBP700_ADJUSTED_QC(t_bio) = ECOarray.BBP700_ADJUSTED_QC(t_bio) ...
             * ~BSLflag + BSLflag*theflag;
         t_chk = t_bio & (ECOarray.BBP700_ADJUSTED < RC.BB700(1)| ...
             ECOarray.BBP700_ADJUSTED > RC.BB700(2));
         ECOarray.BBP700_ADJUSTED_QC(t_chk) = 4;
-        
+
         if yesBSAML == 1 && yesBSAMLcyc==1
             SbsIND = find(strcmp('BBP',tmpBSAML.list(:,ibsSENS)));
             if ~isempty(SbsIND)
-                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                TMPsbs = tmpBSAML.list(SbsIND,:);
                 singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                singleBADSflags = TMPsbs(:,ibsFL);
                 rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADsflags = TMPsbs(:,ibsFL);
                 if ~isempty(singleBADs{1})
-                    xxtmp = find(ECOarray.PRES == singleBADs{1});
-                    if isempty(xxtmp)
-                        disp('WARNING!! BBP700 PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                    else
-                        if ECOarray.BBP700~=fv.bio
-                            ECOarray.BBP700_QC(xxtmp) = singleBADSflags;
-                        end
-                        if ECOarray.BBP700_ADJUSTED~=fv.bio
-                            ECOarray.BBP700_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    for i2=1:length(singleBADs)
+                        xxtmp = find(ECOarray.PRES == singleBADs{1});
+                        if isempty(xxtmp)
+                            disp('WARNING!! BBP700 PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if ECOarray.BBP700~=fv.bio
+                                ECOarray.BBP700_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
+                            if ECOarray.BBP700_ADJUSTED~=fv.bio
+                                ECOarray.BBP700_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
                         end
                     end
+                    clear i2
                 end
-                ECOarray.BBP700_QC(ECOarray.PRES>=rangeBADs{1}(1) & ECOarray.PRES<=rangeBADs{1}(2) & ECOarray.BBP700~=fv.bio) = rangeBADsflags;
-                ECOarray.BBP700_ADJUSTED_QC(ECOarray.PRES>=rangeBADs{1}(1) & ECOarray.PRES<=rangeBADs{1}(2)& ECOarray.BBP700_ADJUSTED~=fv.bio) = rangeBADsflags;
+                for i3=1:length(rangeBADs)
+                    ECOarray.BBP700_QC(ECOarray.PRES>=rangeBADs{i3}(1) & ECOarray.PRES<=rangeBADs{i3}(2) & ECOarray.BBP700~=fv.bio) = str2double(rangeBADsflags{i3});
+                    ECOarray.BBP700_ADJUSTED_QC(ECOarray.PRES>=rangeBADs{1}(1) & ECOarray.PRES<=rangeBADs{1}(2)& ECOarray.BBP700_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
             end
         end
-        
+
         % ASSIGN ECO PARAMETER DATA MODES:
         % BBP700
         if isfield(cal,'BB')
@@ -1631,10 +1741,10 @@ for msg_ct = 1:size(msg_list,1)
                 INFO.BBP700_DATA_MODE = 'R';
             end
         end
-        
+
         clear BETA_SW X VSF ct b90sw bsw
     end
-    
+
     % ****************************************************************
     % CALCULATE CDOM (ppb)
     % ****************************************************************
@@ -1650,16 +1760,16 @@ for msg_ct = 1:size(msg_list,1)
         INFO.CDOM_SCI_CAL_COEF  = 'not applicable';
         INFO.CDOM_SCI_CAL_COM   = 'not applicable';
         INFO.CDOM_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
-        
+
         t_nan = isnan(eco_d(:,iCdm)); % NaN's in data if any
         if isfield(cal,'CDOM') % Sensor could be bad so maybe no cal info
-            
+
             ECOarray.FLUORESCENCE_CDOM(~t_nan)    = eco_d(~t_nan,iCdm);
             ECOarray.FLUORESCENCE_CDOM_QC(~t_nan) = fv.QC;
             ECOarray.CDOM(~t_nan)  = (eco_d(~t_nan,iCdm) - cal.CDOM.CDOMDC) ...
                 .* cal.CDOM.CDOMScale;
             ECOarray.CDOM_QC(~t_nan) =  3; % 3 do not use w/o adjusting
-            
+
             % NO ADJUSTED DATA YET !!!! THESE ARE PLACE HOLDERS FOR NOW !!!!
             if isfield(QC,'CDOM')
                 ECOarray.CDOM_ADJUSTED(~t_nan)        = fv.bio;
@@ -1667,64 +1777,70 @@ for msg_ct = 1:size(msg_list,1)
                 ECOarray.CDOM_ADJUSTED_ERROR(~t_nan) =  fv.bio; % PLACE HOLDER FOR NOW
             end
         end
-        
+
         % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'CDOM');
         t_bio = ECOarray.CDOM ~= fv.bio;
         ECOarray.FLUORESCENCE_CDOM_QC(t_bio) = ECOarray.FLUORESCENCE_CDOM_QC(t_bio) ...
             * ~BSLflag + BSLflag*theflag;
         ECOarray.CDOM_QC(t_bio) = ECOarray.CDOM_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-        
+
         t_chk = t_bio & (ECOarray.CDOM < RCR.CDOM(1)|ECOarray.CDOM > RCR.CDOM(2));
         ECOarray.CDOM_QC(t_chk) = 4;
         ECOarray.FLUORESCENCE_CDOM_QC(t_chk) = 4;
-        
+
         t_bio = ECOarray.CDOM_ADJUSTED ~= fv.bio;
         ECOarray.CDOM_ADJUSTED_QC(t_bio) = ECOarray.CDOM_ADJUSTED_QC(t_bio)  ...
             * ~BSLflag + BSLflag*theflag;
         t_chk = t_bio & ...
             (ECOarray.CDOM_ADJUSTED < RC.CDOM(1)|ECOarray.CDOM_ADJUSTED > RC.CDOM(2));
         ECOarray.CDOM_ADJUSTED_QC(t_chk) = 4;
-        
+
         if yesBSAML == 1 && yesBSAMLcyc==1
             SbsIND = find(strcmp('CDOM',tmpBSAML.list(:,ibsSENS)));
             if ~isempty(SbsIND)
-                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                TMPsbs = tmpBSAML.list(SbsIND,:);
                 singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                singleBADSflags = TMPsbs(:,ibsFL);
                 rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADsflags = TMPsbs(:,ibsFL);
                 if ~isempty(singleBADs{1})
-                    xxtmp = find(ECOarray.PRES == singleBADs{1});
-                    if isempty(xxtmp)
-                        disp('WARNING!! CDOM PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                    else
-                        if ECOarray.CDOM~=fv.bio
-                            ECOarray.CDOM_QC(xxtmp) = singleBADSflags;
-                        end
-                        if ECOarray.CDOM_ADJUSTED~=fv.bio
-                            ECOarray.CDOM_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    for i2=1:length(singleBADs)
+                        xxtmp = find(ECOarray.PRES == singleBADs{1});
+                        if isempty(xxtmp)
+                            disp('WARNING!! CDOM PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if ECOarray.CDOM~=fv.bio
+                                ECOarray.CDOM_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
+                            if ECOarray.CDOM_ADJUSTED~=fv.bio
+                                ECOarray.CDOM_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
                         end
                     end
+                    clear i2
                 end
-                ECOarray.CDOM_QC(ECOarray.PRES>=rangeBADs{1}(1) & ECOarray.PRES<=rangeBADs{1}(2) & ECOarray.CDOM~=fv.bio) = rangeBADsflags;
-                ECOarray.CDOM_ADJUSTED_QC(ECOarray.PRES>=rangeBADs{1}(1) & ECOarray.PRES<=rangeBADs{1}(2)& ECOarray.CDOM_ADJUSTED~=fv.bio) = rangeBADsflags;
+                for i3=1:length(rangeBADs)
+                    ECOarray.CDOM_QC(ECOarray.PRES>=rangeBADs{i3}(1) & ECOarray.PRES<=rangeBADs{i3}(2) & ECOarray.CDOM~=fv.bio) = str2double(rangeBADsflags{i3});
+                    ECOarray.CDOM_ADJUSTED_QC(ECOarray.PRES>=rangeBADs{i3}(1) & ECOarray.PRES<=rangeBADs{i3}(2)& ECOarray.CDOM_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
             end
         end
-        
+
         % CDOM PARAMETER_DATA_MODE
         if isfield(cal,'CDOM')
             INFO.CDOM_DATA_MODE = 'R';
         end
     end
-    
-    
+
+
     if exist('ECOarray','var')
         eval(['BGC0',num2str(BGCIND),' = ECOarray;']); %reassign array structure name.
         clear BGCIND fill0
     end
-    
-    
+
+
     % ****************************************************************
     % CALCULATE pH (µmol / kg scale)
     % ****************************************************************
@@ -1734,7 +1850,7 @@ for msg_ct = 1:size(msg_list,1)
         BGCIND = find(not(cellfun('isempty',strfind(FLTsensors,'ALK'))))-CTD_Nax; %#ok<STRCL1>
         eval(['ALKarray = BGC0',num2str(BGCIND),';']); %to reduce the number of eval calls, rename to temporary structure until all desired fields are populated.
         fill0  = ones(size(ALKarray.PRES))* 0;
-        
+
         ALKarray.VRS_PH                          = fill0 + fv.bio;
         ALKarray.VRS_PH_QC                       = fill0 + fv.QC;
         ALKarray.PH_IN_SITU_FREE                 = fill0 + fv.bio;
@@ -1754,10 +1870,10 @@ for msg_ct = 1:size(msg_list,1)
         INFO.PH_SCI_CAL_COEF = 'not applicable';
         INFO.PH_SCI_CAL_COM  = 'not applicable';
         INFO.PH_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
-        
+
         t_nan = isnan(alk_d(:,ipH)); %NaN's?
         t_nan_diag = isnan(alk_d(:,iVk)); %need to check separately for NaNs in the diagnostics (sample targets can vary...ie decimated diagnostic sampling on cycles 1-12 for solo1)... % TM, 10/20/22
-        
+
         ALKarray.VRS_PH(~t_nan)      = alk_d(~t_nan,ipH); % I param
         ALKarray.VRS_PH_QC(~t_nan)   = fv.QC;
         if isfield(cal,'pH')
@@ -1766,12 +1882,12 @@ for msg_ct = 1:size(msg_list,1)
                 cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
             ALKarray.PH_IN_SITU_FREE(~t_nan)    = phfree; % I param
             ALKarray.PH_IN_SITU_FREE_QC(~t_nan) = fv.QC;
-            
+
             ALKarray.PH_IN_SITU_TOTAL(~t_nan)    = phtot;
             t_nan_pH = isnan(ALKarray.PH_IN_SITU_TOTAL);
             ALKarray.PH_IN_SITU_TOTAL(t_nan_pH) = fv.bio;
             ALKarray.PH_IN_SITU_TOTAL_QC(~t_nan & ~t_nan_pH) = 3;
-            
+
             LR_inf = isinf(ALKarray.PH_IN_SITU_FREE); % happens if S = 0
             ALKarray.PH_IN_SITU_FREE(LR_inf)    = 20.1; %UNREAL #
             ALKarray.PH_IN_SITU_FREE_QC(LR_inf) = 4;
@@ -1780,7 +1896,7 @@ for msg_ct = 1:size(msg_list,1)
         else % data returned  but no cal
             disp(['pH data exists but no cal file for ',INST_ID_str])
         end
-        
+
         % Diagnostics
         ALKarray.IB_PH(~t_nan_diag & ~t_nan_pH)    = alk_d(~t_nan_diag & ~t_nan_pH,iIb);% * 1e9; % nano amps
         ALKarray.IB_PH_QC(~t_nan_diag & ~t_nan_pH) = fv.QC;
@@ -1788,10 +1904,10 @@ for msg_ct = 1:size(msg_list,1)
         ALKarray.IK_PH_QC(~t_nan_diag & ~t_nan_pH) = fv.QC;
         ALKarray.VK_PH(~t_nan_diag & ~t_nan_pH) = alk_d(~t_nan_diag & ~t_nan_pH, iVk); % nano amps
         ALKarray.VK_PH_QC(~t_nan_diag & ~t_nan_pH) = fv.QC;
-        
+
         clear ipH_p ipH_t ipH_t ipH_Ib pH_data pH_hdr
         %     end
-        
+
         if isfield(cal,'pH') && isfield(QC,'pH')
             %             QCD = [ALKarray.PRES(~t_nan & ~t_nan_pH), ...
             %                 ALKarray.TEMPi(~t_nan & ~t_nan_pH), ...
@@ -1800,7 +1916,7 @@ for msg_ct = 1:size(msg_list,1)
                 ALKarray.TEMPi(~t_nan & ~t_nan_pH), ...
                 ALKarray.PSALi(~t_nan & ~t_nan_pH), ...
                 ALKarray.PH_IN_SITU_TOTAL(~t_nan & ~t_nan_pH)]; % jp 06/16/2022
-            
+
             ALKarray.PH_IN_SITU_TOTAL_ADJUSTED(~t_nan & ~t_nan_pH) = ...
                 apply_QC_corr(QCD, INFO.sdn, QC.pH);
             ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_nan & ~t_nan_pH) = 1; % set=1 9/27/16 vs
@@ -1831,21 +1947,21 @@ for msg_ct = 1:size(msg_list,1)
             if regexp(MBARI_ID_str, bad_O2_filter, 'once')
                 [ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_ERROR, INFO.PH_SCI_CAL_COM,~,~] = Reassign_Argos_LIReqn8(MBARI_ID_str,INFO.cast,ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_ERROR,INFO.PH_SCI_CAL_COM,0,0);
             end
-            
+
         end
-        
-        
+
+
         % DO A FINAL QC CHECK
         % 04/07/2020 JP - Now that the BSL flag can be 3 or 4 it has the
         % potential to overwrite a 4 with a 3 so don't let this happen
         t_bio = ALKarray.PH_IN_SITU_TOTAL ~= fv.bio;
-        
+
         %6/11/20 TM need this incase no diagnostic data, 0 if no data.
         % added the ".*1e9" to this line.  It was lacking in Josh's update
         % from 4/7/20 and causing erroneous flagging for certain cases, ie
         % float 9634 surface samples of cycles 67 and 97.
         %t_diag = LR.IB_PH ~= fv.bio.*1e9;
-        
+
         % JP 12/17/20 slight modification to TM's fix. If the dura file is
         % too small no Ib & Ik tests happen & LR.IB_PH, LR.IK_PH is never
         % reassigned so you need to check for fv.bio*1e9 & fv.bio as fill
@@ -1856,7 +1972,7 @@ for msg_ct = 1:size(msg_list,1)
         % we may want to add some smarter checks for full profile flagging
         % if many samples are flagged?  OR remove diag checks?  Or?
         t_diag = ~(ALKarray.IB_PH == fv.bio.*1e9 | ALKarray.IB_PH == fv.bio); % JP 12/17/20
-        
+
         [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'PH');
         tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
         tSTP  = (ALKarray.PSALi_QC == 4 | ALKarray.TEMPi_QC == 4 | ALKarray.PRES_QC == 4)*4; % Bad STP will affect pH
@@ -1866,21 +1982,21 @@ for msg_ct = 1:size(msg_list,1)
         tIK3  = (ALKarray.IK_PH < RCR.IK(1) | ALKarray.IK_PH > RCR.IK(2)).*t_diag*3; % DIAGNOSTIC
         tIB4  = (ALKarray.IB_PH < RCR.IB(1)*25 | ALKarray.IB_PH > RCR.IB(2)*25).*t_diag*4; % DIAGNOSTIC
         tIK4  = (ALKarray.IK_PH < RCR.IK(1)*25 | ALKarray.IK_PH > RCR.IK(2)*25).*t_diag*4; % DIAGNOSTIC
-        
-        
+
+
         tALL  = max([ALKarray.PH_IN_SITU_TOTAL_QC, tBSL, tSTP, tRC, ...
             tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
         ALKarray.PH_IN_SITU_TOTAL_QC(t_bio) = tALL(t_bio);
         ALKarray.PH_IN_SITU_FREE_QC(t_bio)  = tALL(t_bio);
-        
+
         tALL  = max([ALKarray.VRS_PH_QC, tBSL, tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
         ALKarray.VRS_PH_QC(t_bio) = tALL(t_bio);
-        
+
         tALL  = max([ALKarray.IB_PH_QC, tBSL, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
         ALKarray.IB_PH_QC(t_bio)  = tALL(t_bio);
         ALKarray.IK_PH_QC(t_bio)  = tALL(t_bio);
         ALKarray.VK_PH_QC(t_bio)  = tALL(t_bio);
-        
+
         % 04/07/2020 JP - Now that the BSL flag can be 3 or 4 it has the
         % potential to overwrite a 4 with a 3 so don't let this happen
         t_bio = ALKarray.PH_IN_SITU_TOTAL_ADJUSTED ~= fv.bio;
@@ -1890,16 +2006,16 @@ for msg_ct = 1:size(msg_list,1)
         tRC   = (ALKarray.PH_IN_SITU_TOTAL_ADJUSTED < RC.PH(1) | ...
             ALKarray.PH_IN_SITU_TOTAL_ADJUSTED > RC.PH(2))*4; % Range check
         tVRS  = (ALKarray.VRS_PH < RC.PHV(1) | ALKarray.VRS_PH > RC.PHV(2))*4;
-        
+
         % double check fill value QC flags - 9634 returns fv's from qc_adjustmet
         % due to bad gps date bug - jp 10/04/19
         ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_bio)  = fv.QC;
-        
+
         tALL  = max([ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_QC, tBSL, tSTP, tRC, ...
             tVRS, tIB3, tIK3, tIB4, tIK4],[],2); % get highest flag
         ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_QC(t_bio) = tALL(t_bio);
-        
-        
+
+
         % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         % FINALLY DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
         % (BAD).  BGC_spiketest screens for nans and fill values.
@@ -1931,53 +2047,64 @@ for msg_ct = 1:size(msg_list,1)
             %             disp(['NO LR.PH_IN_SITU_TOTAL_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
         end
         % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
-        
+        % if INFO.cast == 51; keyboard;end
         if yesBSAML == 1 && yesBSAMLcyc==1
             SbsIND = find(strcmp('PH',tmpBSAML.list(:,ibsSENS)));
             if ~isempty(SbsIND)
-                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                TMPsbs = tmpBSAML.list(SbsIND,:);
                 singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                singleBADSflags = TMPsbs(:,ibsFL);
                 rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADsflags = TMPsbs(:,ibsFL);
                 if ~isempty(singleBADs{1})
-                    xxtmp = find(ALKarray.PRES == singleBADs{1});
-                    if isempty(xxtmp)
-                        disp('WARNING!! PH PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                    else
-                        if ALKarray.PH_IN_SITU_TOTAL~=fv.bio
-                            ALKarray.PH_IN_SITU_TOTAL_QC(xxtmp) = singleBADSflags;
-                        end
-                        if ALKarray.PH_IN_SITU_TOTAL_ADJUSTED~=fv.bio
-                            ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    for i2=1:length(singleBADs)
+                        xxtmp = find(ALKarray.PRES == singleBADs{1});
+                        if isempty(xxtmp)
+                            disp('WARNING!! PH PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if ALKarray.PH_IN_SITU_TOTAL~=fv.bio
+                                ALKarray.PH_IN_SITU_TOTAL_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
+                            if ALKarray.PH_IN_SITU_TOTAL_ADJUSTED~=fv.bio
+                                ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
                         end
                     end
+                    clear i2
                 end
-                ALKarray.PH_IN_SITU_TOTAL_QC(ALKarray.PRES>=rangeBADs{1}(1) & ALKarray.PRES<=rangeBADs{1}(2) & ALKarray.PH_IN_SITU_TOTAL~=fv.bio) = rangeBADsflags;
-                ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_QC(ALKarray.PRES>=rangeBADs{1}(1) & ALKarray.PRES<=rangeBADs{1}(2)& ALKarray.PH_IN_SITU_TOTAL_ADJUSTED~=fv.bio) = rangeBADsflags;
+                for i3=1:length(rangeBADs)
+                    ALKarray.PH_IN_SITU_TOTAL_QC(ALKarray.PRES>=rangeBADs{i3}(1) & ALKarray.PRES<=rangeBADs{i3}(2) & ALKarray.PH_IN_SITU_TOTAL~=fv.bio) = str2double(rangeBADsflags{i3});
+                    ALKarray.PH_IN_SITU_TOTAL_ADJUSTED_QC(ALKarray.PRES>=rangeBADs{1}(1) & ALKarray.PRES<=rangeBADs{1}(2)& ALKarray.PH_IN_SITU_TOTAL_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
             end
         end
-        
+
         % PH DATA-MODE
         XEMPT_PH = find(ALKarray.PH_IN_SITU_TOTAL ~= 99999,1); % if empty, then cycle has no data
-        if isempty(QC) || isempty(XEMPT_PH) % no adjustments have been made yet, or all data is 99999
-            INFO.PH_DATA_MODE = 'R';
-        elseif ~isempty(QC) && isfield(QC,'pH')
+        %         if isempty(QC) || isempty(XEMPT_PH) % no adjustments have been made yet, or all data is 99999
+        %             INFO.PH_DATA_MODE = 'R';
+        if ~isempty(QC) && isfield(QC,'pH') && ~isempty(XEMPT_PH)
             %             if cycdate > QC.date
             if str2num(cast_num) > QC.pH.steps(end,2)
                 INFO.PH_DATA_MODE = 'A';
             else
                 INFO.PH_DATA_MODE = 'D';
             end
+        else
+            INFO.PH_DATA_MODE = 'R';
+            INFO.PH_SCI_CAL_EQU  = 'not applicable';
+            INFO.PH_SCI_CAL_COEF = 'not applicable';
+            INFO.PH_SCI_CAL_COM  = 'not applicable';
         end
-        
+
         eval(['BGC0',num2str(BGCIND),' = ALKarray;']); %reassign array structure name.
         clear BGCIND fill0 phfree phtot QCD dura t_chk1 t_chk2 t_chk3 QCscreen_phF QCscreen_phT QCscreen_phTadj QCscreen_O QCscreenOadj spike_inds quality_flags LR_inf
-        
+
         %if INFO.cast == 30,pause,end % TESTING
-        
+
     end
-    
+
     % ****************************************************************
     % CALCULATE NITRATE (µmol / kg scale)
     % DO DEPTH CORRECTION 1st
@@ -1987,24 +2114,24 @@ for msg_ct = 1:size(msg_list,1)
         BGCIND = find(not(cellfun('isempty',strfind(FLTsensors,'NO3'))))-CTD_Nax; %#ok<STRCL1>
         eval(['NO3array = BGC0',num2str(BGCIND),';']); %to reduce the number of eval calls, rename to temporary structure until all desired fields are populated.
         fill0  = ones(size(NO3array.PRES))* 0;
-        
+
         NO3array.NITRATE                      = fill0 + fv.bio;
         NO3array.NITRATE_QC                   = fill0 + fv.QC;
         NO3array.UV_INTENSITY_DARK_NITRATE    = fill0 + fv.bio;
         NO3array.UV_INTENSITY_DARK_NITRATE_QC = fill0 + fv.QC;
         NO3array.UV_INTENSITY_NITRATE         = fill0 + fv.bio;
         NO3array.UV_INTENSITY_NITRATE_QC      = fill0 + fv.QC;
-        
+
         NO3array.NITRATE_ADJUSTED             = fill0 + fv.bio;
         NO3array.NITRATE_ADJUSTED_QC          = fill0 + fv.QC;
         NO3array.NITRATE_ADJUSTED_ERROR       = fill0 + fv.bio;
         INFO.NITRATE_SCI_CAL_EQU  = 'not applicable';
         INFO.NITRATE_SCI_CAL_COEF = 'not applicable';
         INFO.NITRATE_SCI_CAL_COM  = 'not applicable';
-        INFO.NITRATE_DATA_MODE = 'not applicable';
-        
+        INFO.NITRATE_DATA_MODE = 'R';
+
         % IF ISUS FILE & CAL INFO EXIST, TRY AND PROCESS IT
-        if isfield(cal,'N')
+        if isfield(cal,'N') && Dno3.spectra_pix_range(1)~=999
             spec = Dno3; %everything is included in the original parsed .no3 file aside from a few structure variables.  Add them here.
             % The raw spec data read in from the no3 file is still reversed.
             % Flip the Argo interp arrays such that the NO3 processing is
@@ -2012,29 +2139,28 @@ for msg_ct = 1:size(msg_list,1)
             spec.P = flipud(NO3array.PRES);
             spec.T = flipud(NO3array.TEMPi);
             spec.S = flipud(NO3array.PSALi);
-            
-            
+
             UV_INTEN = spec.UV_INTEN;
-            
+
             spec.SDN = spec.DC*NaN;
             if ~isempty(UV_INTEN) && ~isempty(NO3array.PRES)
                 % [SDN, DarkCur, Pres, Temp, Sal, NO3, BL_int,BL_slope,
                 %  RMS_ER, Wl~240, ABS~240] !!! NITRATE STILL µmol/L !!!
-                
+
                 NO3  = calc_FLOAT_NO3(spec, cal.N, 1); % ESW P corr
                 %NO3  = calc_APEX_NO3_JP(spec, cal.N, 0); % NO P corr
-                
+
                 IX = (size(NO3,1):-1:1)'; % FLIP SHALLOW TO DEEP FOR ARGO
                 %[B,IX]   = sort(NO3(:,3)); % SORT SHALLOW TO DEEP FOR ARGO
                 NO3      = NO3(IX,:); % µmol/L
                 UV_INTEN = UV_INTEN(IX,:);
                 clear B IX
             end
-            
+
         else
             disp('No calibration info to process nitrate with')
         end
-        
+
         if exist('NO3', 'var') == 1
             % TM NOTE: I don't think this is needed as the pres t/s interp
             % makes this check obsolete.
@@ -2042,7 +2168,7 @@ for msg_ct = 1:size(msg_list,1)
             % MATCH NITRATE DEPTHS TO CTD DEPTHS IF LENGTHS DIFFERENT
             % MISSING SPECTRA  AND NO3 CONC. SET TO NaN
             % could also  replace missing NO3 from *.isus with *.msg
-            
+
             % % %             if size(LR.PRES,1) ~= size(NO3,1) % Mismatch in sample lengths
             % % %                 cS       = size(spec.UV_INTEN,2); % cols of WL's
             % % %                 rP       = size(LR.PRES,1); % # of CTD samples (*.msg)
@@ -2067,24 +2193,24 @@ for msg_ct = 1:size(msg_list,1)
             % % %                 UV_INTEN = spectmp; % n x m matrix
             % % %                 clear rP rN cN NO3tmp i
             % % %             end
-            
+
             t_nan  = isnan(NO3(:,6));
             % CHECK FIT ERROR AND BASELINE ABSORBANCE
             tABS08 = NO3(:,11) > 0.8; %ABS240 > 0.8 (QF=3)
             tABS11 = NO3(:,9) > 0.003 | NO3(:,11) > 1.1; % RMS & ABS240 (QF=4)
-            
+
             NO3array.UV_INTENSITY_DARK_NITRATE    = NO3(:,2);
             NO3array.UV_INTENSITY_DARK_NITRATE(t_nan) = fv.bio;
             NO3array.UV_INTENSITY_DARK_NITRATE_QC = fill0 + fv.QC;
-            
+
             NO3array.UV_INTENSITY_NITRATE    =  UV_INTEN;
             NO3array.UV_INTENSITY_NITRATE_QC =  UV_INTEN * 0 + fv.QC;
-            
+
             NpotT  = theta(NO3(:,3), NO3(:,4), NO3(:,5),0);
             N_den  = density(NO3(:,5), NpotT);
             %NO3_kg = NO3(:,6) ./ N_den * 1000;
-            
-            
+
+
             % ********************************************************
             % CALCULATE NITRATE IN umol/L FOR PRESSURE = 0
             % (vs in situ p). ISUS calibrated at p = 0 but
@@ -2092,20 +2218,20 @@ for msg_ct = 1:size(msg_list,1)
             % GREATER THAN BOTTLE or SURFACE NO3 (p=0) AT DEPTH
             % (more moles NO3 per liter at depth)
             % NO3(p=0) = N03(p=z) *[density(S,T,p=0) /density(S,T,p@z)]
-            
+
             NO3_p0 = NO3(:,6) .* sw_dens(NO3(:,5),NpotT,0) ./ ...
                 sw_dens(NO3(:,5),NO3(:,4),NO3(:,3));
-            
+
             NO3_p0_kg         = NO3_p0 ./ N_den * 1000; % µmol/kg
             NO3array.NITRATE        = NO3_p0_kg;
             NO3array.NITRATE(t_nan) = fv.bio;
             % %             t_nan_NIT = isnan(DOXarray.DOXY);  %Not Needed for NO3??
-            
+
             % QC RAW
             NO3array.NITRATE_QC = fill0 + 3; % questionable to start
             NO3array.NITRATE_QC(t_nan) = fv.QC;
             NO3array.NITRATE_QC(~t_nan & tABS11) = 4;
-            
+
             % ********************************************************
             % APPLY QC CORRECTIONS
             % CORRECTIONS DETERMINED ON µmol/L scale so adjust on that
@@ -2115,17 +2241,17 @@ for msg_ct = 1:size(msg_list,1)
                 NO3array.NITRATE_ADJUSTED = fill0 + fv.bio;
                 NO3array.NITRATE_ADJUSTED(~t_nan) = ...
                     apply_QC_corr(QCD(~t_nan,:), INFO.sdn, QC.N);
-                
+
                 NO3array.NITRATE_ADJUSTED_QC = fill0 + 1; % set=1 9/27/16
                 NO3array.NITRATE_ADJUSTED_QC(t_nan) = fv.QC; % nan's to fill value
-                
+
                 NO3array.NITRATE_ADJUSTED_QC(~t_nan & tABS08) = 3; %Bad ABS240
                 if sum(tABS11) > 0
                     disp(['Nitrate ABS@240 > 1.1 or RMS > 0.003 ',...
                         'detected. Setting QF = 4 for flagged values'])
                     NO3array.NITRATE_ADJUSTED_QC(~t_nan & tABS11) = 4; % Really bad abs or RMS
                 end
-                
+
                 %LR.NITRATE_ADJUSTED_ERROR = (abs(LR.NITRATE - ...
                 %    LR.NITRATE_ADJUSTED)) * 0.1 + 0.5;
                 %LR.NITRATE_ADJUSTED_ERROR(t_nan) = fv.bio;
@@ -2156,7 +2282,7 @@ for msg_ct = 1:size(msg_list,1)
             end
             clear QCD UV_INTEN
         end
-        
+
         % DO A FINAL RANGE CHECK BASED ON BSL & OTHER DEPENDANT PARAMETERS
         % MODIFIED 04/07/2020 BY JP BECAUSE BSL FLAG OF 3 COULD OVERWRITE A 4
         t_bio = NO3array.NITRATE ~= fv.bio; % non fill values
@@ -2164,27 +2290,27 @@ for msg_ct = 1:size(msg_list,1)
         tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
         tSTP  = (NO3array.PSALi_QC == 4 | NO3array.TEMPi_QC == 4 | NO3array.PRES_QC == 4)*4; % Bad STP will affect nitrate
         tRC   = (NO3array.NITRATE < RCR.NO3(1)| NO3array.NITRATE > RCR.NO3(2))*4; % RAnge check
-        
+
         tALL  = max([NO3array.NITRATE_QC, tBSL, tSTP, tRC],[],2); % get highest flag
         NO3array.NITRATE_QC(t_bio) = tALL(t_bio);
-        
+
         tALL  = max([NO3array.UV_INTENSITY_DARK_NITRATE_QC, tBSL, tRC],[],2); % get highest flag
         NO3array.UV_INTENSITY_DARK_NITRATE_QC(t_bio) = tALL(t_bio);
-        
-        
+
+
         t_bio = NO3array.NITRATE_ADJUSTED ~= fv.bio;
         tBSL  = ones(size(t_bio)) * ~BSLflag + BSLflag*theflag; % flag from BSL
         tSTP  = (NO3array.PSALi_QC == 4 | NO3array.TEMPi_QC == 4 | ...
             NO3array.PRES_ADJUSTED_QC == 4)*4;
         tRC   = (NO3array.NITRATE_ADJUSTED < RC.NO3(1)| NO3array.NITRATE_ADJUSTED > RC.NO3(2))*4;
-        
+
         tALL  = max([NO3array.NITRATE_ADJUSTED_QC, tBSL, tSTP, tRC],[],2); % get highest flag
         NO3array.NITRATE_ADJUSTED_QC(t_bio) = tALL(t_bio);
-        
+
         % double check fill value QC flags - 9634 returns fv's from qc_adjustmet
         % due to bad gps date bug - jp 10/04/19
         NO3array.NITRATE_ADJUSTED_QC(~t_bio)  = fv.QC;
-        
+
         % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
         % DO A SPIKE TEST ON VALUES, IF SPIKES ARE IDENTIFIED, SET QF TO 4
         % (BAD).  BGC_spiketest screens for nans and fill values.
@@ -2209,51 +2335,62 @@ for msg_ct = 1:size(msg_list,1)
             %             disp(['NO LR.NITRATE_ADJUSTED SPIKES IDENTIFIED FOR PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
         end
         % -*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-
-        
-        
+
+
         if yesBSAML == 1 && yesBSAMLcyc==1
             SbsIND = find(strcmp('N',tmpBSAML.list(:,ibsSENS)));
             if ~isempty(SbsIND)
-                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                TMPsbs = tmpBSAML.list(SbsIND,:);
                 singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                singleBADSflags = TMPsbs(:,ibsFL);
                 rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADsflags = TMPsbs(:,ibsFL);
                 if ~isempty(singleBADs{1})
-                    xxtmp = find(NO3array.PRES == singleBADs{1});
-                    if isempty(xxtmp)
-                        disp('WARNING!! PH PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                    else
-                        if NO3array.NITRATE~=fv.bio
-                            NO3array.NITRATE_QC(xxtmp) = singleBADSflags;
-                        end
-                        if NO3array.NITRATE_ADJUSTED~=fv.bio
-                            NO3array.NITRATE_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    for i2=1:length(singleBADs)
+                        xxtmp = find(NO3array.PRES == singleBADs{1});
+                        if isempty(xxtmp)
+                            disp('WARNING!! PH PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if NO3array.NITRATE~=fv.bio
+                                NO3array.NITRATE_QC(xxtmp) = str2double(singleBADSflags{i3});
+                            end
+                            if NO3array.NITRATE_ADJUSTED~=fv.bio
+                                NO3array.NITRATE_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i3});
+                            end
                         end
                     end
+                    clear i2
                 end
-                NO3array.NITRATE_QC(NO3array.PRES>=rangeBADs{1}(1) & NO3array.PRES<=rangeBADs{1}(2) & NO3array.NITRATE~=fv.bio) = rangeBADsflags;
-                NO3array.NITRATE_ADJUSTED_QC(NO3array.PRES>=rangeBADs{1}(1) & NO3array.PRES<=rangeBADs{1}(2)& NO3array.NITRATE_ADJUSTED~=fv.bio) = rangeBADsflags;
+                for i3 = 1:length(rangeBADs)
+                    NO3array.NITRATE_QC(NO3array.PRES>=rangeBADs{i3}(1) & NO3array.PRES<=rangeBADs{i3}(2) & NO3array.NITRATE~=fv.bio) = str2double(rangeBADsflags{i3});
+                    NO3array.NITRATE_ADJUSTED_QC(NO3array.PRES>=rangeBADs{1}(1) & NO3array.PRES<=rangeBADs{1}(2)& NO3array.NITRATE_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
             end
         end
-        
+
         % NITRATE DATA MODE
-        XEMPT_N = find(NO3array.NITRATE ~= 99999,1); % if empty, then cycle has no data
-        if isempty(QC) || isempty(XEMPT_N) % no adjustments have been made yet, or all data is 99999
-            INFO.NITRATE_DATA_MODE = 'R';
-        elseif ~isempty(QC) && isfield(QC,'N')
+        XEMPT_N = find(NO3array.NITRATE ~= 99999,1); % if empty, then cycle has no data %% TM 2/14/23; I don't think this is right!  Can still be D-mode if no data!
+        %if isempty(QC) || isempty(XEMPT_N) % no adjustments have been made yet, or all data is 99999
+        %    INFO.NITRATE_DATA_MODE = 'R';
+        if ~isempty(QC) && isfield(QC,'N') && ~isempty(XEMPT_N)
             %             if cycdate > QC.date
             if str2num(cast_num) > QC.N.steps(end,2)
                 INFO.NITRATE_DATA_MODE = 'A';
             else
                 INFO.NITRATE_DATA_MODE = 'D';
             end
+        else
+            INFO.NITRATE_DATA_MODE = 'R';
+            INFO.NITRATE_SCI_CAL_EQU  = 'not applicable';
+            INFO.NITRATE_SCI_CAL_COEF = 'not applicable';
+            INFO.NITRATE_SCI_CAL_COM  = 'not applicable';
         end
         eval(['BGC0',num2str(BGCIND),' = NO3array;']); %reassign array structure name.
         clear BGCIND tchk tABS08 tABS11 NO3 QCscreen_N QCscreen_Nadj spike_inds quality_flags
     end
-    
-    
+
+
     % ****************************************************************
     % NOW DEAL WITH OCR DATA EXCEPTION
     % ****************************************************************
@@ -2321,114 +2458,154 @@ for msg_ct = 1:size(msg_list,1)
         if yesBSAML == 1 && yesBSAMLcyc==1
             SbsIND = find(strcmp('OCR380',tmpBSAML.list(:,ibsSENS)));
             if ~isempty(SbsIND)
-                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                TMPsbs = tmpBSAML.list(SbsIND,:);
                 singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                singleBADSflags = TMPsbs(:,ibsFL);
                 rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADsflags = TMPsbs(:,ibsFL);
                 if ~isempty(singleBADs{1})
-                    xxtmp = find(OCRarray.PRES == singleBADs{1});
-                    if isempty(xxtmp)
-                        disp('WARNING!! OCR PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                    else
-                        if OCRarray.DOWN_IRRADIANCE380~=fv.bio
-                            OCRarray.DOWN_IRRADIANCE380_QC(xxtmp) = singleBADSflags;
-                        end
-                        if OCRarray.DOWN_IRRADIANCE380_ADJUSTED~=fv.bio
-                            OCRarray.DOWN_IRRADIANCE380_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    for i2 = 1:length(singleBADs)
+                        xxtmp = find(OCRarray.PRES == singleBADs{1});
+                        if isempty(xxtmp)
+                            disp('WARNING!! OCR PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if OCRarray.DOWN_IRRADIANCE380~=fv.bio
+                                OCRarray.DOWN_IRRADIANCE380_QC(xxtmp) = str2double(singleBADSflags{i3});
+                            end
+                            if OCRarray.DOWN_IRRADIANCE380_ADJUSTED~=fv.bio
+                                OCRarray.DOWN_IRRADIANCE380_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i3});
+                            end
                         end
                     end
+                    clear i2
                 end
-                OCRarray.DOWN_IRRADIANCE380_QC(OCRarray.PRES>=rangeBADs{1}(1) & OCRarray.PRES<=rangeBADs{1}(2) & OCRarray.DOWN_IRRADIANCE380~=fv.bio) = rangeBADsflags;
-                OCRarray.DOWN_IRRADIANCE380_ADJUSTED_QC(OCRarray.PRES>=rangeBADs{1}(1) & OCRarray.PRES<=rangeBADs{1}(2)& OCRarray.DOWN_IRRADIANCE380_ADJUSTED~=fv.bio) = rangeBADsflags;
+                for i3=1:length(rangeBADs)
+                    OCRarray.DOWN_IRRADIANCE380_QC(OCRarray.PRES>=rangeBADs{i3}(1) & OCRarray.PRES<=rangeBADs{i3}(2) & OCRarray.DOWN_IRRADIANCE380~=fv.bio) = str2double(rangeBADsflags{i3});
+                    OCRarray.DOWN_IRRADIANCE380_ADJUSTED_QC(OCRarray.PRES>=rangeBADs{i3}(1) & OCRarray.PRES<=rangeBADs{i3}(2)& OCRarray.DOWN_IRRADIANCE380_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
             end
-            
-            
+
+
             SbsIND = find(strcmp('OCR412',tmpBSAML.list(:,ibsSENS)));
             if ~isempty(SbsIND)
-                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                TMPsbs = tmpBSAML.list(SbsIND,:);
                 singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                singleBADSflags = TMPsbs(:,ibsFL);
                 rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADsflags = TMPsbs(:,ibsFL);
                 if ~isempty(singleBADs{1})
-                    xxtmp = find(OCRarray.PRES == singleBADs{1});
-                    if isempty(xxtmp)
-                        disp('WARNING!! OCR PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                    else
-                        if OCRarray.DOWN_IRRADIANCE412~=fv.bio
-                            OCRarray.DOWN_IRRADIANCE412_QC(xxtmp) = singleBADSflags;
-                        end
-                        if OCRarray.DOWN_IRRADIANCE412_ADJUSTED~=fv.bio
-                            OCRarray.DOWN_IRRADIANCE412_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    for i2=1:length(singleBADs)
+                        xxtmp = find(OCRarray.PRES == singleBADs{1});
+                        if isempty(xxtmp)
+                            disp('WARNING!! OCR PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if OCRarray.DOWN_IRRADIANCE412~=fv.bio
+                                OCRarray.DOWN_IRRADIANCE412_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
+                            if OCRarray.DOWN_IRRADIANCE412_ADJUSTED~=fv.bio
+                                OCRarray.DOWN_IRRADIANCE412_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
                         end
                     end
+                    clear i2
                 end
-                OCRarray.DOWN_IRRADIANCE412_QC(OCRarray.PRES>=rangeBADs{1}(1) & OCRarray.PRES<=rangeBADs{1}(2) & OCRarray.DOWN_IRRADIANCE412~=fv.bio) = rangeBADsflags;
-                OCRarray.DOWN_IRRADIANCE412_ADJUSTED_QC(OCRarray.PRES>=rangeBADs{1}(1) & OCRarray.PRES<=rangeBADs{1}(2)& OCRarray.DOWN_IRRADIANCE412_ADJUSTED~=fv.bio) = rangeBADsflags;
+                for i3=1:length(rangeBADs)
+                    OCRarray.DOWN_IRRADIANCE412_QC(OCRarray.PRES>=rangeBADs{i3}(1) & OCRarray.PRES<=rangeBADs{i3}(2) & OCRarray.DOWN_IRRADIANCE412~=fv.bio) = str2double(rangeBADsflags{i3});
+                    OCRarray.DOWN_IRRADIANCE412_ADJUSTED_QC(OCRarray.PRES>=rangeBADs{i3}(1) & OCRarray.PRES<=rangeBADs{i3}(2)& OCRarray.DOWN_IRRADIANCE412_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
             end
-            
-            
+
+
             SbsIND = find(strcmp('OCR490',tmpBSAML.list(:,ibsSENS)));
             if ~isempty(SbsIND)
-                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                TMPsbs = tmpBSAML.list(SbsIND,:);
                 singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                singleBADSflags = TMPsbs(:,ibsFL);
                 rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADsflags = TMPsbs(:,ibsFL);
                 if ~isempty(singleBADs{1})
-                    xxtmp = find(OCRarray.PRES == singleBADs{1});
-                    if isempty(xxtmp)
-                        disp('WARNING!! OCR PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                    else
-                        if OCRarray.DOWN_IRRADIANCE490~=fv.bio
-                            OCRarray.DOWN_IRRADIANCE490_QC(xxtmp) = singleBADSflags;
-                        end
-                        if OCRarray.DOWN_IRRADIANCE490_ADJUSTED~=fv.bio
-                            OCRarray.DOWN_IRRADIANCE490_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    for i2=1:length(singleBADs)
+                        xxtmp = find(OCRarray.PRES == singleBADs{1});
+                        if isempty(xxtmp)
+                            disp('WARNING!! OCR PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if OCRarray.DOWN_IRRADIANCE490~=fv.bio
+                                OCRarray.DOWN_IRRADIANCE490_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
+                            if OCRarray.DOWN_IRRADIANCE490_ADJUSTED~=fv.bio
+                                OCRarray.DOWN_IRRADIANCE490_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
                         end
                     end
+                    clear i2
                 end
-                OCRarray.DOWN_IRRADIANCE490_QC(OCRarray.PRES>=rangeBADs{1}(1) & OCRarray.PRES<=rangeBADs{1}(2) & OCRarray.DOWN_IRRADIANCE490~=fv.bio) = rangeBADsflags;
-                OCRarray.DOWN_IRRADIANCE490_ADJUSTED_QC(OCRarray.PRES>=rangeBADs{1}(1) & OCRarray.PRES<=rangeBADs{1}(2)& OCRarray.DOWN_IRRADIANCE490_ADJUSTED~=fv.bio) = rangeBADsflags;
+                for i3=1:length(rangeBADs)
+                    OCRarray.DOWN_IRRADIANCE490_QC(OCRarray.PRES>=rangeBADs{i3}(1) & OCRarray.PRES<=rangeBADs{i3}(2) & OCRarray.DOWN_IRRADIANCE490~=fv.bio) = str2double(rangeBADsflags{i3});
+                    OCRarray.DOWN_IRRADIANCE490_ADJUSTED_QC(OCRarray.PRES>=rangeBADs{i3}(1) & OCRarray.PRES<=rangeBADs{i3}(2)& OCRarray.DOWN_IRRADIANCE490_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
             end
-            
-            
+
+
             SbsIND = find(strcmp('OCRPAR',tmpBSAML.list(:,ibsSENS)));
             if ~isempty(SbsIND)
-                TMPsbs = dirs.BSAML.list(SbsIND,:);
+                TMPsbs = tmpBSAML.list(SbsIND,:);
                 singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = str2double(char(TMPsbs(:,ibsFL)));
+                singleBADSflags = TMPsbs(:,ibsFL);
                 rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = str2double(char(TMPsbs(:,ibsFL)));
+                rangeBADsflags = TMPsbs(:,ibsFL);
                 if ~isempty(singleBADs{1})
-                    xxtmp = find(OCRarray.PRES == singleBADs{1});
-                    if isempty(xxtmp)
-                        disp('WARNING!! OCR PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                    else
-                        if OCRarray.DOWNWELLING_PAR~=fv.bio
-                            OCRarray.DOWNWELLING_PAR_QC(xxtmp) = singleBADSflags;
-                        end
-                        if OCRarray.DOWNWELLING_PAR_ADJUSTED~=fv.bio
-                            OCRarray.DOWNWELLING_PAR_ADJUSTED_QC(xxtmp) = singleBADSflags;
+                    for i2=1:length(singleBADs)
+                        xxtmp = find(OCRarray.PRES == singleBADs{1});
+                        if isempty(xxtmp)
+                            disp('WARNING!! OCR PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if OCRarray.DOWNWELLING_PAR~=fv.bio
+                                OCRarray.DOWNWELLING_PAR_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
+                            if OCRarray.DOWNWELLING_PAR_ADJUSTED~=fv.bio
+                                OCRarray.DOWNWELLING_PAR_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
                         end
                     end
+                    clear i2
                 end
-                OCRarray.DOWNWELLING_PAR_QC(OCRarray.PRES>=rangeBADs{1}(1) & OCRarray.PRES<=rangeBADs{1}(2) & OCRarray.DOWNWELLING_PAR~=fv.bio) = rangeBADsflags;
-                OCRarray.DOWNWELLING_PAR_ADJUSTED_QC(OCRarray.PRES>=rangeBADs{1}(1) & OCRarray.PRES<=rangeBADs{1}(2)& OCRarray.DOWNWELLING_PAR_ADJUSTED~=fv.bio) = rangeBADsflags;
+                for i3 = 1:length(rangeBADs)
+                    OCRarray.DOWNWELLING_PAR_QC(OCRarray.PRES>=rangeBADs{i3}(1) & OCRarray.PRES<=rangeBADs{i3}(2) & OCRarray.DOWNWELLING_PAR~=fv.bio) = str2double(rangeBADsflags{i3});
+                    OCRarray.DOWNWELLING_PAR_ADJUSTED_QC(OCRarray.PRES>=rangeBADs{i3}(1) & OCRarray.PRES<=rangeBADs{i3}(2)& OCRarray.DOWNWELLING_PAR_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
             end
         end
         %------------------------------------------------------------------------
-        
-        
+
+
         eval(['BGC0',num2str(BGCIND),' = OCRarray;']); %reassign array structure name.
         clear fill0
     end
     % end
-    
-    
-    
-    
+    % % %
+    % % % 	% TM 2/13/23; Now perform final check to ensure no bad data was propagated to adjusted fields.
+    % % % 	% Note 4903026 cycle 81 had no pH data returned
+    % % % 	if exist('BGC01')
+    % % %     [BGC01] = screen_bad_adjusted(BGC01);
+    % % % 	end
+    % % % 	if exist('BGC02')
+    % % % 	[BGC02] = screen_bad_adjusted(BGC02);
+    % % % 	end
+    % % % 	if exist('BGC03')
+    % % % 	[BGC03] = screen_bad_adjusted(BGC03);
+    % % % 	end
+    % % % 	if exist('BGC04')
+    % % % 	[BGC04] = screen_bad_adjusted(BGC04);
+    % % % 	end
+    % % % 	if exist('BGC05')
+    % % % 	[BGC05] = screen_bad_adjusted(BGC05);
+    % % % 	end
+
+
     % *********************************************************************
     % SAVE THE PROFILE AS WMO_ID#.PROFILE.mat
     % THE *.mat file will contain 3 structures:
@@ -2444,17 +2621,17 @@ for msg_ct = 1:size(msg_list,1)
         % [sdn bladderPress P p t s phase cor_phase uM uMsat pO2]
         TRAJ.OptodeAirCal   = OptodeAirCal;
     end
-    
+
     %         WMO  = INFO.WMO_ID; % string
     %         if isempty(WMO)
     %             disp(['NO WMO# FOUND FOR FLOAT! CREATING TEMPORARY ', ...
     %                   'DATA DIR FOR ', INFO.UW_ID])
     %             WMO = ['NO_WMO_',INFO.UW_ID]; % CREATE TEMPORARY WMO NAME
     %         end
-    
+
     cast_NUM = cast_num(end-2:end); %TM NOTE: Keep with MBARI standardized formatting for now.  SOLOs are using 4char cast number, our mat files use 3char.
     save_str = [dirs.mat, WMO,'\', WMO,'.', cast_NUM,'.mat'];
-    
+
     % clear any remaining extraneous variables that would slip in with regexp
     clear BGCIND
     if exist('TRAJ','var')

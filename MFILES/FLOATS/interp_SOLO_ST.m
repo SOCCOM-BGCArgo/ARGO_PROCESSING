@@ -50,12 +50,22 @@ function d = interp_SOLO_ST(PTS,BGC_P,offset,tol)
 %                         DO SOME PREP WORK
 % ************************************************************************
 % BUILD EMPTY OUTPUT STRUTURE
-d.BGC_P    = [];
-d.TEMPi    = [];
-d.TEMPi_QC = [];
-d.PSALi    = [];
-d.PSALi_QC = [];
+% d.BGC_P    = [];
+% d.TEMPi    = [];
+% d.TEMPi_QC = [];
+% d.PSALi    = [];
+% d.PSALi_QC = [];
+fv.bio = 99999;
+fv.qc  = 99;
+fill0 =  nan(size(BGC_P,1),1);
+% keyboard
+d.BGC_P    = fill0;
+d.TEMPi    = fill0;
+d.TEMPi_QC = fill0;
+d.PSALi    = fill0;
+d.PSALi_QC = fill0;
 
+try
 % INPUT SHAPE & ORDER IS IMPORTANT!! INDICES ARE HARD WIRED
 iP = 1; 
 iT = 3;
@@ -92,6 +102,7 @@ for ct = 1: size(BGC_P,1)
 end
 
 % INTERPOLATE & FILL OUTPUT
+
 d.BGC_P = BGC_P;
 d.TEMPi = interp1(PT(:,1),PT(:,2),BGC_PO);
 d.PSALi = interp1(PS(:,1),PS(:,2),BGC_PO);
@@ -106,7 +117,9 @@ SQC1       = interp1(PS(:,1),PS(:,3),BGC_PO,'next');
 SQC2       = interp1(PS(:,1),PS(:,3),BGC_PO,'previous');
 d.PSALi_QC = max([SQC1,SQC2],[],2);
 d.PSALi_QC(~tTOL_S) = 4;
-
+catch
+    disp('ERROR IN INTERPOLATING PSAL AND TEMP TO BGC AXES!!!!  PSALi AND TEMPi REMAIN FILL VALUE!!!')
+end
 %clearvars -except d
 
 

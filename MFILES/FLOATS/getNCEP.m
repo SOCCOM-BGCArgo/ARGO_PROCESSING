@@ -67,8 +67,8 @@ end
 % ****************************  PATHS and VARIABLES **********************
 %        NCEPPath can be a URL, network dir (ie CHEM) or a local dir
 % ************************************************************************
-%NCEPpath1   = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING\DATA\NCEP_TEMPORARY\';
-NCEPpath1 = dirs.NCEP_TEMP;
+%NCEPpath1   = 'C:\Users\bgcargovm\Documents\MATLAB\ARGO_PROCESSING\DATA\NCEP_TEMPORARY\';
+%NCEPpath1 = dirs.NCEP_TEMP;
 NCEPpath1   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface_gauss/';
 % NCEPpath1   = 'https://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis2/gaussian_grid/';
 %NCEPpath2   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface/';
@@ -125,7 +125,7 @@ LONx(t1) = LONx(t1) + 360; % Convert any - values to 0 to 360E
 % BEGIN LOOPS yearfile and file name loops HERE 4/24/14 -jp
 %              (1)matlab var, (2)NCEP file, (3)file path
 % for fn = 1: num_vars                   % loop through variable names
-    fn=1
+    fn=1;
     NCEPdata =[];
     NCEPtime =[];
     waitmsg = sprintf(['Please Wait. \nGrabbing ',num2str(end_yr-start_yr+1),...
@@ -186,4 +186,3 @@ LONx(t1) = LONx(t1) + 360; % Convert any - values to 0 to 360E
     end
     NCEP.PRES = NPRES;
     close(WB)
-

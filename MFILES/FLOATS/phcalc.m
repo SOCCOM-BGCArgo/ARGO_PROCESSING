@@ -104,9 +104,9 @@ log10gammaHCl = -ADH .* sqrt(IonS) ./ (1 + 1.394 .* sqrt(IonS)) + ...
 % Millero 1983 partial molar volume of HCl in seawater
 deltaVHCl = 17.85 + 0.1044 .* Temp - 0.001316 .* Temp .^ 2;
 
-% effect of pressure on activity coefficient of HCl, divide by 2 because
-% its a mean activity coefficient, divide by 10 for units in the cm3 to F
-% conversion.
+% Effect of pressure on activity coefficient of HCl. %(Divide by 10 for units in the cm3 to F
+% conversion.  Additionally, the last term is divided by 2 following application of the power rule of logs for the gammaHCL terms as listed in equation 10 of the Argo processing document.)  
+  
 
 log10gammaHCLtP = log10gammaHCl + deltaVHCl.*(Press./10)./(R.*Tk.*ln10)./2./10;
 

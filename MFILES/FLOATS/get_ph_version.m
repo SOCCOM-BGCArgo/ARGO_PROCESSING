@@ -179,6 +179,9 @@ for i = 1:size(ph_ver_data,1)
     
     if isnan(DF)
         continue
+    elseif ~isempty(regexp(ver_str,'AE GDF','once'))
+        build_type{i,1} = 8.0;
+        build_type{i,2} = 'AE GDF';  
     elseif ~isempty(regexp(ver_str,'GDF','once'))
         build_type{i,1} = 7.0;
         build_type{i,2} = 'MBARI GDF';

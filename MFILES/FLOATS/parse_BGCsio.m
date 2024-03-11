@@ -48,6 +48,10 @@ function d = parse_BGCsio(filename, verbosity, msgtype)
 %      8/11/22     TM: If 'verbosity' is set to 1: ONLY remove NaN pressure lines
 %       that are beyond Max Press!  If there are missing pressures along the
 %       profile, preference is to record them as such).
+%      01/25/2024, TM; added extraction of MC700 START OF TRANSMISSION as
+%      an alternate option for EOP (end of profile...they should be only a
+%      couple minutes off and allows for a timestamp to associate with our
+%      ODV profiles).
 %
 % TESTING
 %filename  = 'C:\temp\08666_000001_0042.alk'; msgtype   = 'alk';
@@ -150,12 +154,12 @@ fid   = fopen(filename); % OPEN FILE FOR READING
 if strcmp(msgtype,'phy')
     MTIME_hdr = {'SDN' 'PRES' 'MC CODE'};
     date_fmt  = 'yyyymmddHHMMSS';
-    MTIME     = ones(1000,size(MTIME_hdr,1))* NaN;
+    MTIME     = ones(1000,size(MTIME_hdr,2))* NaN;
     m_ct      = 0;
     tline     = ' ';
     mt_toggle = 0;
     while ischar(tline)
-        if regexp(tline,'^MC[56]','once') % measurement codes 5XX or 6XX
+        if regexp(tline,'^MC[567]','once') % measurement codes 5XX or 6XX
             %disp(tline)
             mc_code = str2double(regexp(tline,'(?<=MC)\d+','once','match'));
             if regexp(tline,'ASC MEAS PRES','once')
@@ -168,6 +172,11 @@ if strcmp(msgtype,'phy')
                 mt_toggle = 0;
                 date_str = regexp(tline,'\d+$','match','once');
                 MTIME(m_ct,1) = datenum(date_str, date_fmt);
+            elseif regexp(tline, 'START OF TRANS','once')
+                m_ct = m_ct+1;
+                date_str = regexp(tline,'\d+$','match','once');
+                MTIME(m_ct,1) = datenum(date_str, date_fmt);
+                MTIME(m_ct,3) = mc_code;
             end
         end
         
@@ -183,9 +192,14 @@ if strcmp(msgtype,'phy')
     
     t1 = MTIME(:,3) == 600;
     t2 = MTIME(:,3) == 500; % assuming this is profile start meas code ???
+    t1B = MTIME(:,3) == 700; % START OF TRANSMISSION.  Use this if MC600 EOP is 99999999999999!  (case cycle 110, 111 for solo0002).  Very close to end of profile time...
     if sum(t1) == 1
         d.EOP_sdn = MTIME(t1,1);
         d.EOP_sdn_str = datestr(MTIME(t1,1),'mm/dd/yyyy HH:MM:SS');
+        if d.EOP_sdn > now % Not possible...this can occur when the date is fill value (99999999999999)
+            d.EOP_sdn = MTIME(t1B,1);
+            d.EOP_sdn_str = datestr(MTIME(t1B,1),'mm/dd/yyyy HH:MM:SS');
+        end
     end
     if sum(t2) == 1
         d.BOP_sdn = MTIME(t2,1);

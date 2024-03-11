@@ -6,7 +6,7 @@ function d = merge_SOLO_mat(WMO_ID, dirs)
 % 07/18/2022 JP - Updated  matix column assignments to deal with seansoe
 %     being turned off. float param list determined from 1st cycle file,
 %     then check field exisitence every time before assigning data
-
+% 02/01/2024 TM, modifications in support of ss4003 (OCR555)
 % *************************************************************************
 % % TESTING
 % % WMO_ID = '4903026'; % ss0001
@@ -57,8 +57,10 @@ raw_vars{10,1} = 'BBP532';
 raw_vars{11,1} = 'PH_IN_SITU_TOTAL'; 
 raw_vars{12,1} = 'DOWN_IRRADIANCE380'; 
 raw_vars{13,1} = 'DOWN_IRRADIANCE412'; 
-raw_vars{14,1} = 'DOWN_IRRADIANCE490'; 
-raw_vars{15,1} = 'DOWNWELLING_PAR'; 
+raw_vars{14,1} = 'DOWN_IRRADIANCE443'; 
+raw_vars{15,1} = 'DOWN_IRRADIANCE490'; 
+raw_vars{16,1} = 'DOWN_IRRADIANCE555'; 
+raw_vars{17,1} = 'DOWNWELLING_PAR'; 
 
 var_list       = raw_vars; % save a copy before qc params added
 

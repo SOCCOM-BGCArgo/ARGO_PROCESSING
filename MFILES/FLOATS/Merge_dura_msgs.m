@@ -25,6 +25,8 @@ function d = Merge_dura_msgs(MBARI_ID_str, dirs)
 % 12/21/20 - JP, Added header line to txt files to alert ODV that format is UTF-8, //<Encoding>UTF-8</Encoding>
 % 03/202021 - JP - updated code for new GOBGC naming conventions
 % 06/21/21 - JP updated code to deal with gps week nuber roll over bug
+% 03/15/2023 - JP - Updated to deal with any k2 f(P) - only report k2
+%     f(P=0) in data col but report all in header line
 plot_flag = 0;
 print_flag = 1;
 d = [];
@@ -33,6 +35,8 @@ d = [];
 
 % MBARI_ID_str  = 'ua19719';
 % MBARI_ID_str  = 'ua8482';
+% MBARI_ID_str  = 'ua7672';
+% MBARI_ID_str  = 'ua20148';
 % dirs =[];
 
 % ************************************************************************
@@ -58,8 +62,7 @@ if isempty(dirs)
 %                   'DATA\FLOATVIZ\'];
     dirs.FV    = '\\atlas\chem\ARGO_PROCESSING\DATA\FLOATVIZ\';
                              
-    dirs.save = [user_dir,'ARGO_PROCESSING\', ...
-                  'DATA\PH_DIAGNOSTICS\'];
+    dirs.save = [user_dir,'ARGO_PROCESSING\DATA\PH_DIAGNOSTICS\'];
     load('\\atlas\Chem\ARGO_PROCESSING\DATA\PH_DIAGNOSTICS\MBARI_pHsensor_versions.mat')
     dirs.ph_ver = d;
 elseif ~isstruct(dirs)
@@ -170,7 +173,7 @@ for msg_ct = 1:size(msg_list,1)
     % ****************************************************************
     % GET  DATA FROM *.dura FOR DIAGNOSTICS
     dura = parse_pHmsg([dirs.temp,pH_file]);
-    
+
     if isempty(dura.data)
         disp(['No pH data returned for ',pH_file])
         delete([dirs.temp,pH_file]);
@@ -637,14 +640,18 @@ if print_flag ==1
     fprintf(fid,['//Region: ',INFO.Region,'\r\n//\r\n']);
     
     fprintf(fid,'//STEM VERSION DEFINITIONS:\r\n');
-    fprintf(fid,'//1.0 = Ag wire, thinner ISFET cover (SN 1-127)\r\n');
-    fprintf(fid,'//1.1 = Ag wire, thicker ISFET cover (SN 128-163)\r\n');
-    fprintf(fid,'//1.2 = Pt wire, thicker ISFET cover (SN 164 -174)\r\n');
-    fprintf(fid,'//2.0 = Double O ring, Pt wire, thicker ISFET cover (SN 175-197)\r\n');
+    fprintf(fid,'//1.0 = Ag wire, thinner ISFET cover ( DSD SN 1-127)\r\n');
+    fprintf(fid,'//1.1 = Ag wire, thicker ISFET cover (DSD SN 128-163)\r\n');
+    fprintf(fid,'//1.2 = Pt wire, thicker ISFET cover (DSD SN 164 -174)\r\n');
+    fprintf(fid,'//2.0 = Double O ring, Pt wire, thicker ISFET cover (DSD SN 175-197)\r\n');
     fprintf(fid,['//3.0 = Smaller PT feed holes , double O ring, Pt wire, ', ...
-        'thicker ISFET cover (SN 198-250)\r\n']);
+        'thicker ISFET cover (DSD SN 198-250)\r\n']);
     fprintf(fid,['//4.0 = roll pin, Smaller PT feed holes , double O ring, ', ...
-        'Pt wire, thicker ISFET cover(SN 250-)\r\n']);
+        'Pt wire, thicker ISFET cover(DSD SN 251-279)\r\n']);
+    fprintf(fid,['//5.0 = V4 + Pellet Oring changed to 6.5 x 1.5 Buna ', ...
+        '70A (DSD SN 280-288)\r\n']);
+    fprintf(fid,'//6.0 = V5 + bus wire in CE crimp (DSD SN 289-)\r\n');
+    fprintf(fid,'//7.0 = GDF (GDF SN 1-)\r\n');
     fprintf(fid,'//0.0 = SBE stem\r\n//\r\n');
     
     fprintf(fid,'//QUALITY FLAG RANGE LIMITS:\r\n');
@@ -665,6 +672,12 @@ if print_flag ==1
     fprintf(fid,['//Data quality flags: 0=Good, 4=Questionable, ', ...
         '8=Bad, 1=Missing value\r\n']);
     fprintf(fid,['//Missing data value = ',MVI_str,'\r\n//\r\n']);
+
+    if size(INFO.k2,1) > 1 % k2 f(p)
+        fprintf(fid,['//NOTE: pH k2 coeficients are a function of ', ...
+            'presure:',repmat(' %0.4e,',1,size(INFO.k2,1)),'\r\n'],INFO.k2);
+        fprintf(fid,'//Only k2 f(P=0) is reported in the data column\r\n//\r\n');
+    end
     
     hdr_size  = size(print_hdr,2);
     data_rows = size(pdata,1);
@@ -704,8 +717,12 @@ if print_flag ==1
 %     DF_info = [INFO.DF_ver, INFO.K2, INFO.KO];
 %     DF_info(isnan(DF_info)) = -1e10; % nan's to mvi
 
-%DF_info = [INFO.DF_num, 0, INFO.VER, 0, INFO.k2, 0, INFO.k0, 0];
-DF_info = [INFO.DF_num, 0, INFO.VER, 0, INFO.k2, 0, INFO.k0, 0, MSC_ver, 0];
+if size(INFO.k2,1) > 1 % k2 f(p)
+    DF_info = [INFO.DF_num, 0, INFO.VER, 0, INFO.k2(1), 0, INFO.k0, 0, MSC_ver, 0];
+else
+    %DF_info = [INFO.DF_num, 0, INFO.VER, 0, INFO.k2, 0, INFO.k0, 0];
+    DF_info = [INFO.DF_num, 0, INFO.VER, 0, INFO.k2, 0, INFO.k0, 0, MSC_ver, 0];
+end
 
 tnan = isnan(DF_info); % check for missing cal info
 if sum(tnan,2)> 0

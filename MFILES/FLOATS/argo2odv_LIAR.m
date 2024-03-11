@@ -79,7 +79,13 @@ function tf_odv = argo2odv_LIAR(WMO_ID, dirs, update_str, HR_flag)
 %     floats (i.e SOLO). Bug related to lots of fill values + QF = 8 
 %     not properly assigning ODV QF flags
 % 07/25/2022 - TM Officially switched to CO2SYSv3 from "CO2SYSSOCCOM", although all constants used are the same (the latter inclued hard-wired inputs from N. Williams).
-
+% 02/15/2023 - JP Added code block to look in master list for 1st cycle
+%              position if missing & not found in 000.msg file
+% 05/31/2023 - TM Added additional parameters for OCR443 and CHLA435
+% 06/21/2023 - TM, incorporated ability to use psal-proxy (ARMOR3D) for LIAR calculation (for use in pco2)
+% 02/01/2024 TM, modifications in support of ss4003 (different combo of OCR channels.
+% 02/03/2024 JP, added code so raw OCR gets propagated to ADJ ODV file
+%               similar to CHL, BBP & some general code cleanup/houskeeping
 
 % !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 % TESTING
@@ -91,6 +97,12 @@ function tf_odv = argo2odv_LIAR(WMO_ID, dirs, update_str, HR_flag)
 % WMO_ID = '5906767'; 
 % WMO_ID = '5906044';
 % WMO_ID = '5906522';
+% WMO_ID = '5906495';
+
+%WMO_ID = 'NO_WMO_un0948';
+%WMO_ID = '7901106'; % OCR APEX ua21146	
+%WMO_ID = '5904672'; % un0565 Navis with Bbp532 instead of CDOM
+%WMO_ID = '5906540'; % un1452 chl,cdom, bbp	
 % dirs       = [];
 % update_str = 'all';
 % HR_flag    = 1;
@@ -144,11 +156,16 @@ iMB  = find(strcmp('MBARI ID',d.hdr) == 1);
 iFLT = find(strcmp('float type',d.hdr) == 1);
 iPRJ = find(strcmp('Program',d.hdr) == 1);
 iREG = find(strcmp('Region',d.hdr) == 1);
+
+iLON1 = find(strcmp('1st lon',d.hdr) == 1);
+iLAT1 = find(strcmp('1st lat',d.hdr) == 1);
+iSDN1 = find(strcmp('1st date',d.hdr) == 1);
 clear d
 
 % get index of float in master list
-i_tmp    = strfind(FLOAT_LIST(:,3),WMO_ID);
-iTHISFLT = find(not(cellfun('isempty',i_tmp)));
+% i_tmp    = strfind(FLOAT_LIST(:,3),WMO_ID); %02/15/23 JP this is getting 2 matches for 0949
+% iTHISFLT = find(not(cellfun('isempty',i_tmp)));
+iTHISFLT = strcmp(FLOAT_LIST(:,3),WMO_ID);
 
 % Set some definitions
 dirs.msg     = FLOAT_LIST{iTHISFLT,iMSG};
@@ -156,6 +173,10 @@ MBARI_ID_str = FLOAT_LIST{iTHISFLT,iMB};
 FLT_type     = FLOAT_LIST{iTHISFLT,iFLT};
 PROJ_Name    = FLOAT_LIST{iTHISFLT,iPRJ};
 REGION       = FLOAT_LIST{iTHISFLT,iREG};
+
+% only gets used if missing 1st position not found by other means - jp
+% 02/15/23
+first_pos    = [1, cell2mat(FLOAT_LIST(iTHISFLT,[iSDN1,iLON1,iLAT1]))];
 
 % ************************************************************************
 
@@ -294,8 +315,15 @@ if ~isempty(cy1)
                 rdata(rdata(:,1)==1,3) = LON;
                 rdata(rdata(:,1)==1,4) = LAT;
                 rdata(rdata(:,1)==1,5) = 3; %if using 000.msg position info, mark lat/lon QF as "questionable"
-                disp('Lat/Lon successfully extracted from 000.msg file for cycle 1.')
+                disp('Lat/Lon successfully extracted from 000.msg file for cycle 1');
             end
+        elseif ~isnan(first_pos(:,3)) && ~isnan(first_pos(:,4)) % 1st fix in master list?
+            pos_fix(1,3) = first_pos(:,3);
+            pos_fix(1,4) = first_pos(:,4);
+            rdata(rdata(:,1)==1,3) = first_pos(:,3);
+            rdata(rdata(:,1)==1,4) = first_pos(:,4);
+            rdata(rdata(:,1)==1,5) = 3; %if using 000.msg position info, mark lat/lon QF as "questionable"
+            disp('Lat/Lon successfully extracted from master processing list')
         end
     end
 end
@@ -373,9 +401,10 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if not all nans, try 
         end
         
     end
-    adata(:,3:5) = rdata(:,3:5); % ADJUSTED POSITIONS EQUAL RAW
+    %adata(:,3:5) = rdata(:,3:5); % ADJUSTED POSITIONS EQUAL RAW
     %clear t_nan t_nan2 t_nan3
 end
+adata(:,3:5) = rdata(:,3:5); % ADJUSTED POSITIONS EQUAL RAW
 [dr,dc]     = size(rdata); % raw and adjusted are the same size
 [hrdr,hrdc] = size(hrrdata);
 
@@ -455,6 +484,24 @@ adj_data = [adata(:,1:iL+1), adata(:,iP), PRES_QF, adata(:,iT), ...
     TEMP_QF, adata(:,iS), PSAL_QF, den, den_QF, float_z, float_z_QF, ...
     adata(:,iS+2:dc)];
 
+%%%%%%%%% START PSAL PROXY BLOCK  %%%%%%%%%%
+% Now modify adjusted psal data, depending on whether a "psal proxy" float.  These columns will get reverted to original psal at the very end!
+
+if isfield(info,'PSAL_PROXY_USED')
+    if info.PSAL_PROXY_USED
+	disp(['%%%%% NOTE: USING ARMOR3D PSAL PROXY FOR COMPUTING DERIVED PARAMS, FLOAT ',WMO_ID,'. %%%%'])
+	cast_inds = ~isnan(d.psalprox); %these are indices of entries where psal-proxy was assigned in the merger.
+	iaS  = find(strcmp('PSAL_ADJUSTED',adj_hdr) == 1); %let's be sure we grab the right index
+% 	iacyc  = find(strcmp('Station',adj_hdr) == 1); %let's be sure we grab the right index
+% 	xcycind = find(adj_data(:,iacyc)>cast_num_start);
+% 	mycycs = unique(adj_data(xcycind,iacyc));
+	psal_orig = adj_data(:,iaS); %for replacing later, after all the calls to LIAR, CO2SYS have been done.
+	psalqc_orig = adj_data(:,iaS+1);
+	adj_data(cast_inds,iaS) = d.psalprox(cast_inds);
+    adj_data(cast_inds,iaS+1) = 1; %Argo Quality flag still at this point... make all = 1 (good) if using ARMOR3D
+    end
+end
+%%%%%%%%% END PSAL PROXY BLOCK  %%%%%%%%%%
 
 if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR%
     hrPRES_QF = hr_fill_0 + 1;             % ARGO QF = GOOD
@@ -571,18 +618,24 @@ end
 % ************************************************************************
 
 % BUILD SOME INDICES AGAIN
-iP  = find(strcmp('PRES_ADJUSTED',adj_hdr)   == 1); % order always lat, p, t, s
-iT  = find(strcmp('TEMP_ADJUSTED',adj_hdr)   == 1);
-iS  = find(strcmp('PSAL_ADJUSTED',adj_hdr)   == 1);
-iZ  = find(strcmp('DEPTH',adj_hdr)  == 1);
-iO  = find(strcmp('DOXY_ADJUSTED',adj_hdr)    == 1);
-iO2 = find(strcmp('DOXY2_ADJUSTED',adj_hdr)    == 1);
-iN  = find(strcmp('NITRATE_ADJUSTED',adj_hdr) == 1);
-iST = find(strcmp('SIGMA_THETA',adj_hdr) == 1);
-iL  = find(strncmp('Lat [',adj_hdr,5)    == 1);
-iPH = find(strcmp('PH_IN_SITU_TOTAL_ADJUSTED',adj_hdr)   == 1); % pH
-iOCR = find(~cellfun(@isempty,regexp(adj_hdr,'^DOWN.+[ED]$','once','match')) == 1);
-iCDOM = find(strcmp('CDOM_ADJUSTED',adj_hdr)   == 1); % pH
+iP   = find(strcmp('PRES_ADJUSTED',adj_hdr)   == 1); % order always lat, p, t, s
+iT   = find(strcmp('TEMP_ADJUSTED',adj_hdr)   == 1);
+iS   = find(strcmp('PSAL_ADJUSTED',adj_hdr)   == 1);
+iZ   = find(strcmp('DEPTH',adj_hdr)  == 1);
+iCHL = find(strcmp('CHLA_ADJUSTED',adj_hdr)    == 1); 
+iCHL435  = find(strcmp('CHLA435_ADJUSTED',adj_hdr)    == 1);
+
+iBBP    = find(strcmp('BBP700_ADJUSTED',adj_hdr) == 1);
+iBBP532 = find(strcmp('BBP532_ADJUSTED',adj_hdr) == 1);
+iCDOM   = find(strcmp('CDOM_ADJUSTED',adj_hdr)   == 1);
+
+iO   = find(strcmp('DOXY_ADJUSTED',adj_hdr)    == 1);
+iO2  = find(strcmp('DOXY2_ADJUSTED',adj_hdr)    == 1);
+iN   = find(strcmp('NITRATE_ADJUSTED',adj_hdr) == 1);
+iST  = find(strcmp('SIGMA_THETA',adj_hdr) == 1);
+iL   = find(strncmp('Lat [',adj_hdr,5)    == 1);
+iPH  = find(strcmp('PH_IN_SITU_TOTAL_ADJUSTED',adj_hdr)   == 1); % pH
+iOCR = find(~cellfun(@isempty,regexp(adj_hdr,'^DOWN.+[ED]$','once')) == 1); %1 x 4, all channels, logical
 
 LIAR_alk_str   = '';
 CANYON_alk_str = '';
@@ -892,9 +945,7 @@ if ~isempty(iPH) % pH data exists
         
         adj_data(isnan(adj_data(:,iPH25)), iPH25+1) = 99; % MVI QF VALUE
         adj_data(isnan(adj_data(:,iDIC)), iDIC+1)   = 99;
-        adj_data(isnan(adj_data(:,iPCO2)), iPCO2+1) = 99;
-        
-
+        adj_data(isnan(adj_data(:,iPCO2)), iPCO2+1) = 99;   
     end
 end
 
@@ -905,7 +956,6 @@ clear iP iT iS %iO iN
 % DO THIS BEFORE CHECKING FOR BOSS DATA AT U MAINE
 % U MAINE QUALITY FLAGS ALREADY ODV STYLE
 % ************************************************************************
-
 for i = 1:raw_c
     % SETTING ALL QF's TO 1, EXCEPT FOR PTSZ & OBVIOUSLY BAD
     if regexp(raw_hdr{i},'\_QC', 'once')
@@ -968,9 +1018,7 @@ for i = 1:adj_c
     end
 end
 
-
-
-if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
+if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR
     for i = 1:hrdc
         if regexp(raw_hdr{i},'\_QC', 'once')
             tmp2 = hrraw_data(:,i);
@@ -990,114 +1038,84 @@ clear i tmp1 tmp2
 
 % ************************************************************************
 % ************************************************************************
-% NOW DEAL WITH CHL AND BACKSCATTER DATA - IF NO ADJUSTED DATA EXISTS
+% NOW DEAL WITH Bio-optical data - IF NO ADJUSTED DATA EXISTS
 % FILL WITH RAW FOR TXT FILES
-iChl    = find(strcmp('CHLA_ADJUSTED',adj_hdr)   == 1);
-iBbp    = find(strcmp('BBP700_ADJUSTED',adj_hdr) == 1);
-iCdm    = find(strcmp('CDOM_ADJUSTED',adj_hdr)   == 1);
-iBbp532 = find(strcmp('BBP532_ADJUSTED',adj_hdr) == 1);
-Chl_data_str    = '';
-Bbp_data_str    = '';
-Cdm_data_str    = '';
-Bbp532_data_str = '';
+% iChl    = find(strcmp('CHLA_ADJUSTED',adj_hdr)   == 1); %Are these needed if laready defined? jp 02/04/24
+% iBbp    = find(strcmp('BBP700_ADJUSTED',adj_hdr) == 1);
+% iCdm    = find(strcmp('CDOM_ADJUSTED',adj_hdr)   == 1);
+% iBbp532 = find(strcmp('BBP532_ADJUSTED',adj_hdr) == 1);
+% OCR_cols = ~cellfun(@isempty, regexp(adj_hdr,'E\d{3}(?!.+QC)|PAR(?!.+QC)','once')); % This will get IRR & PAR & NOT QC
+% iOCR = find(OCR_cols == 1);
 
-if sum(~isnan(adj_data(:,iChl)),1) == 0 % No adjusted data
-    adj_data(:,iChl) = raw_data(:,iChl);
-    adj_data(:,iChl+1) = raw_data(:,iChl+1);
-    adj_data(adj_data(:,iChl+1)~= 8,iChl+1) = 1; % uninspected
-    %adj_data(:,iChl+1) = 1; % because CHL flag starts out
-    Chl_data_str = 'Adjusted Chlorophyll data = raw Chlorophyll data!';
-    disp(Chl_data_str)
+info.Chl_data_str    = '';
+info.Chl435_data_str = '';
+info.Bbp_data_str    = '';
+info.Cdm_data_str    = '';
+info.Bbp532_data_str = '';
+info.OCR_data_str    = '';
+
+% These work but the param index really should be checked for non empty first. Early JP
+% work!! JP 02/04/24
+if ~isempty(iCHL) && sum(~isnan(adj_data(:,iCHL)),1) == 0 % No adjusted data
+    adj_data(:,iCHL) = raw_data(:,iCHL);
+    adj_data(:,iCHL+1) = raw_data(:,iCHL+1);
+    adj_data(adj_data(:,iCHL+1)~= 8,iCHL+1) = 1; % uninspected
+    info.Chl_data_str = 'Adjusted Chlorophyll data = raw Chlorophyll data!';
+    disp(info.Chl_data_str)
 end
 
-if sum(~isnan(adj_data(:,iBbp)),1) == 0 % No adjusted data
-    adj_data(:,iBbp)   = raw_data(:,iBbp);
-    adj_data(:,iBbp+1) = raw_data(:,iBbp+1);
-    adj_data(adj_data(:,iBbp+1)~= 8,iBbp+1) = 1; % uninspected
-    Bbp_data_str = 'Adjusted backscatter data (700) = raw backscatter data (700)!';
-    disp(Bbp_data_str)
+if ~isempty(iCHL435) && sum(~isnan(adj_data(:,iCHL435)),1) == 0 % No adjusted data
+    adj_data(:,iCHL435) = raw_data(:,iCHL435);
+    adj_data(:,iCHL435+1) = raw_data(:,iCHL435+1);
+    adj_data(adj_data(:,iCHL435L+1)~= 8, iCHL435+1) = 1; % uninspected
+    info.Chl435_data_str = 'Adjusted Chlorophyll4535 data = raw Chlorophyll435 data!';
+    disp(info.Chl435_data_str)
 end
 
-if sum(~isnan(adj_data(:,iCdm)),1) == 0 % No adjusted data
-    adj_data(:,iCdm) = raw_data(:,iCdm);
-    adj_data(:,iCdm+1) = raw_data(:,iCdm+1);
-    adj_data(adj_data(:,iCdm+1)~= 8,iCdm+1) = 1; % uninspected
-    Cdm_data_str = 'Adjusted FDOM data = raw FDOM data!';
-    disp(Cdm_data_str)
+if ~isempty(iBBP) && sum(~isnan(adj_data(:,iBBP)),1) == 0 % No adjusted data
+    adj_data(:,iBBP)   = raw_data(:,iBBP);
+    adj_data(:,iBBP+1) = raw_data(:,iBBP+1);
+    adj_data(adj_data(:,iBBP+1)~= 8,iBBP+1) = 1; % uninspected
+    info.Bbp_data_str = 'Adjusted backscatter data (700) = raw backscatter data (700)!';
+    disp(info.Bbp_data_str)
 end
 
-if sum(~isnan(adj_data(:,iBbp532)),1) == 0 % No adjusted data
-    adj_data(:,iBbp532)   = raw_data(:,iBbp532);
-    adj_data(:,iBbp532+1) = raw_data(:,iBbp532+1);
-    adj_data(adj_data(:,iBbp532+1)~= 8,iBbp532+1) = 1; % uninspected
-    Bbp532_data_str = 'Adjusted backscatter (532) data = raw backscatter data (532)!';
-    disp(Bbp532_data_str)
+if ~isempty(iCDOM) && sum(~isnan(adj_data(:,iCDOM)),1) == 0 % No adjusted data
+    adj_data(:,iCDOM) = raw_data(:,iCDOM);
+    adj_data(:,iCDOM+1) = raw_data(:,iCDOM+1);
+    adj_data(adj_data(:,iCDOM+1)~= 8,iCDOM+1) = 1; % uninspected
+    info.Cdm_data_str = 'Adjusted FDOM data = raw FDOM data!';
+    disp(info.Cdm_data_str)
 end
+
+if ~isempty(iBBP532) && sum(~isnan(adj_data(:,iBBP532)),1) == 0 % No adjusted data
+    adj_data(:,iBBP532)   = raw_data(:,iBBP532);
+    adj_data(:,iBBP532+1) = raw_data(:,iBBP532+1);
+    adj_data(adj_data(:,iBBP532+1)~= 8,iBBP532+1) = 1; % uninspected
+    info.Bbp532_data_str = 'Adjusted backscatter (532) data = raw backscatter data (532)!';
+    disp(info.Bbp532_data_str)
+end
+
+if ~isempty(iOCR) && all(isnan(adj_data(:,iOCR)),'all') % No adjusted data
+    adj_data(:,iOCR)   = raw_data(:,iOCR);
+    t8 = raw_data(:,iOCR+1) == 8;
+    t8(t8 ==1) = 8; % set flags
+    t8(t8 == 0) = 1; % set flags, good data are uninspected = 1
+    adj_data(:,iOCR+1) = t8;
+    info.OCR_data_str = 'Adjusted OCR radiometer values = raw OCR radiometer values!';
+    disp(info.OCR_data_str)
+end
+
 
 % ************************************************************************
 % % ADD "VALUE ADDED" BIO-OPTICS PRODUCTS
-% global_gain  = 2; % THIS CAN BE MODIFIED OR FUNCTIONIZED LATER
-% soocn_gain   = 6; % S of 40S for now
-% lat_cutoff   = -30;
-% 
-% iChl_raw = find(strcmp('CHLA',raw_hdr) == 1);
-% float_cal_path = [dirs.cal,'cal',MBARI_ID_str,'.mat'];
-% 
-% if ~isempty(iChl_raw) && exist(float_cal_path,'file')
-%     load(float_cal_path);
-%     if isfield(cal,'CHL') && isfield(cal.CHL, 'SWDC')
-%         iSDN = find(strcmp('Matlab SDN',raw_hdr) == 1);
-%         iLON = find(strcmp('Lon [ºE]',raw_hdr) == 1);
-%         iLAT = find(strcmp('Lat [ºN]',raw_hdr) == 1);
-%         iP   = find(strcmp('PRES',raw_hdr) == 1);
-%         iT   = find(strcmp('TEMP',raw_hdr) == 1);
-%         iS   = find(strcmp('PSAL',raw_hdr) == 1);
-%         iSTA = find(strcmp('Station',raw_hdr) == 1);
-%         
-%         CHL_CTS = raw_data(:,iChl_raw) ./ cal.CHL.ChlScale ...
-%             + cal.CHL.ChlDC; % back to counts
-%         tLAT = raw_data(:,iLAT) < lat_cutoff;
-%         CHL_new = (CHL_CTS - cal.CHL.SWDC.DC) .* cal.CHL.ChlScale;
-%         CHL_new(tLAT) = CHL_new(tLAT) ./ soocn_gain; %S of 40S
-%         CHL_new(~tLAT) = CHL_new(~tLAT) ./ global_gain; %N of 40S
-%         CHL_new_QC = adj_data(:,iChl+1); % copy adjusted data QC flags
-%         
-%         % NPQ NEXT - HAVE TO STEP THROUGH PROFILES AGAIN
-%         cycle_ct = unique(raw_data(:,iSTA));
-%         disp('Creating experimental gain & NPQ corrected data set ...')
-%         for i = 1: size(cycle_ct,1)
-%             if i == size(cycle_ct,1)
-%                 fprintf('%0.0f \r\n',i)
-%             else
-%                 fprintf('%0.0f ',i)
-%             end
-%             
-%             t1 = raw_data(:,iSTA) == cycle_ct(i);
-%             tmp = raw_data(t1,:);
-%             CHL_EXP = CHL_new(t1);
-%             
-%             NPQ = get_NPQcorr(tmp(1,[iSDN,iLON,iLAT]), ...
-%                 [tmp(:,[iP,iT,iS]),CHL_EXP],dirs);
-%             if ~isempty(NPQ.data)
-%                 iNPQ = find(strcmp('Xing_Zchl',NPQ.hdr) == 1);
-%                 tNPQ = tmp(:,iP) <= NPQ.XMLDZ;
-%                 CHL_EXP(tNPQ) = NPQ.data(tNPQ, iNPQ); % no spike added
-%                 CHL_new(t1) = CHL_EXP;
-%             end
-%         end
-%         
-%         adj_hdr    = [adj_hdr, 'Chl_a_corr[mg/m^3]' 'QF']; % ADD TO HEADER
-%         adj_data = [adj_data, CHL_new, CHL_new_QC];
-%     end
-% end
 
-if ~isempty(iBbp)
+if ~isempty(iBBP)
     % using Johnson et al.,2017, doi:10.1002/2017JC012838
-    POC = (3.12e4 * adj_data(:,iBbp) + 3.04) / 12; % mmol/m^3
+    POC = (3.12e4 * adj_data(:,iBBP) + 3.04) / 12; % mmol/m^3
     adj_hdr    = [adj_hdr, 'POC[mmol/m^3]' 'QF']; % ADD TO HEADER
-    adj_data = [adj_data, POC, adj_data(:,iBbp+1)];
+    adj_data = [adj_data, POC, adj_data(:,iBBP+1)];
 end
-
 
 [raw_r,raw_c] = size(raw_data); % get new size
 [adj_r,adj_c] = size(adj_data); % get new size
@@ -1201,7 +1219,7 @@ if isfield(cal.info,'notes')
     %     clear cal %TM 3/3/21; DON'T CLEAR YET; IT'S USED JUST A BIT FURTHER
     %     DOWN.
 end
-
+% keyboard
 MVI_str = '-1e10'; % MISSING VALUE INDICATOR FOR ODV
 
 Bio_optics_str = ['See: Boss, E.B. and N. Haëntjens, 2016. ', ...
@@ -1287,24 +1305,23 @@ ODV_raw(6,:)  = {'Oxygen[µmol/kg]'       '%0.2f' 'DOXY' '' '' ''};
 ODV_raw(7,:)  = {'OxygenSat[%]'          '%0.1f' 'DOXY_%SAT' '' '' ''};
 ODV_raw(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE' '' '' ''};
 ODV_raw(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA' '' '' ''};
-ODV_raw(10,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700' '' '' ''};
-
-% ADD THESE FOR ODV FLAVOR #2
-ODV_raw(11,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};
-
-% ADD THESE FOR ODV FLAVOR #3 - NAVIS
-ODV_raw(12,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532' '' '' ''};
-ODV_raw(13,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''};
+ODV_raw(10,:)  = {'Chl_a435[mg/m^3]'         '%0.4f' 'CHLA435' '' '' ''};
+ODV_raw(11,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700' '' '' ''};
+ODV_raw(12,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL' '' '' ''};
+ODV_raw(13,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532' '' '' ''};
+ODV_raw(14,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM' '' '' ''};
 
 % OCR VARIABLES
-ODV_raw(14,:) = {'DOWN_IRRAD380[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE380' '' '' ''};
-ODV_raw(15,:) = {'DOWN_IRRAD412[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE412' '' '' ''};
-ODV_raw(16,:) = {'DOWN_IRRAD490[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE490' '' '' ''};
-ODV_raw(17,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]'  '%0.6f' 'DOWNWELLING_PAR' '' '' ''};
+ODV_raw(15,:) = {'DOWN_IRRAD380[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE380' '' '' ''};
+ODV_raw(16,:) = {'DOWN_IRRAD412[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE412' '' '' ''};
+ODV_raw(17,:) = {'DOWN_IRRAD443[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE443' '' '' ''};
+ODV_raw(18,:) = {'DOWN_IRRAD490[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE490' '' '' ''};
+ODV_raw(19,:) = {'DOWN_IRRAD555[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE555' '' '' ''};
+ODV_raw(20,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]'  '%0.6f' 'DOWNWELLING_PAR' '' '' ''};
 
 % FOR DUAL 4330 O2 APEX
-ODV_raw(18,:)  = {'Oxygen2[µmol/kg]'       '%0.2f' 'DOXY2' '' '' ''};
-ODV_raw(19,:)  = {'Oxygen2Sat[%]'          '%0.1f' 'DOXY2_%SAT' '' '' ''};
+ODV_raw(21,:)  = {'Oxygen2[µmol/kg]'       '%0.2f' 'DOXY2' '' '' ''};
+ODV_raw(22,:)  = {'Oxygen2Sat[%]'          '%0.1f' 'DOXY2_%SAT' '' '' ''};
 
 % ************************************************************************
 % ADD VARIABLE DESCRIPTORS TO RAW CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
@@ -1333,32 +1350,41 @@ if sum(strcmp(ODV_raw{8,3},raw_hdr))
 end
 if sum(strcmp(ODV_raw{9,3},raw_hdr))
     ODV_raw(9,4:6) = {cal.CHL.type cal.CHL.SN ''}; %CHL
-end
-if sum(strcmp(ODV_raw{10,3},raw_hdr))
-    ODV_raw(10,4:6) = {cal.BB.type cal.BB.SN ''}; %Back scatter 700
+    ODV_raw(10,4:6) = {cal.CHL.type cal.CHL.SN ''}; %CHL
 end
 if sum(strcmp(ODV_raw{11,3},raw_hdr))
-    ODV_raw(11,4:6) = {cal.pH.type cal.pH.SN ''}; %pH
+    ODV_raw(11,4:6) = {cal.BB.type cal.BB.SN ''}; %Back scatter 700
 end
 if sum(strcmp(ODV_raw{12,3},raw_hdr))
-    ODV_raw(12,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %bbp532
+    ODV_raw(12,4:6) = {cal.pH.type cal.pH.SN ''}; %pH
 end
 if sum(strcmp(ODV_raw{13,3},raw_hdr))
-    ODV_raw(13,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %CDOM
+    ODV_raw(13,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %bbp532
 end
 if sum(strcmp(ODV_raw{14,3},raw_hdr))
-    ODV_raw(14,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
-    ODV_raw(15,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
-    ODV_raw(16,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
-    ODV_raw(17,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_raw(14,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %CDOM
 end
-if sum(strcmp(ODV_raw{18,3},raw_hdr))
-    ODV_raw(18,4:6) = {[O2sensor,cal.O2.type] cal.O2.SN ''}; %O2
-    ODV_raw(19,4:6) = {'' '' ['Calculation assumes atmospheric pressure',...
+if sum(strcmp(ODV_raw{15,3},raw_hdr))
+    ODV_raw(15:20,4) = {cal.OCR.type};
+    ODV_raw(15:20,5) = {cal.OCR.SN};
+    ODV_raw(15:20,6) = {''};
+
+    % ODV_raw(15,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_raw(16,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_raw(17,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_raw(18,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_raw(19,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_raw(20,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+end
+if sum(strcmp(ODV_raw{21,3},raw_hdr))
+    ODV_raw(21,4:6) = {[O2sensor,cal.O2.type] cal.O2.SN ''}; %O2
+    ODV_raw(22,4:6) = {'' '' ['Calculation assumes atmospheric pressure',...
         '= 1013.25 mbar']}; % O2 % sat
 end
 
 % ************************************************************************
+% JP 02/04/24 I think order could be improved so raw & adj match up to
+% value added parameters?
 % ************************************************************************
 % QC ODV FILE
 ODV_adj(1,:)  = {'Pressure[dbar]'        '%0.2f' 'PRES_ADJUSTED' '' '' ''};
@@ -1370,31 +1396,29 @@ ODV_adj(6,:)  = {'Oxygen[µmol/kg]'       '%0.2f' 'DOXY_ADJUSTED' '' '' ''};
 ODV_adj(7,:)  = {'OxygenSat[%]'          '%0.1f' 'DOXY_%SAT_ADJUSTED' '' '' ''};
 ODV_adj(8,:)  = {'Nitrate[µmol/kg]'      '%0.2f' 'NITRATE_ADJUSTED' '' '' ''};
 ODV_adj(9,:)  = {'Chl_a[mg/m^3]'         '%0.4f' 'CHLA_ADJUSTED' '' '' ''};
-%ODV_adj(10,:) = {'Chl_a_corr[mg/m^3]'    '%0.4f' 'Chl_a_corr[mg/m^3]' '' '' ''};
-ODV_adj(10,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700_ADJUSTED' '' '' ''};
-%ODV_adj(12,:) = {'b_bp_corr[1/m]'        '%0.6f' 'bbp' '' '' ''};
-ODV_adj(11,:) = {'POC[mmol/m^3]'         '%0.2f' 'POC[mmol/m^3]' '' '' ''};
+ODV_adj(10,:) = {'Chl_a435[mg/m^3]'         '%0.4f' 'CHLA435_ADJUSTED' '' '' ''};
+ODV_adj(11,:) = {'b_bp700[1/m]'          '%0.6f' 'BBP700_ADJUSTED' '' '' ''};
+ODV_adj(12,:) = {'POC[mmol/m^3]'         '%0.2f' 'POC[mmol/m^3]' '' '' ''};
+ODV_adj(13,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL_ADJUSTED' '' '' ''};
+ODV_adj(14,:) = {'pH25C[Total]'          '%0.4f' 'LIAR PHTOT25C' '' '' ''};
+ODV_adj(15,:) = {'TALK_LIAR[µmol/kg]'    '%4.0f' 'LIAR_ALK' '' '' ''};
+ODV_adj(16,:) = {'DIC_LIAR[µmol/kg]'     '%4.0f' 'LIAR_DIC' '' '' ''};
+ODV_adj(17,:) = {'pCO2_LIAR[µatm]'       '%4.1f' 'LIAR_pCO2' '' '' ''};
+ODV_adj(18,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532_ADJUSTED' '' '' ''};
+ODV_adj(19,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM_ADJUSTED' '' '' ''};
 
-% ADD THESE FOR ODV FLAVOR #2
-ODV_adj(12,:) = {'pHinsitu[Total]'       '%0.4f' 'PH_IN_SITU_TOTAL_ADJUSTED' '' '' ''};
-ODV_adj(13,:) = {'pH25C[Total]'          '%0.4f' 'LIAR PHTOT25C' '' '' ''};
-ODV_adj(14,:) = {'TALK_LIAR[µmol/kg]'    '%4.0f' 'LIAR_ALK' '' '' ''};
-ODV_adj(15,:) = {'DIC_LIAR[µmol/kg]'     '%4.0f' 'LIAR_DIC' '' '' ''};
-ODV_adj(16,:) = {'pCO2_LIAR[µatm]'       '%4.1f' 'LIAR_pCO2' '' '' ''};
-
-% ADD THESE FOR ODV FLAVOR #3
-ODV_adj(17,:) = {'b_bp532[1/m]'          '%0.6f' 'BBP532_ADJUSTED' '' '' ''};
-ODV_adj(18,:) = {'CDOM[ppb]'             '%0.2f' 'CDOM_ADJUSTED' '' '' ''};
-
-% OCR VARIABLES
-ODV_adj(19,:) = {'DOWN_IRRAD380[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE380' '' '' ''};
-ODV_adj(20,:) = {'DOWN_IRRAD412[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE412' '' '' ''};
-ODV_adj(21,:) = {'DOWN_IRRAD490[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE490' '' '' ''};
-ODV_adj(22,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]'  '%0.6f' 'DOWNWELLING_PAR' '' '' ''};
+% OCR VARIABLES - JP 02/04/24 added adjusted to merged param header names
+% (col 3)
+ODV_adj(20,:) = {'DOWN_IRRAD380[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE380_ADJUSTED' '' '' ''};
+ODV_adj(21,:) = {'DOWN_IRRAD412[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE412_ADJUSTED' '' '' ''};
+ODV_adj(22,:) = {'DOWN_IRRAD443[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE443_ADJUSTED' '' '' ''};
+ODV_adj(23,:) = {'DOWN_IRRAD490[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE490_ADJUSTED' '' '' ''};
+ODV_adj(24,:) = {'DOWN_IRRAD555[W/m^2/nm]'            '%0.6f' 'DOWN_IRRADIANCE555_ADJUSTED' '' '' ''};
+ODV_adj(25,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]'  '%0.6f' 'DOWNWELLING_PAR_ADJUSTED' '' '' ''};
 
 % FOR DUAL 4330 O2 APEX
-ODV_adj(23,:)  = {'Oxygen2[µmol/kg]'       '%0.2f' 'DOXY2' '' '' ''};
-ODV_adj(24,:)  = {'Oxygen2Sat[%]'          '%0.1f' 'DOXY2_%SAT' '' '' ''};
+ODV_adj(26,:)  = {'Oxygen2[µmol/kg]'       '%0.2f' 'DOXY2' '' '' ''};
+ODV_adj(27,:)  = {'Oxygen2Sat[%]'          '%0.1f' 'DOXY2_%SAT' '' '' ''};
 
 % ************************************************************************
 % ADD VARIABLE DESCRIPTORS TO ADJ CELL LOOKUP TABLE - SENSOR TYPE SN COMMENT
@@ -1402,122 +1426,190 @@ ODV_adj(24,:)  = {'Oxygen2Sat[%]'          '%0.1f' 'DOXY2_%SAT' '' '' ''};
 ODV_adj(1:9,4:6) = ODV_raw(1:9,4:6);
 if sum(strcmp(ODV_adj{9,3},adj_hdr))
     ODV_adj(9,4:6) = {cal.CHL.type cal.CHL.SN Bio_optics_str}; %chl
+    ODV_adj(10,4:6) = {cal.CHL.type cal.CHL.SN Bio_optics_str}; %chl
 end
-if sum(strcmp(ODV_adj{10,3},adj_hdr))
-    ODV_adj(10,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %bbp700
+if sum(strcmp(ODV_adj{11,3},adj_hdr))
+    ODV_adj(11,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %bbp700
 end
 % if sum(strcmp(ODV_adj{12,3},adj_hdr))
 %     ODV_adj(12,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %bbp700 cor
 % end
-if sum(strcmp(ODV_adj{11,3},adj_hdr))
-    ODV_adj(11,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %POC
+if sum(strcmp(ODV_adj{12,3},adj_hdr))
+    ODV_adj(12,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %POC
 end
 
-if sum(strcmp(ODV_adj{12,3},adj_hdr))
-    ODV_adj(12,4:6) = {cal.pH.type cal.pH.SN ''}; %pH in situ
-end
 if sum(strcmp(ODV_adj{13,3},adj_hdr))
-    str =['estimated with CO2SYS(TALK_LIAR,pHinsitu) for Matlab ', ...
-        ' see note below'];
-    ODV_adj(13,4:6) = {cal.pH.type cal.pH.SN str}; %pH 25C total
+    ODV_adj(13,4:6) = {cal.pH.type cal.pH.SN ''}; %pH in situ
 end
 if sum(strcmp(ODV_adj{14,3},adj_hdr))
-    ODV_adj(14,4:6) = {'' '' LIAR_alk_str}; %TALK LIAR
+    str =['estimated with CO2SYS(TALK_LIAR,pHinsitu) for Matlab ', ...
+        ' see note below'];
+    ODV_adj(14,4:6) = {cal.pH.type cal.pH.SN str}; %pH 25C total
 end
 if sum(strcmp(ODV_adj{15,3},adj_hdr))
-    str =['estimated with CO2SYS(TALK_LIAR,pHinsitu) for Matlab ', ...
-        '(see note below)'];
-    ODV_adj(15,4:6) = {'' '' str}; %LIAR DIC
+    ODV_adj(15,4:6) = {'' '' LIAR_alk_str}; %TALK LIAR
 end
 if sum(strcmp(ODV_adj{16,3},adj_hdr))
+    str =['estimated with CO2SYS(TALK_LIAR,pHinsitu) for Matlab ', ...
+        '(see note below)'];
+    ODV_adj(16,4:6) = {'' '' str}; %LIAR DIC
+end
+if sum(strcmp(ODV_adj{17,3},adj_hdr))
     str =['estimated with CO2SYS(TALK_LIAR,biased pHinsitu) for Matlab ', ...
         '(see note below)'];
-    ODV_adj(16,4:6) = {'' '' str}; %LIAR pCO2 DIC
+    ODV_adj(17,4:6) = {'' '' str}; %LIAR pCO2 DIC
 end
 
-if sum(strcmp(ODV_adj{17,3},adj_hdr))
-    ODV_adj(17,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; % BBP532
-end
 if sum(strcmp(ODV_adj{18,3},adj_hdr))
-    ODV_adj(18,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %CDOM
+    ODV_adj(18,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; % BBP532
 end
 if sum(strcmp(ODV_adj{19,3},adj_hdr))
-    ODV_adj(19,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
-    ODV_adj(20,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
-    ODV_adj(21,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
-    ODV_adj(22,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    ODV_adj(19,4:6) = {cal.CDOM.type cal.CDOM.SN ''}; %CDOM
+end
+if sum(strcmp(ODV_adj{20,3},adj_hdr))
+    ODV_adj(20:25,4) = {cal.OCR.type}; %OCR
+    ODV_adj(20:25,5) = {cal.OCR.SN}; %OCR
+    ODV_adj(20:25,6) = {''}; %OCR
+
+
+    % ODV_adj(20,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_adj(21,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_adj(22,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_adj(23,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_adj(24,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
+    % ODV_adj(25,4:6) = {cal.OCR.type cal.OCR.SN ''}; %OCR
 end
 
-if sum(strcmp(ODV_adj{23,3},adj_hdr))
-    ODV_adj(23,4:6) = {[O2sensor,cal.O2.type] cal.O2.SN ''}; %O2
-    ODV_adj(24,4:6) = {'' '' ['Calculation assumes atmospheric pressure',...
+if sum(strcmp(ODV_adj{26,3},adj_hdr))
+    ODV_adj(26,4:6) = {[O2sensor,cal.O2.type] cal.O2.SN ''}; %O2
+    ODV_adj(27,4:6) = {'' '' ['Calculation assumes atmospheric pressure',...
         '= 1013.25 mbar']}; % O2 % sat
 end
 
 % ************************************************************************
-% FIGURE OUT ODV FILE FORMAT TYPE: [NO pH] [pH] [NAVIS]
-% REMOVE SPECIFC VARIABLES FROM THE LOOKUP CELL ARRAY
-if isempty(iPH)
-    ind1 = find(strcmp('pHinsitu[Total]',ODV_raw(:,1))   == 1);
-    ODV_raw(ind1,:) = [];
-    
-    ind1 = find(strcmp('pHinsitu[Total]',ODV_adj(:,1))   == 1);
-    ind2 = find(strcmp('pCO2_LIAR[µatm]',ODV_adj(:,1))   == 1);
-    ODV_adj(ind1:ind2,:) = [];
-end
+% ODV_RAW & ADV_ADJ DEFINE THE ORDER OF PARAMETERS PRINTED, SUBSET THIS
+% MASTER LIST TO ONLY THE BGC PARAMETERS IN THE DATA FILE, NO LONGER A
+% STATIC ORDER WITH FILL VALUES IF PARAMETERS ARE MISSING
+%REMOVE SPECIFC VARIABLES FROM THE LOOKUP CELL ARRAY IF NOT PRESENT IN
+% DATA
 
-if isempty(iCDOM)
-    ind1 = find(strncmp('CDOM[ppb]',ODV_raw(:,1),4)   == 1);
-    ODV_raw(ind1,:) = [];
-    
-    ind1 = find(strncmp('CDOM[ppb]',ODV_adj(:,1),4)   == 1);
-    ODV_adj(ind1,:) = [];
-end
+Lia_raw = ismember(ODV_raw(:,3),raw_hdr); %find data params existing in ODV_raw
+ODV_raw = ODV_raw(Lia_raw,:);
 
-if ~strcmp(info.float_type, 'NAVIS') %TMNEW
-    ind1 = find(strcmp('b_bp532[1/m]',ODV_raw(:,1))   == 1);
-    %ind2 = find(strcmp('CDOM[ppb]',ODV_raw(:,1))   == 1);
-    %ODV_raw(ind1:ind2,:) = [];
-    ODV_raw(ind1,:) = [];
-    
-    ind1 = find(strcmp('b_bp532[1/m]',ODV_adj(:,1))   == 1);
-%     ind2 = find(strcmp('CDOM[ppb]',ODV_adj(:,1))   == 1);
-%     ODV_adj(ind1:ind2,:) = [];
-    ODV_adj(ind1,:) = [];
-end
+Lia_adj = ismember(ODV_adj(:,3),adj_hdr); %find data params existing in ODV_adj
+ODV_adj = ODV_adj(Lia_adj,:);
 
-if isempty(iOCR)
-    ind1 = find(strncmp('DOWN',ODV_raw(:,1),4)   == 1);
-    ODV_raw(ind1,:) = [];
-    
-    ind1 = find(strncmp('DOWN',ODV_adj(:,1),4)   == 1);
-    ODV_adj(ind1,:) = [];
-end
-
-if tf_APEX_OCR % APEX OCR TEST FLOATS
-    tg = cellfun(@isempty, regexp(ODV_raw(:,1),'^Oxy|^Nit|^Chl|^b_bp','once'));
-    ODV_raw = ODV_raw(tg,:);
-    
-    tg = cellfun(@isempty, regexp(ODV_adj(:,1),'^Oxy|^Nit|^Chl|^b_bp|^POC','once'));
-    ODV_adj = ODV_adj(tg,:);
-end
-
-if isempty(iO2)
-    ind1 = find(strncmp('Oxygen2',ODV_raw(:,1),7)   == 1);
-    ODV_raw(ind1,:) = [];
-    
-    ind1 = find(strncmp('Oxygen2',ODV_adj(:,1),7)   == 1);
-    ODV_adj(ind1,:) = [];
-else
-    tg = cellfun(@isempty, regexp(ODV_raw(:,1),'^Nit|^Chl|^b_bp','once'));
-    ODV_raw = ODV_raw(tg,:);
-    
-    tg = cellfun(@isempty, regexp(ODV_adj(:,1),'^Nit|^Chl|^b_bp|^POC','once'));
-    ODV_adj = ODV_adj(tg,:);
-end
+% 
+% 
+% if isempty(iPH)
+%     t1 = strcmp('pHinsitu[Total]',ODV_raw(:,1));
+%     ODV_raw(t1,:) = [];
+% 
+%     t1 = strcmp('pHinsitu[Total]',ODV_adj(:,1));
+%     t2 = strcmp('pCO2_LIAR[µatm]',ODV_adj(:,1));
+%     ODV_adj(t1|t2,:) = [];
+% end
+% 
+% if isempty(iCDOM)
+%     t1 = strncmp('CDOM[ppb]',ODV_raw(:,1),4);
+%     ODV_raw(t1,:) = [];
+% 
+%     t1 = strncmp('CDOM[ppb]',ODV_adj(:,1),4);
+%     ODV_adj(t1,:) = [];
+% end
+% 
+% % JP 02/04/24 I believe un0565 is the only float with Bbp532?
+% if ~strcmp(info.MBARI_ID_str, 'un0565') 
+% %if ~strcmp(info.float_type, 'NAVIS') %TMNEW
+%     t1 = strcmp('b_bp532[1/m]',ODV_raw(:,1));
+%     ODV_raw(t1,:) = [];
+% 
+%     t1 = strcmp('b_bp532[1/m]',ODV_adj(:,1));
+%     ODV_adj(t1,:) = [];
+% end
+% 
+% if isempty(iCHL435)
+%     t1 = strncmp('Chl_a435',ODV_raw(:,1),8);
+%     ODV_raw(t1,:) = [];
+% 
+%     t1 = strncmp('Chl_a435',ODV_adj(:,1),8);
+%     ODV_adj(t1,:) = [];
+% end
+% 
+% % OCR: get logicals, OCR in print hdr list, all OCR channels start with "DOWN"
+% t1_raw = strncmp('DOWN',ODV_raw(:,3),4); 
+% t1_adj = strncmp('DOWN',ODV_adj(:,3),4);
+% if isempty(iOCR)
+%     ODV_raw(t1_raw,:) = [];
+%     ODV_adj(t1_adj,:) = [];
+% else % figure out which channels to keep. JP 02/04/24
+%     OCR_parms = raw_hdr(iOCR); %iOCR defined earlier (1x4 logical)
+%     Lia       = ismember(ODV_raw(:,3), OCR_parms); % keep these (float OCR PARAMS)
+%     ODV_raw(t1_raw & ~Lia,:) = [];
+% 
+%     OCR_parms = adj_hdr(iOCR);
+%     Lia       = ismember(ODV_adj(:,3), OCR_parms); % keep these (float OCR PARAMS)
+%     ODV_adj(t1_adj & ~Lia,:) = [];
+% end
+% 
+% % if isempty(iOCR412)
+% %     ind1 = find(strncmp('DOWN_IRRAD412',ODV_raw(:,1),13)   == 1);
+% %     ODV_raw(ind1,:) = [];
+% %     
+% %     ind1 = find(strncmp('DOWN_IRRAD412',ODV_adj(:,1),13)   == 1);
+% %     ODV_adj(ind1,:) = [];
+% % end
+% % 
+% % if isempty(iOCR443)
+% %     ind1 = find(strncmp('DOWN_IRRAD443',ODV_raw(:,1),13)   == 1);
+% %     ODV_raw(ind1,:) = [];
+% %     
+% %     ind1 = find(strncmp('DOWN_IRRAD443',ODV_adj(:,1),13)   == 1);
+% %     ODV_adj(ind1,:) = [];
+% % end
+% % 
+% % if isempty(iOCR555)
+% %     ind1 = find(strncmp('DOWN_IRRAD555',ODV_raw(:,1),13)   == 1);
+% %     ODV_raw(ind1,:) = [];
+% %     
+% %     ind1 = find(strncmp('DOWN_IRRAD555',ODV_adj(:,1),13)   == 1);
+% %     ODV_adj(ind1,:) = [];
+% % end
+% % 
+% % if isempty(iOCRPAR)
+% %     ind1 = find(strncmp('DOWNWELL_PAR',ODV_raw(:,1),12)   == 1);
+% %     ODV_raw(ind1,:) = [];
+% %     
+% %     ind1 = find(strncmp('DOWNWELL_PAR',ODV_adj(:,1),12)   == 1);
+% %     ODV_adj(ind1,:) = [];
+% % end
+% 
+% 
+% if tf_APEX_OCR % APEX OCR TEST FLOATS
+%     tg = cellfun(@isempty, regexp(ODV_raw(:,1),'^Oxy|^Nit|^Chl|^b_bp','once'));
+%     ODV_raw = ODV_raw(tg,:);
+% 
+%     tg = cellfun(@isempty, regexp(ODV_adj(:,1),'^Oxy|^Nit|^Chl|^b_bp|^POC','once'));
+%     ODV_adj = ODV_adj(tg,:);
+% end
+% 
+% if isempty(iO2)
+%     t1 = strncmp('Oxygen2',ODV_raw(:,1),7);
+%     ODV_raw(t1,:) = [];
+% 
+%     t1 = strncmp('Oxygen2',ODV_adj(:,1),7);
+%     ODV_adj(t1,:) = [];
+% else
+%     tg = cellfun(@isempty, regexp(ODV_raw(:,1),'^Nit|^Chl|^b_bp','once'));
+%     ODV_raw = ODV_raw(tg,:);
+% 
+%     tg = cellfun(@isempty, regexp(ODV_adj(:,1),'^Nit|^Chl|^b_bp|^POC','once'));
+%     ODV_adj = ODV_adj(tg,:);
+% end
 
 raw_var_ct = size(ODV_raw,1);
 adj_var_ct = size(ODV_adj,1);
+
 
 % ************************************************************************
 % ************************************************************************
@@ -1581,8 +1673,7 @@ fprintf(fid_raw,['//Missing data value = ',MVI_str,'\r\n']);
 
 fprintf(fid_raw,['//Data quality flags: 0=Good, 4=Questionable, 8=Bad, '...
     '1=Missing or not inspected \r\n']);
-fprintf(fid_raw,['//Note: all timestamps are in GMT. \r\n']);
-
+fprintf(fid_raw,'//Note: all timestamps are in GMT. \r\n');
 
 % NOW PRINT THE RAW DATA HEADER
 std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
@@ -1681,6 +1772,23 @@ clear fid_raw line_ct dummy_out
 % ************************************************************************
 % ************************************************************************
 
+% START REPLACEMENT OF PSAL -----------------------
+% Ok, first thing's first -- if a psal-proxy float, re-insert original psal!  (we don't want the proxy in the final data files)
+if isfield(info,'PSAL_PROXY_USED')
+    if info.PSAL_PROXY_USED %we never deleted this index...
+	disp(['%%%%% NOTE: RE-INSERTIN ORIGINAL PSAL FOR FINAL WRITE-TO-FILE, FLOAT ',WMO_ID,'. %%%%'])
+	adj_data(:,iaS) = psal_orig;
+    % OK need to convert to ODV flag...this was already done earlier for
+    % the other arrays. Keep it simple and clean for this block.
+    psalqc_orig(psalqc_orig == 5) = 3; 
+    psalqc_orig(psalqc_orig == 4) = 8;
+    psalqc_orig(psalqc_orig == 3) = 4; 
+    psalqc_orig(psalqc_orig == 1) = 0; 
+	adj_data(:,iaS+1) = psalqc_orig;
+    end
+end
+% END REPLACEMENT OF PSAL -----------------------
+
 % TEST FOR QC ADJUSTMENT CONSTANTS, GET IF THEY EXIST
 QC = get_QC_adjustments(info.FloatViz_name,dirs);
 QC_check = 1; % Adjustments exist
@@ -1744,7 +1852,7 @@ if QC_check == 1
         %fprintf(fid_adj,'//\r\n');
     end
     
-    if ~isempty(iChl)
+    if ~isempty(iCHL)
         fprintf(fid_adj,'//\r\n');
         fprintf(fid_adj,CHL_str); % Print out CHL statement
     end
@@ -1766,12 +1874,8 @@ if QC_check == 1
         else
             continue
         end
-        if ~isempty(steps) %TM 3/3/21 - is this block still needed?  No longer storing CHL in the QClists...
+        if ~isempty(steps) 
             [QCr,QCc] = size(steps);
-            if strcmp(possible_fields{i}, 'CHL') % ALL CHL: gain = 2, offest 0
-                steps(:,3) = 1/2;
-                steps(:,4) = 0;
-            end
             for j = 1: QCr
                 fprintf(fid_adj, ['//',possible_hdr_names{i},'\t', ...
                     '%0.0f\t%0.4f\t%0.4f\t%0.4f\r\n'], steps(j,2:QCc));
@@ -1779,6 +1883,25 @@ if QC_check == 1
         end
     end
     fprintf(fid_adj,'//\r\n');
+
+    % Add note if raw data are used to populated adjusted data
+    tmp_fields ={'Chl_data_str' 'Chl435_data_str' 'Bbp_data_str', ...
+        'Cdm_data_str' 'Bbp532_data_str' 'OCR_data_str'};
+    for i = 1: size(tmp_fields,2)
+        if ~isempty(info.(tmp_fields{i}))
+            fprintf(fid_adj, '//%s\r\n', info.(tmp_fields{i}));
+        end
+    end
+
+
+
+    info.Chl_data_str    = '';
+    info.Chl435_data_str = '';
+    info.Bbp_data_str    = '';
+    info.Cdm_data_str    = '';
+    info.Bbp532_data_str = '';
+    info.OCR_data_str    = '';
+
     
     if strncmp('Miss',adj_missing_data_str,4)
         fprintf(fid_adj,['//Missing data value = ',MVI_str,'\r\n']);
@@ -2090,7 +2213,7 @@ if QC_check == 1 && HR_flag == 1
             %fprintf(fid_adj,'//\r\n');
         end
         
-        if ~isempty(iChl)
+        if ~isempty(iCHL)
             fprintf(fid_adj,'//\r\n');
             fprintf(fid_adj,CHL_str); % Print out CHL statement
         end

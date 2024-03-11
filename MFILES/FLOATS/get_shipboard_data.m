@@ -1,4 +1,6 @@
 function d = get_shipboard_data(file_path)
+
+% file_path = 'C:\Users\eclark\Documents\Matlab\ARGO_PROCESSING\DATA\SHIPBOARD\24HU20230110_preliminary_hy1.csv'
 % PURPOSE: 
 %   This function parses shipboard data to get calibration cast data
 %   for SOCCOM float deployments
@@ -41,6 +43,10 @@ function d = get_shipboard_data(file_path)
 %   04/10/2019 Added NITRIT TO variable list, added range limits to wanted
 %       vars cell structure - jp.
 % 12/30/2020 - JP - forced all fopen r/w to UTF-8
+% 03/01/2023 - JP - Removed "DEPTH" as a parameter to look for. This is
+%              seafloor depth not depth from surface. I was also
+%              incorrectly using it to calc LIAR ALK if this col existed.
+%              Now cal depth from lat & Pre4ssure directly for LIAR input
 
 % TESTING             
 % file_path = ['C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\', ...
@@ -58,6 +64,8 @@ function d = get_shipboard_data(file_path)
 
 % file_path = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\SHIPBOARD\320620161224.exc.csv';
 
+%file_path ='C:\temp\320620221108_hy1_final.csv';
+
 % ************************************************************************
 % LIST OF DESIRED VARIBLES AND FORMAT STRING
 % ADD / REMOVE WHAT YOU WANT
@@ -70,9 +78,10 @@ wanted_vars ={'SECT_ID'          '%s'  [NaN NaN]; ...
               'TIME'             '%s'  [NaN NaN]; ...
               'LATITUDE'         '%f'  [-90 90];...
               'LONGITUDE'        '%f'  [-180 360]; ...
-              'DEPTH'            '%f'  [-1 10000]; ...
               'CTDPRS'           '%f'  [-1 10000]; ...
               'CTDTMP'           '%f'  [-2.5 40]; ...
+              'SALNTY'           '%f'  [26 38]; ...    %'SALNITY' bottle
+              'SALNTY_FLAG_W'    '%f'  [NaN NaN]; ...
               'CTDSAL'           '%f'  [26 38]; ...    %'SALNITY' could use bottle or ctd
               'CTDSAL_FLAG_W'    '%f'  [NaN NaN]; ...
               'CTDOXY'           '%f'  [-5 550]; ...    %'SALNITY' could use bottle or ctd
@@ -100,7 +109,7 @@ wanted_vars ={'SECT_ID'          '%s'  [NaN NaN]; ...
               'CHLORA_FLAG_W'    '%f'  [NaN NaN]};
 %              'TOT_CHL_A'        '%f';...
 %              'TOT_CHL_A_FLAG_W' '%f'};
-          
+%              'DEPTH'            '%f'  [-1 10000]; ...         
           
           
               
@@ -129,7 +138,6 @@ EXPOCODE = str(1:t2-1);
 clear t1 t2 str
 % ***********************************************
 
-
 while ischar(tline)
 %     if regexp(tline,'^#.*EXPOCODE','once') % .* to deal with diff meta line starts
 %         EXPOCODE = regexp(tline,'(?<=EXPOCODE:\s*)\w+', 'once', 'match');
@@ -148,8 +156,10 @@ end
 
 % CHECK HEADER VARIANTS - RENAME IF NEEDED
 tline = regexprep(tline,'SECT,','SECT_ID,');
+% tline = regexprep(tline,'SALNTY,','CTDSAL,');
 
 tmp_hdr    = regexp(tline,',','split'); % CELL ARRAY OF HEADER VARIABLES 
+
 tline = fgetl(fid); % STEP TO SECOND HEADER LINE (UNITS)
 tmp_units  = regexp(tline,',','split'); % CELL ARRAY OF UNITS 
 hdr_cols   = size(tmp_hdr,2);
@@ -213,21 +223,21 @@ hdr(iSECT) = []; % remove "SECT_ID" from header
 clear hr_tmp
 
 
-
 data = [cell2mat(d(1,2:iBOT)), sdn]; % BUILD MATRIX
 for i = iLAT:size(d,2)
     data = [data,d{1,i}];
 end
-clear d
+%clear d
 
 % SET MISSING VALUES = NaN
 data(data == -999) = NaN;
-% save('tanyatemp.mat','data')
+
 % ************************************************************************
 % CHECK QUALITY FLAGS & SET BAD DATA TO NaN 10/30/2017 JP
 
 ind  = regexp(hdr,'_FLAG_W');
 tfQC = ~cellfun(@isempty,ind); % quality flag cols
+% keyboard
 for i = 1:length(tfQC)
     if tfQC(i) == 1 %QF flag
         QCtmp = find(data(:,i)~=2);
@@ -273,6 +283,11 @@ clear ind tfQC tfD QCtmp Dtmp
 iP    = find(strcmp('CTDPRS', hdr) == 1); % dbar
 iT    = find(strcmp('CTDTMP', hdr) == 1);
 iS    = find(strcmp('CTDSAL',hdr)  == 1);
+if isempty(iS)
+    iS    = find(strcmp('SALNTY',hdr)  == 1);
+end
+    
+
 iDIC  = find(strcmp('TCARBN',hdr)  == 1);
 iALK  = find(strcmp('ALKALI',hdr)  == 1);
 iPH   = find(strcmp('PH_TOT',hdr)  == 1);
@@ -287,14 +302,15 @@ iLAT  = find(strcmp('LATITUDE',hdr)  == 1); % THESE ARE NEEDED FOR LIAR
 iLON  = find(strcmp('LONGITUDE',hdr) == 1); % TO ESTIMATE ALKALINITY IF
 iO    = find(strcmp('OXYGEN',hdr)    == 1); % IT IS NOT PRESENT IN THE 
 iSDN  = find(strcmp('DATE',hdr)      == 1); % DATASET
-iZ    = find(strcmp('DEPTH',hdr)     == 1);
+%iZ    = find(strcmp('DEPTH',hdr)     == 1);
+
 % CALCULATE DEPTH IF NAN's IN DEPTH COL
-nan_Z = isnan(data(:,iZ));
-data(nan_Z, iZ) = sw_dpth(data(nan_Z,iP),data(nan_Z,iLAT)); 
+%nan_Z = isnan(data(:,iZ));
+depth = sw_dpth(data(:,iP),data(:,iLAT)); 
 
 
 if isempty(iALK) % NO ALKALINITY MEASUREMENT ESTIMATE WITH LIAR
-    LIAR_pos = [data(:,iLAT), data(:,iLON), data(:,iZ)];
+    LIAR_pos = [data(:,iLAT), data(:,iLON), depth];
     ptemp    = theta(data(:,iP), data(:,iT), data(:,iS), 0);
     Equations    = 7; % S, Theta, AOU
     
@@ -316,7 +332,9 @@ if isempty(iALK) % NO ALKALINITY MEASUREMENT ESTIMATE WITH LIAR
     
     MeasIDVec    = [1 6 7]; % PSAL, DOXY_ADJ, TEMP, % updated 8/11/17 jp
     Measurements = [data(:,iS), data(:,iO), data(:,iT) ];
-    
+    if isempty(iO)
+        Measurements = [data(:,iS), data(:,iS)*NaN, data(:,iT) ];
+    end
     % using default MeasUncerts
     disp('Creating Alkalinity data column using LIAR_v2........')
 %     [Alk_Est, Uncert_Est, MinUncert_Equ] = LIAR(LIAR_pos, Measurements, MeasIDVec, ...
@@ -335,8 +353,10 @@ if ~isempty(iALK) && any(isnan(data(:,iALK)))
     disp('Adding missing Alkalinty values using LIAR_v2........')
     tnan_alk = isnan(data(:,iALK));
     
+%     LIAR_pos = [data(tnan_alk,iLAT), data(tnan_alk,iLON), ...
+%                 data(tnan_alk,iZ)];
     LIAR_pos = [data(tnan_alk,iLAT), data(tnan_alk,iLON), ...
-                data(tnan_alk,iZ)];
+        depth(tnan_alk)];
     ptemp    = theta(data(tnan_alk,iP), data(tnan_alk,iT), ...
                data(tnan_alk,iS), 0);
     
@@ -346,6 +366,9 @@ if ~isempty(iALK) && any(isnan(data(:,iALK)))
     
     MeasIDVec    = [1 6 7]; % PSAL, DOXY_ADJ, TEMP, % updated 8/11/17 jp
     Measurements = [data(tnan_alk,iS), data(tnan_alk,iO), data(tnan_alk,iT)];
+    if isempty(iO)
+        Measurements = [data(:,iS), data(:,iS)*NaN, data(:,iT) ];
+    end
     Equations    = 7; % S, Theta, AOU
 
 %     [Alk_Est, Uncert_Est, MinUncert_Equ] = LIAR(LIAR_pos, Measurements, ...
@@ -389,7 +412,7 @@ PO4     = data(:,iPO4);
 % JP FIX 08/08/2018 (ie SR1B cruise & floats 9652 9655 9657 9662) 
 nan_SI  = isnan(SI)  & ~isnan(data(:,iNO3));
 nan_PO4 = isnan(PO4) & ~isnan(data(:,iNO3));
-if sum(nan_SI) > 0 || sum(nan_PO4) > 0
+if sum(nan_SI) > 0 | sum(nan_PO4) > 0
     disp('NO3 data exists but some complimentary Si or PO4 data is missing')
     disp('Estimating missing data with Redfield ratio aproximation')
 
@@ -401,6 +424,8 @@ end
 clear nan_SI nan_PO4
 % ***********************
 
+
+try
 if ~isempty(iALK) && ~isempty(iPH) % check first: Alkalinity & pH exist
     PAR1 = data(:,iALK);
     PAR1(PAR1 < 0) = NaN;
@@ -410,15 +435,20 @@ if ~isempty(iALK) && ~isempty(iPH) % check first: Alkalinity & pH exist
     PAR2TYPE   = 3;
     TEMPIN = data(:,iPHT);
     PRESIN  = 0;
-    
-    [OUT1] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
-            TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, ...
-            pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
+%     [OUT1] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+%             TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, ...
+%             pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
+[OUT1] = CO2SYSv3(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+    TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4,0,0, ...
+    pHSCALEIN, K1K2CONSTANTS, 1,2,2);
         
     %pH_tot_iAiPH = OUT1(:,37);
     % Col 37 in OUT is pH output total scale regardless of input scale
 else 
     ph_flag1 = 0; % O if no DIC, ALk or pH
+end
+catch
+    ph_flag1 = 0;
 end
      
 if ~isempty(iALK) && ~isempty(iDIC) %check 2nd: Alk & DIC
@@ -431,9 +461,20 @@ if ~isempty(iALK) && ~isempty(iDIC) %check 2nd: Alk & DIC
     TEMPIN = data(:,iT);
     PRESIN = data(:,iP);
     
-    [OUT2] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+
+    try
+    [OUT2] = CO2SYSv3(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
+    TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, 0, 0, ...
+    pHSCALEIN, K1K2CONSTANTS, 1,2,2);
+    somethingwrong = 0;
+    catch
+        disp('!!!!!!!ERROR in CO2SYSv3!!!  Trying CO2SYSSOCCOM...')
+            [OUT2] = CO2SYSSOCCOM(PAR1, PAR2, PAR1TYPE, PAR2TYPE, SAL, ...
         TEMPIN, TEMPOUT, PRESIN, PRESOUT, SI, PO4, ...
         pHSCALEIN, K1K2CONSTANTS, KSO4CONSTANTS);
+            somethingwrong = 1;
+
+    end
     
     %pH_tot_iAiDIC = OUT2(:,37);
     % Col 37 in OUT is pH output total scale regardless of input scale
@@ -445,18 +486,22 @@ if ph_flag1 ==1
     % ADD TO DATA AND HEADER
     %data = [data, OUT(:,18)]; % Col 18 in OUT is pH output
     % Col 37 in OUT is pH output total scale regardless of input scale
-    data = [data, OUT1(:,37)]; 
+    data = [data, OUT1(:,41)]; 
     hdr  = [hdr, 'PH_TOT_INSITU'];
 end
 if ph_flag2 ==1
     % ADD TO DATA AND HEADER
     %data = [data, OUT(:,18)]; % Col 18 in OUT is pH output
     % Col 37 in OUT is pH output total scale regardless of input scale
-    data = [data, OUT2(:,37)]; 
+    if somethingwrong == 1
+            data = [data, OUT2(:,37)]; %co2syssoccom
+    else
+    data = [data, OUT2(:,41)]; 
+    end
     hdr  = [hdr, 'PH_TOT_INSITU_ALKDIC'];
 end
 
-
+clear d
 % % MAKE SOME PLOTS FOR TESTING
 % iSDN = find(strcmp('DATE',  hdr) == 1);
 % iZ   = find(strcmp('DEPTH', hdr) == 1);

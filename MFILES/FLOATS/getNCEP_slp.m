@@ -216,32 +216,32 @@ end
         
         if LON_flag ==1                     % No 0 meridian crossing data
             d = ncread(NCEPtarget,'slp', [lon_ind(1) lat_ind(1) 1],[lon_ind(2)-lon_ind(1)+1 lat_ind(2)-lat_ind(1)+1 tlength]);
-            LM = ncread(landmask,'land', [lon_ind(1) lat_ind(1) 1],[lon_ind(2)-lon_ind(1)+1 lat_ind(2)-lat_ind(1)+1 1]);  
-            LMask = logical(LM);
-            for ilm = 1:tlength
-                Dtmp = d(:,:,ilm);
-                Dtmp(LMask) = nan;
-                d(:,:,ilm) = Dtmp;
-            end
+%             LM = ncread(landmask,'land', [lon_ind(1) lat_ind(1) 1],[lon_ind(2)-lon_ind(1)+1 lat_ind(2)-lat_ind(1)+1 1]);  
+%             LMask = logical(LM);
+%             for ilm = 1:tlength
+%                 Dtmp = d(:,:,ilm);
+%                 Dtmp(LMask) = nan;
+%                 d(:,:,ilm) = Dtmp;
+%             end
         else
             disp('PLOT TO VERIFY MERIDIAN CROSSING CODE!!!!');
             d1 = ncread(NCEPtarget,'slp', [1 lat_ind(1) 1],[lon_ind(2)-1 lat_ind(2)-lat_ind(1)+1 tlength]);
-            LM1 = ncread(landmask,'land', [1 lat_ind(1) 1],[lon_ind(2)-1 lat_ind(2)-lat_ind(1)+1 1]);
-            LMask1 = logical(LM1);
-            for ilm = 1:tlength
-                Dtmp = d1(:,:,ilm);
-                Dtmp(LMask1) = nan;
-                d1(:,:,ilm) = Dtmp;
-            end
+%             LM1 = ncread(landmask,'land', [1 lat_ind(1) 1],[lon_ind(2)-1 lat_ind(2)-lat_ind(1)+1 1]);
+%             LMask1 = logical(LM1);
+%             for ilm = 1:tlength
+%                 Dtmp = d1(:,:,ilm);
+%                 Dtmp(LMask1) = nan;
+%                 d1(:,:,ilm) = Dtmp;
+%             end
 %             d2 = ncread(NCEPtarget,'pres', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2) lat_ind(2)-lat_ind(1)+1 tlength]);
             d2 = ncread(NCEPtarget,'slp', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2)+1 lat_ind(2)-lat_ind(1)+1 tlength]);
-            LM2 = ncread(landmask,'land', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2)+1 lat_ind(2)-lat_ind(1)+1 1]);
-            LMask2 = logical(LM2);
-            for ilm = 1:tlength
-                Dtmp = d2(:,:,ilm);
-                Dtmp(LMask2) = nan;
-                d2(:,:,ilm) = Dtmp;
-            end
+%             LM2 = ncread(landmask,'land', [lon_ind(2) lat_ind(1) 1],[length(lon)-lon_ind(2)+1 lat_ind(2)-lat_ind(1)+1 1]);
+%             LMask2 = logical(LM2);
+%             for ilm = 1:tlength
+%                 Dtmp = d2(:,:,ilm);
+%                 Dtmp(LMask2) = nan;
+%                 d2(:,:,ilm) = Dtmp;
+%             end
             d = cat(1,d1,d2);          
             clear d1 d2
         end

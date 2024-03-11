@@ -25,10 +25,11 @@ function d = parse_pHmsg(pH_file)
 %                   it as a field in the ouput structure. Also delt with
 %                   bogus time stamp issue (18110). If time stamp bogus
 %                   subsitute EOP date
-% 11/28/22 - JP - add code to deal with partial file case where one partial
+% 11/28/2022 - JP - add code to deal with partial file case where one partial
 %                 data line exists but no data & no comma sepration in line
 %                 a brute force fix but should be Ok
-
+% 03/31/2023 - JP - updated MSC Firmware version look up table to include new data,
+%                   0 mean no match so another unaccounted for version
 % TESTING:
 %pH_file ='C:\temp\8514.034.dura'; % TEST
 %pH_file ='C:\temp\19644.081.dura'; % TEST
@@ -74,12 +75,13 @@ comma_ct = [];
 MSC_FW_ver = 0;
 
 % MSC firmware version App build dates as of  08/12/2020
-msc_fw_versions(1,:) = {'Jan 27 2012', 0};
-msc_fw_versions(2,:) = {'Apr 27 2012', 0};
-msc_fw_versions(3,:) = {'Apr  7 2015', 1};
-msc_fw_versions(4,:) = {'Sep 30 2015', 2};
-msc_fw_versions(5,:) = {'Nov  1 2018', 3};
-msc_fw_versions(6,:) = {'Apr 30 2019', 4};
+msc_fw_versions(1,:) = {'Jan 27 2012', 1};
+msc_fw_versions(2,:) = {'Apr 27 2012', 2};
+msc_fw_versions(3,:) = {'Apr  7 2015', 3};
+msc_fw_versions(4,:) = {'Sep 30 2015', 4};
+msc_fw_versions(5,:) = {'Nov  1 2018', 5};
+msc_fw_versions(6,:) = {'Apr 30 2019', 6};
+msc_fw_versions(7,:) = {'Oct 20 2020', 7};
 
 while ischar(tline)
     if regexp(tline,'App Build','once') % msc build version here

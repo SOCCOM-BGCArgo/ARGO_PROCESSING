@@ -1,4 +1,4 @@
-% function tf = build_apex_config(mbari_fn)
+%function tf = build_apex_config(mbari_fn)
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % SCRIPT TO BUILD APEX FLOAT CONFIGS:
@@ -17,7 +17,7 @@
 %     (1) Get pH cal data from excel spread sheet using MSC# as index
 %     (2) pHlog.xlsx
 %
-% D: PDF FLBB CAL EXTRACTION 
+% D: PDF FLBB CAL EXTRACTION
 %     (1) Check for FFLBB pdf cal files in float msg directory
 %     (2) Extract FLBB cal info
 %         parse_cal_pdf.m
@@ -42,6 +42,17 @@
 % 09/01/2022 JP Fixed f(P) extraction bug. SBS stems we k0'ed were nor
 %    getting the last f(p) term. Also added MSC # into config file header
 %    if avalable
+% 05/22/2023 TM Added block for case APEX with SBE83 oxygen sensor.
+% 05/23/2023 JP added code block to extract Chl435 if itexists
+% 05/24/2023 JP added code block to extract OCR cal data from sensor cal
+%            spool. NO channel wl info so have to define in code and assume
+%            order: 380 443 490 PAR for now (will change to Argo defaults
+%            on next sensor order
+% 01/10/2024 NG added GobgcSoccomInventory to INVtype list and organized
+%            order of inventory to look through, also added a block to
+%            account for various options of FLBB "Char_Sheets" names in
+%            cal files created by SeaBird and pulled from seaecho
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
@@ -55,29 +66,28 @@
 %mbari_fn = 'ua19875'; % 2020 Tpos
 %mbari_fn = 'ua12786'; % 2019
 % mbari_fn = 'ua19970'; % 2 pdfs
-%mbari_fn = 'ua19443'; % 1 pdf 
+%mbari_fn = 'ua19443'; % 1 pdf
 %mbari_fn = 'ua18861'; % 0 PDF
 %mbari_fn = 'ua18601' % no nitrate cal
 %mbari_fn = 'ua19751' % Resing 09/21
 %mbari_fn = 'ua20043' % Resing 09/21
 %mbari_fn = 'ua20704' % Resing 09/21
 %mbari_fn = 'ua8497'
-
-%% ************************************************************************
-% CHOOSE FLOAT
- %mbari_fn = 'ua20002'
- %mbari_fn = 'ua20675'
- % Sikuliaq floats
- %mbari_fn = 'ua20528'
+%mbari_fn = 'ua20002'
+%mbari_fn = 'ua20675'
+% Sikuliaq floats
+%mbari_fn = 'ua20528'
 
 % mbari_fn = 'ua20150'
 % mbari_fn = 'ua20134'
 % mbari_fn = 'ua20492'
 % mbari_fn = 'ua20620'
 % mbari_fn = 'ua20136'
-mbari_fn = 'ua20169'
+%mbari_fn = 'ua17465'
+%mbari_fn = 'ua21291'
+mbari_fn = 'ua22751'
 
-%% ************************************************************************
+% ************************************************************************
 % DEFINE DIRS STRUCTURE
 user_dir     = getenv('USERPROFILE'); %returns user path,i.e.'C:\Users\eclark'
 user_dir     = [user_dir, '\Documents\MATLAB\']; % sets local file path
@@ -88,7 +98,8 @@ dirs.msg     = '\\seaecho.shore.mbari.org\floats\UW\'; % sets location of float 
 dirs.ph      = '\\atlas\chem\DuraFET\CALIBRATION\';
 %dirs.ph      = 'C:\Users\jplant\Documents\MATLAB\Apps\pH_Calibration\test data\';
 dirs.isus    = '\\atlas\Chem\ISUS\mari\'; % sets location of nitrate cal NEW
-dirs.ph_fn   = 'pHlog_jp.xlsx';
+%dirs.ph_fn   = 'pHlog_jp.xlsx';
+dirs.ph_fn   = 'pHlog.xlsx';
 
 % DO SOME PREP WORK
 APEX_ID_str = regexp(mbari_fn,'\d+','once','match'); % isolates float # w/o letters
@@ -99,35 +110,40 @@ dvec_now    = datevec(now); % sets exact time and date of run
 yr          = dvec_now(1); % use this to limit file search to yr & yr-1
 yr_rewind   = -3; % Number of previous yr files or directories to check for matches
 
-O2_cal = {}; % creating a tbd space(cell array) for the O2 cal
+% Initialize for printing - empty will get cocatenated but will not be
+% printed
+O2_cal     = {}; % creating a tbd space(cell array) for the O2 cal
+ph_cal     = {};
+optics_cal = {};
+ocr_cal    = {};
 
-%% ************************************************************************
+% ************************************************************************
 % GET MSC # FOR A GIVEN APF ID # FROM UW
 % CHECK ISUS INVENTORY FOR PREVIOUS & PRESENT YEARS
 
-INVtype = {'IsusInventory','GobgcInventory','TposInventory'};
+INVtype = {'GobgcInventory','GobgcSoccomInventory','IsusInventory','TposInventory'}; % Nicola 1/10/2024
 tfg     = 0; % flag to break out of 1st loop (inventory type)
 
 for inv_type = 1:size(INVtype, 2)
     INV = INVtype{inv_type};
-    
+
     for yr_ct  = yr_rewind:0 % for previous and present years
         yr_str = num2str(yr+yr_ct,'%0.0f');
-        
+
         url = ['http://runt.ocean.washington.edu/swift/Argo',yr_str, ...
             'Logistics/',INV,'.mbari'];
         disp(['Checking ',url, ' for APF # = ',APEX_ID_str])
-        
+
         d = parse_runt_inventory(dirs.temp, url);
 
         if isempty(d)
-        %if size(d) == [0 0]
+            %if size(d) == [0 0]
             disp('This combination of year and inventory probably does not exist')
             continue
         else
             tf = strcmp(d.data(:,2), APEX_ID_str);
             if sum(tf)== 1
-            %if sum(tf)>0
+                %if sum(tf)>0
                 tfg = 1;
                 % extract MSC
                 MSC_str = d.data{tf, 5};
@@ -145,7 +161,7 @@ for inv_type = 1:size(INVtype, 2)
                 continue
             end
         end
-        
+
         if tfg == 1
             disp([APEX_ID_str, ' found in ',url])
             break
@@ -169,7 +185,7 @@ clear i d url dvec_now ans chk fid fixed_w tline str line_ct tmp tmp_str yr_ct
 % MSC_str = '916';
 
 
-%% ************************************************************************
+% ************************************************************************
 % NOW TRY AND FIND ISUS CALIBRATION FILE
 % LOOK IN MASTER LIST FIRST, IF NOT FOUND THEN HUNT WITH MSC# TO FIND
 % DIRECTORY & THEN CALIBRATION FILE
@@ -187,13 +203,13 @@ else
     % read the file names in the xls into a new cell array
     [~,~,ncals] = xlsread([dirs.temp, mbari_ncals_fn], ...
         'ISUSCalFilenames','C14:E500'); % AH500 # may need to be extended
-    
-    
+
+
     % create an array to hold pertinent info for finding float of choice
     ncals_hdr = {'MSC' 'dir path' 'file name'};
     ncals = ncals(~cellfun(@isnan,ncals(:,1)),:); % remove NaN MSC rows
     tMSC = cell2mat(ncals(:,1)) == MSC;  % create regular array to suit needs
-    
+
     % ALL GOOD BUT CHECK THAT FILE EXISTS TOO
     if sum(tMSC) == 1  && exist([ncals{tMSC,2},'\',ncals{tMSC,3}],'file')%if the file name is present in the preceeding columns...
         disp(['ISUS calibration file found in master list for  MSC # ',MSC_str, ...
@@ -203,7 +219,7 @@ else
     else
         disp(['Nitrate cal for MSC# ',MSC_str,' not found in ',mbari_ncals_fn])
         disp('Searching directory structure for a MSC match ...')
-        
+
         ncal_dir ={};
         for yr_ct = yr_rewind:0 % look in current & previous year for file
             yr_str      = num2str(yr+yr_ct,'%0.0f');
@@ -222,26 +238,26 @@ else
                 MSC_str])
             tf_no3  = 0;
             %return
-            
+
         else  % look for isus cal files
             n_tmp = cell(size(ncal_dir,1),3); % predim
             tg = ones(size(ncal_dir,1),1);    % predim
             for n_ct = 1:size(ncal_dir,1)
                 n_tmp{n_ct,1} = ncal_dir{n_ct,1};
-                
+
                 nd = dir([dirs.isus, apex_dir,'\', ncal_dir{n_ct,1},'\*cal']);
                 if isempty(nd)
                     tg(n_ct) = 0;
                     continue
                 end
-                
+
                 n_tmp{n_ct,2} = nd.name;
                 n_tmp{n_ct,3} = nd.datenum;
             end
             n_tmp = n_tmp(logical(tg),:); % remove empty file name rows
             [~, ind] = sort(cell2mat(n_tmp(:,3)), 'descend');
             n_tmp = n_tmp(ind,:); % sorted by cal file time stamp, newest first
-            
+
             if size(n_tmp,1) > 1
                 disp(['Multiple ISUS calibration files found for MSC # ',...
                     MSC_str,'. Choosing most recent file:'])
@@ -255,10 +271,10 @@ else
             clear n_tmp tg n_ct nd
         end
     end
-    
-   % **********************************************************************
+
+    % **********************************************************************
     % NO3 cal file found copy to local, add header info & rename
-    
+
     tf      ='Y';
     if tf_no3 == 1 && exist([dirs.cal,'NO3_CAL\',ncal_fn],'file')
         str = [dirs.cal,'NO3_CAL\',ncal_fn,' already exists!'];
@@ -268,7 +284,7 @@ else
         % in the prompt (before 1st comma)
         % DOES NOT EVALUATE THE RESPONSE
     end
-    
+
     if tf_no3 == 1 && ~isempty(regexpi(tf,'^Y','once')) %adding headers
         add_hdr{1,1} = ['H,Original source file: ',fp,',,,,'];
         add_hdr{2,1} = 'H,Pixel base,1,,,';
@@ -278,12 +294,12 @@ else
         add_hdr{6,1} = 'H,Max fit wavelength,,,,';
         add_hdr{7,1} = 'H,Use seawater dark current,No,,,';
         add_hdr{8,1} = 'H,Pressure coef,0.0265,,,';
-        
+
         [status,msg] = copyfile(fp,dirs.temp);
         if status==0
             disp(['WARNING: Could not copy original source file: ',fp, 'to local'])
         else
-            
+
             fid     = fopen([dirs.temp,cal_fn]);
             fid_new = fopen([dirs.cal,'NO3_CAL\',ncal_fn],'w');
             tline = ' ';
@@ -333,36 +349,79 @@ if size(O2cal_fn,1) > 1
     O2cal_fn = uigetfile([msg_path,'ox*calibration*'],'Please choose O2 cal file');
 end
 
+% TM, let's keep the Aanderra Oxygen config section (further below) as-is...it's working!
+% We'll start by checking if this APEX has an SBS stem...
+
 if size(O2cal_fn,1) == 1 % only one file found
     fid = fopen([msg_path, strtrim(O2cal_fn)]);
-    tline = ' ';
-    O2_chk = 0;
-    O2_ct  = 0;
-    srch_str = ['PhaseCoef|FoilID|FoilCoefA|FoilCoefB|FoilPolyDegT|', ...
-        'FoilPolyDegO|SVUFoilCoef|ConcCoef'];
-    tf_coef_repeat = 0; % deal with optode cals like 20148 with repeated cal block
-    while ischar(tline)
-        if regexp(tline,'PhaseCoef','once') % build SN line
-            tmp = regexp(tline(regexp(tline,'PhaseCoef\s+','end','once')...
-                :end),'\d+','match');
-            O2_ct = O2_ct+1;
-            str = ['OptodeSn = ',tmp{1},' ',tmp{2}];
-            tf_coef_repeat = tf_coef_repeat +1;
-            if tf_coef_repeat < 2
-                O2_cal{O2_ct,1} = str;
-            else
-                break
-            end
-            clear tmp str
-        end
-        if regexp(tline, srch_str,'once')
-            O2_ct = O2_ct+1;
-            O2_cal{O2_ct,1} = tline;
-        end
-        tline = fgetl(fid);
-    end
+    d     = textscan(fid,'%s','Delimiter','\n');
+    O2tmp = d{1,1}; % text file lines now in a cell array
     fclose(fid);
-    disp('O2 cal file found!')
+    Is83 = ~cellfun(@isempty,regexp(O2tmp,'Sbe83','once'));
+    if sum(Is83)>0 %APEX with SBE83!
+        disp('THIS IS AN APEX WITH SBE83 OXYGEN OPTODE -- COOL!')
+        TMP83 = O2tmp(Is83,:); %Only want the O2 info for now...
+        O2_model = 'SBE83'; %Hard code this, for some reason the oxygen cal on seaecho for Apex with 83s lists 'SBE63 rev J' as Model, even when it's an 83??
+        % extract SN
+        t1       = regexp(TMP83,'Config\()\s+Serial\#\s+\=','once');
+        Ind_t1 = find(not(cellfun('isempty',t1)));
+        O2_SN    = regexp(TMP83{Ind_t1(1)},'(?<=Serial\#\s+\=\s+)\d+','match','once'); %just grab the first instance;;;all Serial# listings will now be O2
+
+        str1 = sprintf('O2 sensor (%s %s) Temp coefficents ',regexprep(O2_model,' ',''),O2_SN);
+        str1Ph = sprintf('O2 sensor (%s %s) Phase coefficents ',regexprep(O2_model,' ',''),O2_SN);
+
+        clear t1 O2_model O2_SN Ind_t1
+
+        % TEMPERATURE COEFFICIENTS
+        t1       = ~cellfun(@isempty, regexp(TMP83,'TA\d{1}\s+\=','once'));
+        Tmeta    = regexp(TMP83(t1),'TA\d{1}','match','once');
+        Tcoef    = regexp(TMP83(t1),'(?<=TA\d{1}\s+\=\s+\+*)[\d\.\-e\+]+','match','once');
+        str2     = strtrim(sprintf('%s ',Tmeta{:}));
+        O2Tstr   = sprintf(['%s[%s]',repmat(',%0.7E',1,size(Tcoef,1))],str1, ...
+            str2,str2double(Tcoef));
+        clear   Tcoef Tmeta t1 str2
+        % PHASE COEFFICIENTS
+        t1       = ~cellfun(@isempty, regexp(TMP83,'\s+[ABC]\d{1}\s+\=','once'));
+        Pmeta    = regexp(TMP83(t1),'[ABC]\d{1}','match','once');
+        Pcoef    = regexp(TMP83(t1),'(?<=\s+[ABC]\d{1}\s+\=\s+\+*)[\d\.\-e\+]+','match','once');
+        str2     = strtrim(sprintf('%s ',Pmeta{:}));
+        O2Pstr   = sprintf(['%s[%s]',repmat(',%0.7E',1,size(Pcoef,1))],str1Ph, ...
+            str2,str2double(Pcoef));
+        clear   Pcoef Pmeta t1 str2
+        O2_cal{1,1} = O2Tstr;
+        O2_cal{2,1} = O2Pstr;
+
+    else
+        fid = fopen([msg_path, strtrim(O2cal_fn)]); %reopen file for Aanderaa info
+        tline = ' ';
+        O2_chk = 0;
+        O2_ct  = 0;
+        srch_str = ['PhaseCoef|FoilID|FoilCoefA|FoilCoefB|FoilPolyDegT|', ...
+            'FoilPolyDegO|SVUFoilCoef|ConcCoef'];
+        tf_coef_repeat = 0; % deal with optode cals like 20148 with repeated cal block
+        while ischar(tline)
+            if regexp(tline,'PhaseCoef','once') % build SN line
+                tmp = regexp(tline(regexp(tline,'PhaseCoef\s+','end','once')...
+                    :end),'\d+','match');
+                O2_ct = O2_ct+1;
+                str = ['OptodeSn = ',tmp{1},' ',tmp{2}];
+                tf_coef_repeat = tf_coef_repeat +1;
+                if tf_coef_repeat < 2
+                    O2_cal{O2_ct,1} = str;
+                else
+                    break
+                end
+                clear tmp str
+            end
+            if regexp(tline, srch_str,'once')
+                O2_ct = O2_ct+1;
+                O2_cal{O2_ct,1} = tline;
+            end
+            tline = fgetl(fid);
+        end
+        fclose(fid);
+        disp('O2 cal file found!')
+    end
 elseif size(O2cal_fn,1) > 1
     disp('More than 1 O2 cal file found - please choose file')
     [file,path] = uigetfile([msg_path,'oxygen*'],'Please choose O2 cal file');
@@ -370,7 +429,7 @@ else
     disp('No O2 cal file found - no cal data extracted')
 end
 
-%% ************************************************************************
+% ************************************************************************
 % TRY AND GET PH CAL FROM excel SHEET
 disp('Trying to extract pH calibration data ...')
 [status,msg] = copyfile([dirs.ph, dirs.ph_fn], dirs.temp); % copy to local temp file
@@ -441,7 +500,7 @@ if tf_pH_continue == 1
     % DO SOME CHECKS
     if isnan(APEX_ID)
         fprintf('WARNING: No APEX ID FOR pH SN %s in %s. Building cal anyway\n',...
-            DF, dirs.ph_fn); 
+            DF, dirs.ph_fn);
     elseif APEX_ID ~= APEX_num
         fprintf('APEX ID(%0.0f) does not match ISUS inventory(%0.0f)\n', ...
             APEX_ID, APEX_num);
@@ -469,7 +528,7 @@ else
     K2      = K2(~isnan(K2)); % Remove any NaN's
     FP      = FP(~isnan(FP)); % Remove any NaN's
     ph_cal{1,1} = sprintf('Durafet SN = %s, APEX# %s',DF, APEX_ID_str);
-    
+
     % CHECK FOR LAB KO (PUMP ON IS DEFAULT VALUE TO USE)
     if ~isnan(K0_ON)
         k0_str = sprintf(['%0.5f, =k0 Pon; %0.5f =k0 Poff; ',...
@@ -484,7 +543,7 @@ else
     else
         ph_cal{4,1} = sprintf([repmat('%0.5e,',1,size(K2,2)),' =k2(fP)*T'],flip(K2));
     end
-    
+
     % CHECK & BUILD Pcoef strings
     %FP(end) = []; % Remove constant coef so p(0) = 0
     P = (flip(FP))';
@@ -501,7 +560,7 @@ clear DF_num  DF_txt DF_APX K0_ON K0_OFF K0_HCL
 clear iDF iAPX iMSC iK6 iK2T iK0_HCL iK0_ON iK0_OFF ph_ct
 
 
-%% ************************************************************************
+% ************************************************************************
 % OK NOW CHECK FOR FLBB PDF CAL SHEETS & TRY & EXTRACT SCALE & DARK COUNTS
 % This uses a function from the files exchange by Derek Wood:
 % https://www.mathworks.com/matlabcentral/fileexchange/
@@ -517,7 +576,11 @@ disp(['Looking for bio-optical calibration data in: ',msg_path]);
 optics_cal  = {};
 
 % ANY PDF FILES IN THE MSG DIR
-tmp = dir([msg_path,'*CharSheet?.pdf']);
+%tmp = dir([msg_path,'*CharSheet?.pdf']); %commented out 1/10/2024
+
+tmp = dir([msg_path,'*.pdf']); % 1/10/2024 NG edit
+tg = ~cellfun(@isempty,regexpi({tmp.name}','Char[\s\_]*Sheet','once'));
+tmp = tmp(tg);
 
 if isempty(tmp) % no pdfs with "Char sheets"
     disp(['No PDF files found in: ',msg_path]);
@@ -541,9 +604,19 @@ else
             end
         end
 
+        if isfield(SBE,'Chl435')
+            optics_cal{4,1} = sprintf('%0.0f Chl435DC', SBE.Chl435.DC);
+            optics_cal{5,1} = sprintf('%0.4f Chl435Scale', SBE.Chl435.Scale);
+            tg_chl = SBE.Chl435.DC > 1 & SBE.Chl435.DC < 100 & ...
+                SBE.Chl435.Scale > 1e-3 & SBE.Chl435.Scale < 0.01;
+            if ~tg_chl
+                t_optics = 0;
+            end
+        end
+
         if isfield(SBE,'bbp700')
-            optics_cal{4,1} = sprintf('%0.0f BetabDC', SBE.bbp700.DC);
-            optics_cal{5,1} = sprintf('%0.4e BetabScale', SBE.bbp700.Scale);
+            optics_cal{6,1} = sprintf('%0.0f BetabDC', SBE.bbp700.DC);
+            optics_cal{7,1} = sprintf('%0.4e BetabScale', SBE.bbp700.Scale);
             tg_bbp = SBE.bbp700.DC > 1 & SBE.bbp700.DC < 100 & ...
                 SBE.bbp700.Scale > 1e-7 & SBE.bbp700.Scale < 3e-6;
             if ~tg_bbp
@@ -558,78 +631,65 @@ else
                 SBE.chl.Scale, SBE.bbp700.DC, SBE.bbp700.Scale);
         end
     end
+    tg = ~cellfun(@isempty,optics_cal);
+    optics_cal = optics_cal(tg); % clear empty rows in chl435 not there
+
 end
 
-            
-            
-        
-%         
-%         
-%             if chl_dc > 1 && chl_dc < 99 && chl_scale < 0.02 && ...
-%             chl_scale > 0.003 && bbp_dc < 99 && bbp_dc > 1 && ...
-%             bbp_scale < 10e-6 && bbp_scale > 0.5e-6
-%         
-%         
-%         
-%         
-%         SBE = parse_cal_pdf(pdf_fn); % call JP pdf parse cal function
-%         % look for bbp and chl in one or both pdfs
-%         if isfield(SBE,'bbp700')
-%             SBEbbp = struct2cell(SBE.bbp700);
-%             
-%             bbp_dc    = SBEbbp{3,1};
-%             bbp_scale = SBEbbp{2,1};
-%         end
-%         if isfield(SBE,'Chl')
-%             SBEChl = struct2cell(SBE.Chl);
-%             SNchar = regexp(fn.name, '^FLBB\w+', 'once', 'match'); % find acronym for SN
-%             chl_dc    = SBEChl{3,1};
-%             chl_scale = SBEChl{2,1};
-%         end
-%     end
-%     % in cases where the FLBB model is not in the file name, default to AP2
-%     if isempty(SNchar)
-%         SN = append('FLBBAP2-', SBEChl{1,1});
-%         disp( 'Warning: FLBBAP2 label added by default')
-%     else
-%         SN = append(SNchar,'-', SBEChl{1,1});
-%     end
-%     
-%     % MANUALLY ENTER IF PARSER NOT WORKING:
-%     SN = 'FLBBAP2-6329'
-%     chl_dc = 47
-%     chl_scale = 0.0073 
-%     bbp_dc = 46
-%     bbp_scale = .000001762
-%     
-%     % sanity check and build optics_cal
-%     if chl_dc > 1 && chl_dc < 99 && chl_scale < 0.02 && ...
-%             chl_scale > 0.003 && bbp_dc < 99 && bbp_dc > 1 && ...
-%             bbp_scale < 10e-6 && bbp_scale > 0.5e-6
-%         
-%         optics_cal{1,1} = sprintf('CHLFLUOR SN %s', SN);
-%         optics_cal{2,1} = sprintf('%s ChlDC', string(chl_dc));
-%         optics_cal{3,1} = sprintf('%s ChlScale', chl_scale);
-%         optics_cal{4,1} = sprintf('%s BetabDC', string(bbp_dc));
-%         optics_cal{5,1} = sprintf('%s BetabScale', bbp_scale);
-%         disp('Bio optical calibration coefficients have been extracted')
-%     else
-%         disp ...
-%             ('PDF bioptical extraction did not seem reasonable- add manually')
-%         pause
-%     end
-%end
+% ************************************************************************
+% NOW TRY AND GET OCR CALIBRATION
 
-%% ************************************************************************
+fprintf('Scanning msg file for OCR calibration files....\n');
+msg_path =[dirs.msg,'f',APEX_ID_str,'\']; % set path to float in seaecho
+OCRcal_fn = ls([msg_path,'ocr*calibration*']); % separate OCR filename
+
+% if, by chance, there is more than 1 OCR cal, choose the right one
+if size(OCRcal_fn,1) > 1
+    OCRcal_fn = uigetfile([msg_path,'ocr*calibration*'], ...
+        'Please choose correct OCR cal file');
+end
+
+if size(OCRcal_fn,1) == 1 % only one file found
+    fid = fopen([msg_path, strtrim(OCRcal_fn)]);
+    d     = textscan(fid,'%s','Delimiter','\n');
+    O2tmp = d{1,1}; % text file lines now in a cell array
+    fclose(fid);
+    tmp = d{1,1};
+    tg = ~cellfun(@isempty, regexp(tmp,'Ocr504LogConfig','once'));
+    tmp = tmp(tg);
+    
+    t_SN  = ~cellfun(@isempty, regexp(tmp,'serial number', 'once'));
+    ocrSN = regexp(tmp{t_SN},'\d+$','match','once');
+
+    % NOW GET CHANNEL COEFFS
+    t_CH  = ~cellfun(@isempty, regexp(tmp,'optical channel', 'once'));
+    ch_inds = [find(t_CH ==1),find(t_CH ==1)+3]; % 4x2 start, end lines
+    ocr_cal = cell(size(ch_inds,1),1); % predim
+
+    default_ch = {'380' '443' '490' 'PAR'}; % THIS WILL CHANGE TO ARGO DEFAULTS AT SOME POINT
+    ocr_tmplate = 'OCR CHANNEL %02.0f %s (OCR504 %s) [a0 a1 im],%s,%s,%s';
+
+    for ch_ct = 1:size(ch_inds,1)
+        % Get all channel lines into 1 big string
+        ch_cell = tmp(ch_inds(ch_ct,1):ch_inds(ch_ct,2));
+        str     = strcat(ch_cell{:});
+        coefs   = regexp(str,'(?<=a0\:|a1\:|im\:)[\d\.e\-]+','match');
+        ocr_cal{ch_ct} = sprintf(ocr_tmplate, ch_ct, default_ch{ch_ct}, ...
+            ocrSN, coefs{:});
+    end
+
+end
+
+% ************************************************************************
 
 % CHOOSE PROGRAM AFFILIATION
 ProgramList = {'GO-BGC' 'SOCCOM' 'UW/MBARI BGC-Argo' 'TPOS' 'EXPORTS', ...
-     'SBE83 O2 TEST' 'MBARI GDF-TEST' 'NOT DEFINED'};
- [ind,tf] = listdlg('ListString', ProgramList, 'SelectionMode','single',...
-     'Name','Choose Program Affiliation','ListSize',[300,200], ...
-     'PromptString',['Choose for: ', mbari_fn]);
+    'SBE83 O2 TEST' 'MBARI GDF-TEST' 'NOT DEFINED'};
+[ind,tf] = listdlg('ListString', ProgramList, 'SelectionMode','single',...
+    'Name','Choose Program Affiliation','ListSize',[300,200], ...
+    'PromptString',['Choose for: ', mbari_fn]);
 
- if tf == 0
+if tf == 0
     disp(['No Program afiliation was choosen! Setting affiliation to: ',...
         'UW/MBARI BGC-Argo']);
     Program = 'UW/MBARI BGC-Argo';
@@ -652,12 +712,12 @@ end
 
 
 
-%% ************************************************************************
+% ************************************************************************
 % IF YOU GET TO HERE O2 CAL & PH CAL HAVE BEEN SUCCESFULLY EXTRACTED
 % PRINT TO FILE
 
-fid = fopen([dirs.cal,'\FLOAT_CONFIG\staging\',config_fn], 'w'); 
-%fid = fopen([dirs.cal,'\FLOAT_CONFIG\',config_fn], 'w'); 
+fid = fopen([dirs.cal,'\FLOAT_CONFIG\staging\',config_fn], 'w');
+%fid = fopen([dirs.cal,'\FLOAT_CONFIG\',config_fn], 'w');
 fprintf(fid,'%s\r\n',['Institution ID: ', APEX_ID_str]);
 fprintf(fid,'%s\r\n',['MBARI ID: ', mbari_fn]);
 fprintf(fid,'%s\r\n',['Program: ', Program]);
@@ -670,7 +730,7 @@ end
 
 fprintf(fid,'%s\r\n', msg_path);
 
-out = [O2_cal; ph_cal; optics_cal]; % print O2, pH, and optics to file
+out = [O2_cal; ph_cal; optics_cal; ocr_cal]; % print O2, pH, and optics to file
 
 for i = 1:size(out,1)
     fprintf(fid,'%s\r\n',out{i,1});

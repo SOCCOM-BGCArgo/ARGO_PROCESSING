@@ -159,8 +159,8 @@ clear d iS iT iP tS1 tS0 tT PID rPID kill_str
 setpref('Internet','SMTP_Server','mbarimail.mbari.org'); % define server
 setpref('Internet','E_mail','tmaurer@mbari.org'); % define sender
 %email_list ={'johnson@mbari.org';'tmaurer@mbari.org';'jplant@mbari.org'}; %5/16/19, Ken asked to be removed from processing email list.
-email_list ={'tmaurer@mbari.org';'jplant@mbari.org';'eclark@mbari.org';'johnson@mbari.org'}; %TM 8/16/21 added Emily to recipients.
-% email_list ={'tmaurer@mbari.org'};
+email_list ={'tmaurer@mbari.org';'jplant@mbari.org';'johnson@mbari.org';'nicolag@mbari.org'}; %TM 8/16/21 added Emily to recipients. TM 7/12/23 added Nicola.
+%email_list ={'tmaurer@mbari.org'};
 new_msg_fn = ['new_argo_msgs',datestr(now,'yyyymmddHHMM.txt')];
 bad_msg_fn = ['bad_argo_msgs',datestr(now,'yyyymmddHHMM.txt')];
 
@@ -185,7 +185,7 @@ end
 % GENERATE LIST OF FLOATS TO PROCESS & GENERATE PH VERSION LIST FOR DURA
 % DIAGNOSTIC EVIZ CODE.
 try
-    d = MBARI_float_list([]);
+    d = MBARI_float_list([]); 
     FLOAT_LIST = d.list;
 catch
     disp('****MBARI FLOAT LIST BUILDER FAILED.****')
@@ -203,6 +203,7 @@ if ~isempty(d) % network down - couldn't make list?
     iFLT  = find(strcmp('float type',d.hdr) == 1);
     iTFPH   = find(strcmp('tf pH',d.hdr) == 1); % master list test
     iTFNO3  = find(strcmp('tf NO3',d.hdr) == 1);
+    iTFDEAD  = find(strcmp('tf Dead',d.hdr) == 1);
     clear d
 else
     disp('****UNABLE TO BUILD (OR LOAD PRE-EXISTING) MBARI MASTER FLOAT LIST.  EXITING!!!!****')
@@ -261,7 +262,12 @@ for loop_ctr = start_num: stop_num
         MBARI_ID_str = FLOAT_LIST{loop_ctr,iMB}; % MBARI ID str
         FLOAT_TYPE   = FLOAT_LIST{loop_ctr,iFLT}; % APEX or NAVIS or SOLO?
         WMO_ID_str   = FLOAT_LIST{loop_ctr,iWMO}; % WMO ID str
-        
+        ISDEAD = FLOAT_LIST{loop_ctr,iTFDEAD}; %is it dead?
+% %         if ISDEAD && strcmp(update_str, 'update')
+% %             disp([MBARI_ID_str,' is dead.  Skipping while in update mode...'])
+% %             continue
+% %         end
+
         % CHECK IF SPECIFC FLOAT HAS BAD SENSOR ISSUES
         if ~isempty(bad_sensor_list.list)
             tSENSOR = strcmpi(MBARI_ID_str,bad_sensor_list.list(:,iM));
@@ -285,7 +291,11 @@ for loop_ctr = start_num: stop_num
         end
         
         if strcmp('APEX',FLOAT_LIST{loop_ctr,iFLT})
-            tf_float = Process_APEX_float(MBARI_ID_str, dirs, update_str);
+            [tf_float,FULLreprocess]  = Process_APEX_float(MBARI_ID_str, dirs, update_str,ISDEAD);
+            if FULLreprocess==1 && strcmp(update_str, 'update')
+                [~,~]  = Process_APEX_float(MBARI_ID_str, dirs, 'all',ISDEAD);
+                disp(['****************FULL REPROCESS TRIGGERED FOR FLOAT',MBARI_ID_str,'****************'])
+            end
         elseif strcmp('NAVIS',FLOAT_LIST{loop_ctr,iFLT})
             tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str);
         elseif strcmp('SOLO',FLOAT_LIST{loop_ctr,iFLT})
@@ -351,7 +361,6 @@ for loop_ctr = start_num : stop_num % TM 3/3/21 - why is this a separate loop?
                 any(strcmp(FLOAT_LIST{loop_ctr,iMB},exclude_floats)) || any(strcmp(FLOAT_LIST{loop_ctr,iWMO},exclude_floats))
             continue
         end
-        
         ODV_tf = argo2odv_LIAR(WMO_ID, dirs, update_str,1);
         if ODV_tf == 1
             disp(['A NEW ODV FILE WAS CREATED FOR ',MBARI_ID_str,', WMO: ',WMO_ID,'.']);

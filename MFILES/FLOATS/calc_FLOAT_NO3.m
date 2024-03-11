@@ -226,9 +226,10 @@ for i = 1:rows
     
     FIT_DIF = ABS_cor(i,:) - ABS_BL -ABS_NO3_EXP;
     FIT_DIF_tfit = FIT_DIF(t_fit);
-    RMS_ERROR = sqrt((sum(FIT_DIF_tfit(tg').^2)./sum(t_fit(tg))));
+    %RMS_ERROR = sqrt((sum(FIT_DIF_tfit(tg').^2)./sum(t_fit(tg))));
+	RMS_ERROR = sqrt((sum(FIT_DIF_tfit(tg').^2)./sum(tg)));
     ind_240  = find(Fit_WL <= 240,1,'last');
-    ABS_240  = [Fit_WL(ind_240), Fit_ABS_cor(ind_240)]; % WL ~240 & ABS
+    ABS_240  = [Fit_WL(ind_240), Fit_ABS_cor(ind_240,i)]; % WL ~240 & ABS
     
     NO3(i,colsM+1:colsM+3) = [RMS_ERROR ABS_240]; % RMS WL~240 ABS~240
     
@@ -317,6 +318,7 @@ end
 % ************************************************************************
 % Create an output matrix and plot the data
 % [SDN, DarkCur,Pres,Temp,Sal,NO3,BL_B,BL_M,RMS ERROR,WL~240,ABS~240]
+
 NO3 = [d.SDN, d.DC, d.P, d.T, d.S, NO3];
 
 

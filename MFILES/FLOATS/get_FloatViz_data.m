@@ -220,7 +220,9 @@ catch
           'number line by line'])
     sdn = ones(size(d_tmp)) * NaN;
     for i = 1 : size(d_tmp,1)
-        if ~isempty(d_tmp{i})
+        if ~isempty(regexp(d_tmp{i},'NaN', 'once'))
+            disp(['Not a valid date string (NaN found) for cast # ', num2str(d{1,1}(i))])
+        elseif ~isempty(d_tmp{i})
             sdn(i) = datenum(d_tmp{i},'mm/dd/yyyy HH:MM');
         else
             disp(['Not a valid date string for cast # ', num2str(d{1,1}(i))])

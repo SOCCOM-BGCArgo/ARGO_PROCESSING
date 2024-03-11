@@ -26,12 +26,15 @@ function d = parse_runt_inventory(save_path, url)
 % USE EXAMPLE:
 %    url = 'http://runt.ocean.washington.edu/swift/Argo2021Logistics/GobgcInventory.mbari';
 %    url = 'http://runt.ocean.washington.edu/swift/Argo2018Logistics/TposInventory.mbari';
-%    save_path = 'C:\temp\'
+%      url = 'http://runt.ocean.washington.edu/swift/Argo2022Logistics/GobgcInventory.mbari';
+%     save_path = 'C:\temp\'
 %    %d = parse_runt_inventory(save_path, url)
 %
 % UPDATES:
 %    06/07/2022 - JP - Added new column parameter, "OcrId", to the master_hdr
 %       cell array
+%    05/23/2023 - JP - Added quicck clugey fix to deal with 'OCR' text appended
+%    SbeId number which ends up attached  to the MSC Id in parsing
 
 % ************************************************************************
 % DO SOME PREP WORK, GET FILE FROM URL
@@ -90,10 +93,19 @@ while ischar(tline)
                 dcol_inds(i) = ind;
             end
         end
+
+
         
         %disp(tline)
-    elseif regexp(tline,'^\s+# WrcId','once') % non MSC header line turn off suearch
+    elseif regexp(tline,'^\s+# WrcId','once') % non MSC header line turn off search
         tf_inv = 0;
+    end
+
+
+    % if rcs log reach data lines over
+    if regexpi(tline,'RCS Log','once')
+        fprintf('RCS log line detected - end of data\n')
+        break
     end
     
     % Parse a data line
@@ -110,6 +122,15 @@ while ischar(tline)
 end
 fclose(fid);
 out = out(1:line_ct-1,:);
+
+% QUICK FIX TO CLEAN UP BUGGINESS DUE TO OCR STRING APPENDED TO SBE ID
+% JP 05/23/2023
+t1  = strcmp(master_hdr,'MscId');
+if sum(t1) == 1
+    tmp = regexprep(out(:,t1),'OCR\s+','');
+    out(:,t1) = tmp;
+end
+
 
 % ASSIGN OUTPUTS
 d.hdr        = master_hdr;

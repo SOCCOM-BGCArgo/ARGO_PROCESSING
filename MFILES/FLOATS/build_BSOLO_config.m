@@ -1,13 +1,15 @@
 %function tf = build_BSOLO_config(mbari_id)
 
-
+%  01/29/24: TM, Modifications for more cal flavors!  ss4003 pending
+%  deployment...
+%
 % ***********************************************************************
 % TESTING
 %mbari_id = 'ss0001';
 %mbari_id = 'ss0002';
 mbari_id = 'ss0003';
 
-mbari_id = 'ss0004' %not processed with code  - missing O2 pdf cab get 
+mbari_id = 'ss4003' %not processed with code  - missing O2 pdf cab get 
 %data from *.meta but not incorperated yet
 
 
@@ -98,13 +100,16 @@ end
 %                    TRY AND GET OXYGEN CALIBRATION DATA
 % ***********************************************************************
 % ***********************************************************************
-tf_O2C = ~cellfun(@isempty, regexp(cal_fnames,'OxygenCalibration\.pdf'));
+tf_O2C = ~cellfun(@isempty, regexp(cal_fnames,'Oxygen.pdf'));
 tf_O2T = ~cellfun(@isempty, regexp(cal_fnames,'Temperature','once'));
-tf_O2  = tf_O2C & ~tf_O2T;
+% tf_O2  = tf_O2C & ~tf_O2T; %TM I'm not understanding this logic... for
+% 4002 this need to be modified...argh.
+tf_O2  = tf_O2C;
+
 if sum(tf_O2) == 1
     SBE = parse_cal_pdf(fullfile(cal_fp, cal_fnames{tf_O2}));
 elseif sum(tf_O2) > 1
-    O2cal_fn = uigetfile([cal_fp,'*OxygenCalibration.pdf'],'Please choose O2 cal file');
+    O2cal_fn = uigetfile([cal_fp,'*Oxygen*.pdf'],'Please choose O2 cal file');
     SBE = parse_cal_pdf(fullfile(cal_fp, O2cal_fn));
 end
 
@@ -128,7 +133,7 @@ end
 
 O2 = SBE.O2;
 if ~isfield(O2,'TA') % Do temperature coeffiecients exist yet?
-    tf_O2 = ~cellfun(@isempty, regexp(cal_fnames,'Temperature.*Calibration\.pdf'));
+    tf_O2 = ~cellfun(@isempty, regexp(cal_fnames,'Temperature.pdf'));
     if sum(tf_O2) == 1
         SBE = parse_cal_pdf(fullfile(cal_fp, cal_fnames{tf_O2}));
     elseif sum(tf_O2) > 1
@@ -191,6 +196,9 @@ out{8} = sprintf(O2_phase_str, O2.Model, O2.SN, O2.A, O2.B, O2.C);
 % *************************************************************************
 disp(['Looking for bio-optical calibration files(s) in: ',cal_fp]);
 tf_eco   = ~cellfun(@isempty, regexp(cal_fnames,'CharSheet.\.pdf'));
+if sum(tf_eco)==0
+    tf_eco   = ~cellfun(@isempty, regexpi(cal_fnames,'Char Sheet.\.pdf')); % What the heck?
+end
 eco_cals = cal_fnames(tf_eco);
 chl_str  = '%s Chl fluorescence (%s %s) [ChlDC ChlScale],%0.0f,%0.4e';
 bbp_str  = '%s Backscatter700 (%s %s) [Betab700DC Betab700Scale],%0.0f,%0.4e';
@@ -229,20 +237,8 @@ end
 %                     SBE pH CALIBRATIONS
 % *************************************************************************
 disp(['Looking for pH calibration data file(s): ',cal_fp]);
+
 tf_pH   = ~cellfun(@isempty, regexpi(cal_fnames,'CalSheet\.pdf'));
-skip_pH = 0;
-pH_meta_cell = {'k0' 'k2' 'k3xP' 'k4xP^2' 'k5xP^3' 'k6xP^4', ...
-                'k7xP^5' 'k8xP^6'};
-pH_fmt_cell  = {'%0.4f' '%0.4e' '%0.4e' '%0.4e' '%0.4e' '%0.4e', ...
-                '%0.4e' '%0.4e'};
-            
-% pH_str = ['pH sensor coefficients (SBE %s) ', ...
-%     '[k0 k2 k3xP k4xP^2 k5xP^3 k6xP^4 k7xP^5 k8xP^6],', ...
-%     '%0.4f,%0.4e,%0.4e,%0.4e,%0.4e,%0.4e,%0.4e,%0.4e'];
-% 
-% jp = sprintf('%s ',pH_meta_cell{:})
-
-
 if sum(tf_pH) == 1
     SBE = parse_cal_pdf(fullfile(cal_fp, cal_fnames{tf_pH}));
 elseif sum(tf_pH) > 1
@@ -253,23 +249,78 @@ else
     skip_pH = 1;
 end
 
-if skip_pH == 0 && isfield(SBE,'pH')
-    cols_fP  = size(SBE.pH.fP,2); % of poly coefs (excuding constant = 0)
-    pH_meta_cell = pH_meta_cell(1:cols_fP+2);
-    pH_meta_str  = strtrim(sprintf('%s ',pH_meta_cell{:}));
-    
-    pH_fmt_cell = pH_fmt_cell(1:cols_fP+2);
-    pH_fmt_str  = strtrim(sprintf('%s,',pH_fmt_cell{:}));
-    pH_fmt_str  = pH_fmt_str(1:end-1); % loose extra comma at end
-    
-    pH_str = ['pH sensor coefficients (SBE %s) [', pH_meta_str,'],', ...
-        pH_fmt_str];
-    
-    
-    
+if isfield(SBE,'pH')
+    k0   = SBE.pH.k0;
+    k2   = SBE.pH.k2;
+    fP   = SBE.pH.fP;
+    % SBE reports F0 for f(P) which is not used so remove 1st coefficient
+    fP(1)=[];
+
+    str1 = sprintf('pH sensor coefficients (SBE %s) [k0 ',SBE.pH.SN);
+    if size(k2,2) == 1
+        meta_k2 = 'k2 ';
+    else
+        meta_k2 = sprintf(repmat('k2%0.0f ',1,size(k2,2)),(1:size(k2,2))-1);
+    end
+    meta_fP  = sprintf(repmat('F%0.0f ',1,size(fP,2)),(1:size(fP,2)));
+    pH_coefs = [k2, fP];
+    pH_str   = sprintf(['%s%s%s],%0.5f', repmat(',%0.6E',1,size(pH_coefs,2))], ...
+               str1, meta_k2, strtrim(meta_fP), k0, pH_coefs);
+%     config_ct = config_ct+1;
+%     config_cell{config_ct} = pH_str;
     cal = SBE.pH;
     out{12} = sprintf(pH_str, cal.SN, cal.k0, cal.k2, flip(cal.fP));
+%     keyboard
+    clear  O2Pstr Pcoef Pmeta t1 str2
 end
+
+% TM Can delete this section....now that we have more complex options for
+% cal coef use the pH extraction section that was more recently written from build_NAVIS_float
+%--------------------------------------------------------------------------
+% % % skip_pH = 0;
+% % % pH_meta_cell = {'k0' 'k2' 'k3xP' 'k4xP^2' 'k5xP^3' 'k6xP^4', ...
+% % %                 'k7xP^5' 'k8xP^6'};
+% % % pH_fmt_cell  = {'%0.4f' '%0.4e' '%0.4e' '%0.4e' '%0.4e' '%0.4e', ...
+% % %                 '%0.4e' '%0.4e'};
+            
+% % % pH_str = ['pH sensor coefficients (SBE %s) ', ...
+% % %     '[k0 k2 k3xP k4xP^2 k5xP^3 k6xP^4 k7xP^5 k8xP^6],', ...
+% % %     '%0.4f,%0.4e,%0.4e,%0.4e,%0.4e,%0.4e,%0.4e,%0.4e'];
+% % % 
+% % % jp = sprintf('%s ',pH_meta_cell{:})
+
+
+% % % if sum(tf_pH) == 1
+% % %     SBE = parse_cal_pdf(fullfile(cal_fp, cal_fnames{tf_pH}));
+% % % elseif sum(tf_pH) > 1
+% % %     pHcal_fn = uigetfile([cal_fp,'*CalSheet.pdf'],'Please choose pH cal file');
+% % %     SBE = parse_cal_pdf(fullfile(cal_fp, pHcal_fn));
+% % % else
+% % %     disp(['No pH calibration found at: ',cal_fp,' for float ',mbari_id])
+% % %     skip_pH = 1;
+% % % end
+% keyboard
+% % % if skip_pH == 0 && isfield(SBE,'pH')
+% % %     cols_fP  = size(SBE.pH.fP,2); % of poly coefs (excuding constant = 0)
+% % %     pH_meta_cell = pH_meta_cell(1:cols_fP+2);
+% % %     pH_meta_str  = strtrim(sprintf('%s ',pH_meta_cell{:}));
+% % %     
+% % %     pH_fmt_cell = pH_fmt_cell(1:cols_fP+2);
+% % %     pH_fmt_str  = strtrim(sprintf('%s,',pH_fmt_cell{:}));
+% % %     pH_fmt_str  = pH_fmt_str(1:end-1); % loose extra comma at end
+% % %     
+% % %     pH_str = ['pH sensor coefficients (SBE %s) [', pH_meta_str,'],', ...
+% % %         pH_fmt_str];
+% % %     
+% % %     
+% % %     
+% % %     cal = SBE.pH;
+% % %     out{12} = sprintf(pH_str, cal.SN, cal.k0, cal.k2, flip(cal.fP));
+% % % end
+%--------------------------------------------------------------------------
+
+
+
 
 % *************************************************************************
 %                     OCR CALIBRATION - a txt file
@@ -288,39 +339,62 @@ ct = 1;
 
 if sum(tf_OCR) == 1
     OCRcal_fn = cal_fnames{tf_OCR};
-elseif sum(tf_OCR) > 1
-    OCRcal_fn = uigetfile([cal_fp,'ocr*'],'Please choose OCR cal file');
 else
-    disp(['No OCR504 calibration found at: ',cal_fp,' for float ',mbari_id])
-    skip_OCR = 1;
+    OCRcal_fn = uigetfile([cal_fp],'Please choose OCR cal file');
+% else
+%     disp(['No OCR504 calibration found at: ',cal_fp,' for float ',mbari_id])
+%     skip_OCR = 1;
 end
 
 if skip_OCR == 0
     copyfile(fullfile(cal_fp, OCRcal_fn), temp_dir);
     fid = fopen(fullfile(temp_dir, OCRcal_fn));
     tline = ' ';
-    while ischar(tline)
-        if regexp(tline,'^Serial Number','once')
-            SN = regexp(tline,'\d+','match','once');
+    if contains(OCRcal_fn,'ocr') %ocr log file with specific coeff structure
+        while ischar(tline)
+            if regexp(tline,'^Serial Number','once')
+                SN = regexp(tline,'\d+','match','once');
+            end
+
+            if regexp(tline,'^\ta0','once')
+                a0{ct} = regexp(tline,'(?<=a0:)[\d\.e-]+','match','once');
+            end
+
+            if regexp(tline,'^\ta1','once')
+                a1{ct} = regexp(tline,'(?<=a1:)[\d\.e-]+','match','once');
+            end
+
+            if regexp(tline,'^\tim','once')
+                im{ct} = regexp(tline,'(?<=im:)[\d\.e-]+','match','once');
+                ct = ct+1;
+            end
+
+            if ct == 5
+                break
+            end
+            tline = fgetl(fid);
         end
-        
-        if regexp(tline,'^\ta0','once')
-            a0{ct} = regexp(tline,'(?<=a0:)[\d\.e-]+','match','once');
-        end
-        
-        if regexp(tline,'^\ta1','once')
-            a1{ct} = regexp(tline,'(?<=a1:)[\d\.e-]+','match','once');
-        end
-        
-        if regexp(tline,'^\tim','once')
-            im{ct} = regexp(tline,'(?<=im:)[\d\.e-]+','match','once');
-            ct = ct+1;
-        end
-        
-        if ct == 5
-            break
-        end
-        tline = fgetl(fid);
+    else %alternate format
+%         keyboard
+        while ischar(tline)
+            if regexp(tline,'^SN','once')
+                SN = regexp(tline,'\d+','match','once');
+            end
+
+            if regexp(tline,'OPTIC2')
+                tline = fgetl(fid);
+                thecoeffs = str2num(tline);
+                a0{ct} = thecoeffs(1);
+                a1{ct} = thecoeffs(2);
+                im{ct} = thecoeffs(3);
+                ct = ct+1;
+            end
+
+            if ct == 5
+                break
+            end
+            tline = fgetl(fid);
+        end 
     end
     fclose(fid);
     clear ct
@@ -366,6 +440,10 @@ end
 % ************************************************************************
 disp(['Looking for SUNA nitrate calibration file(s): ',cal_fp]);
 tf_NO3   = ~cellfun(@isempty, regexpi(cal_fnames,'SUNA.+CAL'));
+if sum(tf_NO3)==0
+    tf_NO3   = ~cellfun(@isempty, regexpi(cal_fnames,'SNA.+CAL')); %arg...
+end
+
 skip_NO3 = 0;
 
 if sum(tf_NO3) == 1

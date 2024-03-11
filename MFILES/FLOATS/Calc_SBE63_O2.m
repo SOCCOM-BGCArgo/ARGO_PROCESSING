@@ -1,4 +1,4 @@
-function [pO2, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(data, cal)
+function [pO2, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(data, cal, OptTvolt)
 % This function is intended to calculate SBE63 oxygen concentration for 
 % NAVIS profiling float message files. given the required raw data as a
 % matrix and a calibration structure. Data is corrected for salt and
@@ -10,6 +10,8 @@ function [pO2, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(data, cal)
 %           (I create it with get_float cals.m)
 %               cal.TempCoef    [TA0 TA1 TA2 TA3
 %               cal.PhaseCoef   [A0 A1 A2 B0 B1 C0 C1 C2]
+%	OptTvolt -- Logical input to identify proper form of optode temperature within data(:,5).  1=volts; 0=degC.
+%
 % OUTPUT
 %   [O2_uM O2_T] -- Oxygen concentration in µmol /L, O2 sensor Temperature
 %
@@ -33,6 +35,8 @@ function [pO2, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(data, cal)
 %  3/29/22 TM, increased the lower RC bound on Tvolt to 0.002 (still
 %  getting imaginary values from 1200.032.msg file for bad optode temp at
 %  0.0015....
+%  01/18/24, TM, added case for new Navis Nautilus (0063 and future) which have SBS83 optode temperature expressed as voltage
+%  02/08/24, TM, Further modified this code in support of new Navis Nautilus (0063 and future) which have SBS83 optode temperature expressed as voltage in the PROFILE data only!  Optode temp is in degC for in-air....
 
 
 % TESTING
@@ -64,9 +68,10 @@ E    = 0.009; % Reassesed value in Processing ARGO O2 V2.2
 % Volts to resistance, % "log" is natural log in Matlab
 % Note that the SBE83 returns temperature in C, not Volts! TM 6/2/21
 % THIS IS NOT ALWAYS TRUE !!! THE 3XO2 SBE83's report Volts!!!! jp 09/03/2021
-tf_3X02 = strcmp(cal.type,'SBE83') && ~isempty(regexp(cal.SN,'^000[46]','once'));
+tf_3X02 = strcmp(cal.type,'SBE83') && ~isempty(regexp(cal.SN,'^000[467]','once'));
 
-if ~strcmp(cal.type,'SBE83') || tf_3X02
+% if ~strcmp(cal.type,'SBE83') || tf_3X02
+if contains(cal.type,'SBE63') || tf_3X02 || (OptTvolt)
     % Check for valid voltage if out of range set to crazy value
     tbad = (OTV <0.002 | OTV > 3.3) & ~isnan(OTV); % 3.3 = -273.15K
     OTV(tbad) = 3.3; % set bad to crazy value

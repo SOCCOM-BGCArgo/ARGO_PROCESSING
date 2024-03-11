@@ -1,6 +1,16 @@
 function synthfull = build_BSOLO_syn_prof(mat_file, var_list)
-% This function merges all BGC sensors axes for a given cycle. It is based 
+% This function merges all BGC sensors axes for a given cycle. It is based
 % Henry Bittig's Sprof profile code ("ARGO_simplified_profile.m")
+
+% CHANGES
+% 11/06/2023 - JP - Added check block to make sure S.LR subfields contain data.
+%    If all fields are empty remove LR from S. Fix for SS0002.102 which 
+%    has no LR data
+% 12/19/2023 - JP - Commented out previous fix which was due to a bug in
+%                   Johns's code starting around ~Line 84
+% 02/12/2024 - JP - minor fix to deal with repeated pressure values at
+%                   surface for s4003 cycle 29 which was breaking some
+%                   interploation code block (used unique instead of sort).
 
 % *************************************************************************
 % TESTING
@@ -10,6 +20,13 @@ function synthfull = build_BSOLO_syn_prof(mat_file, var_list)
 % fd = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\FLOATS\5906320\';
 % fn = '5906320.009.mat';
 
+% fd = '\\atlas\chem\ARGO_PROCESSING\DATA\FLOATS\5906765\';
+% fd = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\FLOATS\5906765\';
+% fn = '5906765.102.mat'; % ss0002
+% 
+
+% fd = 'C:\Users\jplant\Documents\MATLAB\ARGO_PROCESSING\DATA\FLOATS\2903886\';
+% fn = '2903886.029.mat'; % ss0002
 % mat_file = [fd,fn];
 % var_list = [];
 % *************************************************************************
@@ -32,12 +49,11 @@ if ~isempty(regexp(mat_file,'5906320|5906446','once')) % APEX OCR 19191 & 19314
     tf_APEX_OCR = 1;
 end
 
-
-% SENSOR OFFSETS meters below CTD (+ = below), ECO strapped to float midsection 
-% ECO_offset  = 0.5; 
+% SENSOR OFFSETS meters below CTD (+ = below), ECO strapped to float midsection
+% ECO_offset  = 0.5;
 % NO3_offset  = 0.8;
 
-ECO_offset  = 0; 
+ECO_offset  = 0;
 NO3_offset  = 0;
 
 if isempty(var_list) % Default for solo if nothing defined
@@ -58,7 +74,7 @@ if isempty(var_list) % Default for solo if nothing defined
     raw_vars{13,1} = 'DOWN_IRRADIANCE412';
     raw_vars{14,1} = 'DOWN_IRRADIANCE490';
     raw_vars{15,1} = 'DOWNWELLING_PAR';
-    
+
     var_list       = raw_vars;
 end
 master_bgc_params = setdiff(var_list,{'PRES' 'TEMP' 'PSAL'},'stable');
@@ -69,365 +85,378 @@ master_bgc_params = setdiff(var_list,{'PRES' 'TEMP' 'PSAL'},'stable');
 %              ALIGN MULTIPLE PRES AXES & DATA ONTO 1 AXIS
 % ************************************************************************
 % ************************************************************************
-    S       = load(mat_file); % load cycle mat vars into structure
+S       = load(mat_file); % load cycle mat vars into structure
 
-    % GATHER SOME CYCLE INFO
-    fields    = fieldnames(S);
-    cycle     = S.INFO.cast;
-    gps       = S.INFO.gps;
-    
-    if ~tf_APEX_OCR
-        EOP_sdn   = S.INFO.EOP_sdn;
-        p_axes_ct = S.INFO.pres_axes_ct;
-        sensors   = S.INFO.sensors;
-    else
-        EOP_sdn   = S.INFO.sdn;
-        p_axes_ct = 3;
-        sensors   = {'SBE41CP' 'SBE41CP' 'OCR'};
+% ADD BLOCK HERE TO CHECK IF SECONDARY CTD AXES ("LR") HAS DATA. IF IT
+% DOES NOT REMOVE FIELD. THIS CATCHES ss0002 cycle 102
+% Used David Hill's approach to merge all data from structure fields into an array
+% https://www.mathworks.com/matlabcentral/answers/852330-converting-struct-field-to-array
+
+% JP 12/19/23 commented out since John's code now returning all axes.
+% cycle 102 returned 1 less
+% if isempty(cell2mat(struct2cell(S.LR)))
+%     S = rmfield(S,'LR');
+% end
+
+% GATHER SOME CYCLE INFO
+fields    = fieldnames(S);
+cycle     = S.INFO.cast;
+gps       = S.INFO.gps;
+
+if ~tf_APEX_OCR
+    EOP_sdn   = S.INFO.EOP_sdn;
+    p_axes_ct = S.INFO.pres_axes_ct;
+    sensors   = S.INFO.sensors;
+else
+    EOP_sdn   = S.INFO.sdn;
+    p_axes_ct = 3;
+    sensors   = {'SBE41CP' 'SBE41CP' 'OCR'};
+end
+
+% ALTER SENSORS STRINGS FOR AXES PRIORITY TESTING
+% A BIT OF A FUDGE NOT SURE WHAT WILL HAPPEN WITH MULTI BGC ON ONE AXIS
+% MAY NEED TO LOOP THROUGH & BUILD HENRY LIKE MERGED STRINGS
+sens_priority = regexprep(sensors,'SBE41CP','CTD'); % CTD
+sens_priority = regexprep(sens_priority,'ECO','BBP'); % ECOsens_priority = regexprep(sens_priority,'ECO','BBP'); % ECO
+sens_priority = regexprep(sens_priority,'ALK','TRANSISTOR_PH'); % ECO
+sens_priority = regexprep(sens_priority,'DOXY','OPTODE_DOXY'); % ECO
+sens_priority = regexprep(sens_priority,'NO3','SPECTROPHTOMETER_NITRATE'); % ECO
+sens_priority = regexprep(sens_priority,'OCR','RADIOMETER'); % ECO
+[~,asort]     = sort(sens_priority(2:end));
+asort         = [1 asort+1];
+
+
+% RE-ORDER & REDUCE FIELD NAMES TO MEASURED AXES ORDER, THIS IS BASED
+% ON PREDEFINED LIST ("field_order") DEFINED ABOVE
+[~,Lib] = ismember(field_order',fields);
+Lib(Lib == 0) =[];
+pfields =  fields(Lib);  % fields now in sequential axis order
+if size(pfields,1) ~= p_axes_ct
+    str = fprintf(['\nWarning WMO %s pressure axes count & pressure ',...
+        'axes field counts do not match for cycle %0.0f\n'],...
+        S.INFO.WMO_ID,cycle);
+    return
+end
+
+
+% FIND ALL BGC B PARAMETERS IN CYCLE. COMPARE TO USER DEFINED LIST OF
+% BGC PARAMETERS TO LOOK FOR ("master_bgc_params")
+bgcparams = cell(1,p_axes_ct); % cell(i) will be n x 1 if ax has multi params
+bgcP_idx  = bgcparams;
+bgcflag   = false(1,p_axes_ct);
+for i = 1:p_axes_ct % step through pressure axes
+    bgcparams{i} = intersect(master_bgc_params, fieldnames(S.(pfields{i})));
+    if ~isempty(bgcparams{i})
+        bgcflag(i) = 1;
     end
+    bgcP_idx{i}  = ones(size(bgcparams{i}))*i; % axis index for param
+end
+% convert to N x 1 cell & numeric arrays, keeping axes order
+ubgcparams = unique(cat(1, bgcparams{:}),'stable'); % List of bgc params only
+ubgcP_idx  = cat(1, bgcP_idx{:}); %axis index array linking field to param
 
-    % ALTER SENSORS STRINGS FOR AXES PRIORITY TESTING
-    % A BIT OF A FUDGE NOT SURE WHAT WILL HAPPEN WITH MULTI BGC ON ONE AXIS
-    % MAY NEED TO LOOP THROUGH & BUILD HENRY LIKE MERGED STRINGS
-    sens_priority = regexprep(sensors,'SBE41CP','CTD'); % CTD
-    sens_priority = regexprep(sens_priority,'ECO','BBP'); % ECOsens_priority = regexprep(sens_priority,'ECO','BBP'); % ECO
-    sens_priority = regexprep(sens_priority,'ALK','TRANSISTOR_PH'); % ECO
-    sens_priority = regexprep(sens_priority,'DOXY','OPTODE_DOXY'); % ECO
-    sens_priority = regexprep(sens_priority,'NO3','SPECTROPHTOMETER_NITRATE'); % ECO
-    sens_priority = regexprep(sens_priority,'OCR','RADIOMETER'); % ECO
-    [~,asort]     = sort(sens_priority(2:end));
-    asort         = [1 asort+1];
-    
+% ********************************************************************
+% ********************************************************************
+% IF SPECIAL CASE APEX OCR FLOAT, DEAL WITH NON UNIQUE & REPEATED
+% SURFACE PRESSURE VALUES (UPPER 4 M)- Take MEDIAN OF REPEATED VALUES
+% HENRY'S QUICK CHECK DOESN'T WORK FULLY
 
-    % RE-ORDER & REDUCE FIELD NAMES TO MEASURED AXES ORDER, THIS IS BASED
-    % ON PREDEFINED LIST ("field_order") DEFINED ABOVE
-    [~,Lib] = ismember(field_order',fields); 
-    Lib(Lib == 0) =[];
-    pfields =  fields(Lib);  % fields now in sequential axis order
-    if size(pfields,1) ~= p_axes_ct
-        str = fprintf(['Warning WMO %s pressure axes count & pressure ',...
-            'axes field counts do not match for cycle %0.0f\n'],WMO_ID,cycle);
-        return
-    end
-    
-    % FIND ALL BGC B PARAMETERS IN CYCLE. COMPARE TO USER DEFINED LIST OF
-    % BGC PARAMETERS TO LOOK FOR ("master_bgc_params")
-    bgcparams = cell(1,p_axes_ct); % cell(i) will be n x 1 if ax has multi params
-    bgcP_idx  = bgcparams;
-    bgcflag   = false(1,p_axes_ct);
-    for i = 1:p_axes_ct % step through pressure axes
-        bgcparams{i} = intersect(master_bgc_params, fieldnames(S.(pfields{i})));
-        if ~isempty(bgcparams{i})
-            bgcflag(i) = 1;
-        end
-        bgcP_idx{i}  = ones(size(bgcparams{i}))*i; % axis index for param
-    end
-    % convert to N x 1 cell & numeric arrays, keeping axes order
-    ubgcparams = unique(cat(1, bgcparams{:}),'stable'); % List of bgc params only
-    ubgcP_idx  = cat(1, bgcP_idx{:}); %axis index array linking field to param
-    
-    % ********************************************************************
-    % ********************************************************************
-    % IF SPECIAL CASE APEX OCR FLOAT, DEAL WITH NON UNIQUE & REPEATED
-    % SURFACE PRESSURE VALUES (UPPER 4 M)- Take MEDIAN OF REPEATED VALUES
-    % HENRY'S QUICK CHECK DOESN'T WORK FULLY
-    
-    if tf_APEX_OCR
-        S.INFO.file_name    = mat_file; % NOT IN OCR FILED INFO
-        S.INFO.BOP_sdn      = NaN;
-        S.INFO.EOP_sdn      = S.INFO.sdn;
-        S.INFO.sensors      = sensors;
-        S.INFO.pres_axes_ct = p_axes_ct;
-        S.INFO.bgc_pres_axes_ct = 1;
- 
-        P = S.OCR.PRES;
-        tP = P<4; % less than 4 dbar
-        PT = P(tP);
-        [uP,ia,ic] = unique(PT); %ic top 5m indices
-        
-        OCR_flds = fieldnames(S.OCR);
-        tg = ~cellfun(@isempty, regexp(OCR_flds,'\d+$$|PAR$','once'));
-        OCR_flds = OCR_flds(tg);
+if tf_APEX_OCR
+    S.INFO.file_name    = mat_file; % NOT IN OCR FILED INFO
+    S.INFO.BOP_sdn      = NaN;
+    S.INFO.EOP_sdn      = S.INFO.sdn;
+    S.INFO.sensors      = sensors;
+    S.INFO.pres_axes_ct = p_axes_ct;
+    S.INFO.bgc_pres_axes_ct = 1;
 
-        for i = 1: size(OCR_flds,1)
-            bgcp = OCR_flds{i}; % get apram name       
-            
-            for j = 1:max(ic) % step through repeated surface P levels
-                inds = find(ic == j); % repeated values at uP(j) 
-                S.OCR.(bgcp)(j) = median(S.OCR.(bgcp)(inds),1,'omitnan');
-                S.OCR.([bgcp '_QC'])(j) = ...
-                    max(S.OCR.([bgcp '_QC'])(inds),[],1,'omitnan');
-                
-                if ~strncmp(bgcp,'RAW',3)
-                    S.OCR.([bgcp '_ADJUSTED'])(j) = ...
-                        median(S.OCR.([bgcp '_ADJUSTED'])(inds),1,'omitnan');
-                    S.OCR.([bgcp '_ADJUSTED_QC'])(j) = ...
-                        max(S.OCR.([bgcp '_ADJUSTED_QC'])(inds),[],1,'omitnan');
-                    S.OCR.([bgcp '_ADJUSTED_ERROR'])(j) = ...
-                        max(S.OCR.([bgcp '_ADJUSTED_ERROR'])(inds),[],1,'omitnan');
-                end
-                
-                if i == 1
-                    S.OCR.PRES_QC(j) = max(S.OCR.PRES_QC(inds),[],1,'omitnan');
-                    S.OCR.PRES_ADJUSTED_QC(j) =  ...
-                        max(S.OCR.PRES_ADJUSTED_QC(inds),[],1,'omitnan');
-                end
-            end
-            % MERGE MEDAIN VALUES WITH EXISTING DEEPER VALUES
-            S.OCR.(bgcp) = [S.OCR.(bgcp)(1:j);S.OCR.(bgcp)(~tP)];
-            S.OCR.([bgcp '_QC']) = ...
-                [S.OCR.([bgcp '_QC'])(1:j);S.OCR.([bgcp '_QC'])(~tP)];
-            
+    P = S.OCR.PRES;
+    tP = P<4; % less than 4 dbar
+    PT = P(tP);
+    [uP,ia,ic] = unique(PT); %ic top 5m indices
+
+    OCR_flds = fieldnames(S.OCR);
+    tg = ~cellfun(@isempty, regexp(OCR_flds,'\d+$$|PAR$','once'));
+    OCR_flds = OCR_flds(tg);
+
+    for i = 1: size(OCR_flds,1)
+        bgcp = OCR_flds{i}; % get apram name
+
+        for j = 1:max(ic) % step through repeated surface P levels
+            inds = find(ic == j); % repeated values at uP(j)
+            S.OCR.(bgcp)(j) = median(S.OCR.(bgcp)(inds),1,'omitnan');
+            S.OCR.([bgcp '_QC'])(j) = ...
+                max(S.OCR.([bgcp '_QC'])(inds),[],1,'omitnan');
+
             if ~strncmp(bgcp,'RAW',3)
-                S.OCR.([bgcp '_ADJUSTED']) = ...
-                    [S.OCR.([bgcp '_ADJUSTED'])(1:j);S.OCR.([bgcp '_ADJUSTED'])(~tP)];
-                S.OCR.([bgcp '_ADJUSTED_QC']) = ...
-                    [S.OCR.([bgcp '_ADJUSTED_QC'])(1:j);S.OCR.([bgcp '_ADJUSTED_QC'])(~tP)];
-                S.OCR.([bgcp '_ADJUSTED_ERROR']) = ...
-                    [S.OCR.([bgcp '_ADJUSTED_ERROR'])(1:j);S.OCR.([bgcp '_ADJUSTED_ERROR'])(~tP)];
+                S.OCR.([bgcp '_ADJUSTED'])(j) = ...
+                    median(S.OCR.([bgcp '_ADJUSTED'])(inds),1,'omitnan');
+                S.OCR.([bgcp '_ADJUSTED_QC'])(j) = ...
+                    max(S.OCR.([bgcp '_ADJUSTED_QC'])(inds),[],1,'omitnan');
+                S.OCR.([bgcp '_ADJUSTED_ERROR'])(j) = ...
+                    max(S.OCR.([bgcp '_ADJUSTED_ERROR'])(inds),[],1,'omitnan');
             end
-            
+
             if i == 1
-                S.OCR.PRES_QC = [S.OCR.PRES_QC(1:j);S.OCR.PRES_QC(~tP)];
-                S.OCR.PRES_ADJUSTED_QC = ...
-                    [S.OCR.PRES_ADJUSTED_QC(1:j);S.OCR.PRES_ADJUSTED_QC(~tP)];
+                S.OCR.PRES_QC(j) = max(S.OCR.PRES_QC(inds),[],1,'omitnan');
+                S.OCR.PRES_ADJUSTED_QC(j) =  ...
+                    max(S.OCR.PRES_ADJUSTED_QC(inds),[],1,'omitnan');
             end
         end
-        S.OCR.PRES = [uP; S.OCR.PRES(~tP)]; 
-        S.OCR.PRES_ADJUSTED = S.OCR.PRES; 
-    end
-    % ********************************************************************
-    % ********************************************************************
-    
-    % STEP THROUGH ALL PRESSURE AXES & BUILD r x n matrices of PRES & PRES_QC
-    allP   = ones(1000, p_axes_ct)*NaN;
-    allPQC = allP; % sensor offset array
-    
-    for i = 1:p_axes_ct
-        P   = S.(pfields{i}).PRES;
-        PQC = S.(pfields{i}).PRES_QC;
-        rP  = size(P,1);
+        % MERGE MEDAIN VALUES WITH EXISTING DEEPER VALUES
+        S.OCR.(bgcp) = [S.OCR.(bgcp)(1:j);S.OCR.(bgcp)(~tP)];
+        S.OCR.([bgcp '_QC']) = ...
+            [S.OCR.([bgcp '_QC'])(1:j);S.OCR.([bgcp '_QC'])(~tP)];
 
-        % CHECK FOR ANY PRESSURE INVERSIONS. IF FOUND SET FLAG TO BAD
-        ind             = ~isnan(P) & ismember(PQC,[0 1 2 3]);
-        pinversion      = logical([diff(P(ind))<=0;0]);
-        PQC(pinversion) = 4;
+        if ~strncmp(bgcp,'RAW',3)
+            S.OCR.([bgcp '_ADJUSTED']) = ...
+                [S.OCR.([bgcp '_ADJUSTED'])(1:j);S.OCR.([bgcp '_ADJUSTED'])(~tP)];
+            S.OCR.([bgcp '_ADJUSTED_QC']) = ...
+                [S.OCR.([bgcp '_ADJUSTED_QC'])(1:j);S.OCR.([bgcp '_ADJUSTED_QC'])(~tP)];
+            S.OCR.([bgcp '_ADJUSTED_ERROR']) = ...
+                [S.OCR.([bgcp '_ADJUSTED_ERROR'])(1:j);S.OCR.([bgcp '_ADJUSTED_ERROR'])(~tP)];
+        end
 
-        % FILL IN MATRIX
-        allP(1:rP,i)   = P;
-        allPQC(1:rP,i) = PQC;
-    end
-
-    tnan       = sum(~isnan(allP),2) == 0;
-    allP       = allP(~tnan,:);
-    allPQC     = allPQC(~tnan,:);
-    
-    tgP        = ismember(allPQC,[0 1 2 3]);
-    allP(~tgP) = NaN;
-    allP0      = allP; % Make a copy before any offset alterations
-    clear P PQC rP
-    
-    % check where BGC samples are present (and not all NaN)
-    % build sensor offset array
-    bgcpresence = false(size(allP));
-    bgc_offsets = ones(1, size(ubgcparams,1)) * 0; % predim offsets array
-    for i=1:length(ubgcparams)
-        axis_idx = ubgcP_idx(i); % get approriate structure
-        bgc_data = S.(pfields{axis_idx}).(ubgcparams{i}); % param data
-        tg       = ~isnan(bgc_data); % any data?
-        rtg      = size(tg,1);
-        bgcpresence(1:rtg, axis_idx) = bgcpresence(1:rtg,axis_idx) | tg;
-        
-        % ADD SENSOR OFFSETS TO ARRAY IF NEED BE (HARD WIRED)
-        if regexp(ubgcparams{i},'^NITRATE','once')
-            bgc_offsets(i) = NO3_offset;
-        elseif regexp(ubgcparams{i},'^BBP|^CDOM|^CHL','once')
-            bgc_offsets(i) = ECO_offset;
+        if i == 1
+            S.OCR.PRES_QC = [S.OCR.PRES_QC(1:j);S.OCR.PRES_QC(~tP)];
+            S.OCR.PRES_ADJUSTED_QC = ...
+                [S.OCR.PRES_ADJUSTED_QC(1:j);S.OCR.PRES_ADJUSTED_QC(~tP)];
         end
     end
-    clear i axis idx tg rtg
+    S.OCR.PRES = [uP; S.OCR.PRES(~tP)];
+    S.OCR.PRES_ADJUSTED = S.OCR.PRES;
+end
+% ********************************************************************
+% ********************************************************************
 
-    
-    % INCLUDE T & S ONLY P AXES?
-    if ~includeTSflag
-        allP(:,~bgcflag)   = NaN; 
-        allP(~bgcpresence) = NaN;
+% STEP THROUGH ALL PRESSURE AXES & BUILD r x n matrices of PRES & PRES_QC
+allP   = ones(1000, p_axes_ct)*NaN;
+allPQC = allP; % sensor offset array
+
+for i = 1:p_axes_ct
+    P   = S.(pfields{i}).PRES;
+    PQC = S.(pfields{i}).PRES_QC;
+    rP  = size(P,1);
+
+    % CHECK FOR ANY PRESSURE INVERSIONS. IF FOUND SET FLAG TO BAD
+    ind             = ~isnan(P) & ismember(PQC,[0 1 2 3]);
+    pinversion      = logical([diff(P(ind))<=0;0]);
+    PQC(pinversion) = 4;
+
+    % FILL IN MATRIX
+    allP(1:rP,i)   = P;
+    allPQC(1:rP,i) = PQC;
+end
+
+tnan       = sum(~isnan(allP),2) == 0;
+allP       = allP(~tnan,:);
+allPQC     = allPQC(~tnan,:);
+
+tgP        = ismember(allPQC,[0 1 2 3]);
+allP(~tgP) = NaN;
+allP0      = allP; % Make a copy before any offset alterations
+clear P PQC rP
+
+% check where BGC samples are present (and not all NaN)
+% build sensor offset array
+bgcpresence = false(size(allP));
+bgc_offsets = ones(1, size(ubgcparams,1)) * 0; % predim offsets array
+for i=1:length(ubgcparams)
+    axis_idx = ubgcP_idx(i); % get approriate structure
+    bgc_data = S.(pfields{axis_idx}).(ubgcparams{i}); % param data
+    tg       = ~isnan(bgc_data); % any data?
+    rtg      = size(tg,1);
+    bgcpresence(1:rtg, axis_idx) = bgcpresence(1:rtg,axis_idx) | tg;
+
+    % ADD SENSOR OFFSETS TO ARRAY IF NEED BE (HARD WIRED)
+    if regexp(ubgcparams{i},'^NITRATE','once')
+        bgc_offsets(i) = NO3_offset;
+    elseif regexp(ubgcparams{i},'^BBP|^CDOM|^CHL','once')
+        bgc_offsets(i) = ECO_offset;
     end
-    
-    % split up pressure in each N_PROF for each parameter/sensor
-    % e.g. NITRATE and DOXY in same N_PROF can have different vertical offsets
-    if addoffsetflag
-        linind = cellfun(@(x,y)repmat(x,length(y),1), ...
-            num2cell(1:p_axes_ct,1),bgcparams,'uniform',0); % index to N_PROF in #repetitions like bgcparams
-        linbgcparams = cat(1, bgcparams{:});
-        linind       = cat(1, linind{:});
-        allP         = allP(:,linind); % repeat pressure for each b-parameter
-        allP         = allP + ones(size(allP(:,1)))* bgc_offsets; % add offsets
-    end % split up N_PROFs only if vertical offsets are added per sensor
-    
-    % ********************************************************************
-    % BUILD SYNTHETIC PRESSURE AXIS. If apply offset is true it seems CTD
-    % only press axes are not used? Is this the intent?
-    uallP = unique(allP(~isnan(allP))); % unique bgc pres values
-    
-    % *********************************************************************
-    % Check which pressure levels are present in which profile & get dP's
-    prespresent = false(length(uallP),size(allP,2));
-    for i = 1:size(allP,2)
-        prespresent(:,i) = ismember(uallP, allP(:,i));
-    end
-    
-    % get pressure differences between the levels in each N_PROF; use the
-    % minimum of preceeding/succeeding deltaPRES
-    valdp = ones(length(uallP), size(allP,2))*NaN;
-    for i=1:size(allP,2)
-        pres = allP(~isnan(allP(:,i)),i);
-        if ~isempty(pres)
-            if length(pres)>1
-                dpres = diff(pres);
-                valdp(prespresent(:,i),i) = min(abs([dpres(1);dpres]),abs([dpres;dpres(end)]));
-            else
-                valdp(prespresent(:,i),i)=NaN;
-            end
+end
+clear i axis idx tg rtg
+
+
+% INCLUDE T & S ONLY P AXES?
+if ~includeTSflag
+    allP(:,~bgcflag)   = NaN;
+    allP(~bgcpresence) = NaN;
+end
+
+% split up pressure in each N_PROF for each parameter/sensor
+% e.g. NITRATE and DOXY in same N_PROF can have different vertical offsets
+if addoffsetflag
+    linind = cellfun(@(x,y)repmat(x,length(y),1), ...
+        num2cell(1:p_axes_ct,1),bgcparams,'uniform',0); % index to N_PROF in #repetitions like bgcparams
+    linbgcparams = cat(1, bgcparams{:});
+    linind       = cat(1, linind{:});
+    allP         = allP(:,linind); % repeat pressure for each b-parameter
+    allP         = allP + ones(size(allP(:,1)))* bgc_offsets; % add offsets
+end % split up N_PROFs only if vertical offsets are added per sensor
+
+% ********************************************************************
+% BUILD SYNTHETIC PRESSURE AXIS. If apply offset is true it seems CTD
+% only press axes are not used? Is this the intent?
+uallP = unique(allP(~isnan(allP))); % unique bgc pres values
+
+% *********************************************************************
+% Check which pressure levels are present in which profile & get dP's
+prespresent = false(length(uallP),size(allP,2));
+for i = 1:size(allP,2)
+    prespresent(:,i) = ismember(uallP, allP(:,i));
+end
+
+% get pressure differences between the levels in each N_PROF; use the
+% minimum of preceeding/succeeding deltaPRES
+valdp = ones(length(uallP), size(allP,2))*NaN;
+for i=1:size(allP,2)
+    pres = allP(~isnan(allP(:,i)),i);
+    if ~isempty(pres)
+        if length(pres)>1
+            dpres = diff(pres);
+            valdp(prespresent(:,i),i) = min(abs([dpres(1);dpres]),abs([dpres;dpres(end)]));
+        else
+            valdp(prespresent(:,i),i)=NaN;
         end
-        clear pres dpres
     end
+    clear pres dpres
+end
 
-    % *********************************************************************
-    %  NOW BUILD INDEX ARRAY FOR SYNTHETIC PRESSURE AXIS
-    % *********************************************************************
-    % Start from bottom & work towards the surface
-    
-    % cycle through record from bottom
-    useind   = false(size(uallP)); %predim index array
-    i        = length(uallP); % start at bottom
-    niter    = 0;
-    nitermax = length(uallP)+1;
-    
-    if all(isnan(valdp(:))) % each BGC obs has only one level - no way to jump/construct synthetic pressure axis
-        presaxis=uallP(end); % take deepest pressure and align rest to this level
-    else % cycle pressure record
-        while ~isempty(i)
-            niter = niter+1;
-            useind(i) = 1; % add current level to synthetic axis
-            ind=find(uallP > uallP(i) - min(valdp(i,:)) & uallP <= uallP(i)); % get pressures that are within current level (included) and probably next level-min(dPRES) (excluded)
-            % check if any of the intermittent levels has such a small dPRES, that
-            % there will be a second observation within the current level-min(dPRES) "jump"
-            obspresence = ~isnan(valdp(ind,:)); % make presence of non-FillValue a logical array
-            if ~isempty(ind) && any(sum(obspresence,1)>1) % there are other levels in between and they have more than one observation, i.e., a denser sampling interval
-                % go to deepest upres that features a second observation in the
-                % same N_PROF: sum #obs from bottom in each N_PROF, get max in each
-                % line (upres), and jump to (deepest) line that has >1
-                i=ind(find(max(flipud(cumsum(flipud(obspresence),1)),[],2)>1,1,'last'));
-                if isempty(i)
-                    disp(['S-PROF_WARNING: File ' bfilestr '.nc: Trouble',...
-                        ' during creation of synthetic pressure axis. ',...
-                        'Create synthetic profile only with available core data.'])
-                    useind=[]; % default to empty presaxis if failed
-                    break % loop of pressure levels from bottom
-                end
-            else % jump by at least current level+min(dPRES)
-                if all(isnan(valdp(i,:))) % no min(dPRES) available for current level:
-                    % jump to next level that has a non-NaN valdp
-                    i=find(uallP<uallP(i) & any(~isnan(valdp),2),1,'last');
-                else % jump by at least current level+min(dPRES)
-                    i=find(uallP<=uallP(i)-min(valdp(i,:)),1,'last');
-                end
-            end
-            clear obspresence
-            if niter>nitermax
-                disp(['S-PROF_WARNING: File ' bfilestr '.nc: Exceeded maximum number of iterations in selection of synthetic pressure levels. Should not happen... Create synthetic profile only with available core data.'])
-                useind = []; % default to empty presaxis if failed
+% *********************************************************************
+%  NOW BUILD INDEX ARRAY FOR SYNTHETIC PRESSURE AXIS
+% *********************************************************************
+% Start from bottom & work towards the surface
+
+% cycle through record from bottom
+useind   = false(size(uallP)); %predim index array
+i        = length(uallP); % start at bottom
+niter    = 0;
+nitermax = length(uallP)+1;
+
+if all(isnan(valdp(:))) % each BGC obs has only one level - no way to jump/construct synthetic pressure axis
+    presaxis=uallP(end); % take deepest pressure and align rest to this level
+else % cycle pressure record
+    while ~isempty(i)
+        niter = niter+1;
+        useind(i) = 1; % add current level to synthetic axis
+        ind=find(uallP > uallP(i) - min(valdp(i,:)) & uallP <= uallP(i)); % get pressures that are within current level (included) and probably next level-min(dPRES) (excluded)
+        % check if any of the intermittent levels has such a small dPRES, that
+        % there will be a second observation within the current level-min(dPRES) "jump"
+        obspresence = ~isnan(valdp(ind,:)); % make presence of non-FillValue a logical array
+        if ~isempty(ind) && any(sum(obspresence,1)>1) % there are other levels in between and they have more than one observation, i.e., a denser sampling interval
+            % go to deepest upres that features a second observation in the
+            % same N_PROF: sum #obs from bottom in each N_PROF, get max in each
+            % line (upres), and jump to (deepest) line that has >1
+            i=ind(find(max(flipud(cumsum(flipud(obspresence),1)),[],2)>1,1,'last'));
+            if isempty(i)
+                disp(['S-PROF_WARNING: File ' bfilestr '.nc: Trouble',...
+                    ' during creation of synthetic pressure axis. ',...
+                    'Create synthetic profile only with available core data.'])
+                useind=[]; % default to empty presaxis if failed
                 break % loop of pressure levels from bottom
             end
-        end
-        clear niter nitermax
-        presaxis = uallP(useind);
-    end % pressure axis cycle from bottom possible
-    
-    % *********************************************************************
-    %  SYNTHETIC PRESSURE AXIS BUILT - NOW PREP TO FILL / ALIGN BGC DATA
-    % *********************************************************************
-    coreparams = {'PRES';'TEMP';'PSAL'}; % define core parameters
-    
-    % get non-overlapping pressure axis for core parameters
-    xpres   = allP0(:,asort); % keep original pressure
-    xpresqc = tgP(:,asort); % and flag to pressure that are not QC=4
-    
-    % build argo like param matrix for P, T, S to fit Henry's flow
-    for i=1:length(coreparams) 
-        c_param    = coreparams{i};
-        %disp(c_param)
-        c_param_qc = [c_param ,'_QC'];
-        y       = allP0 * NaN; % predim
-        yqc     = y;
-        for j   = 1:p_axes_ct % step through axes & look for c_param
-            fnames = fieldnames(S.(pfields{j}));
-            tf     = strcmp(fnames, c_param); % is param in structure?
-            if sum(tf) == 0
-                continue
+        else % jump by at least current level+min(dPRES)
+            if all(isnan(valdp(i,:))) % no min(dPRES) available for current level:
+                % jump to next level that has a non-NaN valdp
+                i=find(uallP<uallP(i) & any(~isnan(valdp),2),1,'last');
+            else % jump by at least current level+min(dPRES)
+                i=find(uallP<=uallP(i)-min(valdp(i,:)),1,'last');
             end
-            x           = S.(pfields{j}).(c_param);
-            xqc         = S.(pfields{j}).(c_param_qc);
-            rx          = size(x,1);
-            y(1:rx,j)   = x;
-            yqc(1:rx,j) = xqc;
         end
-        y   = y(:,asort);
-        yqc = yqc(:,asort);
-        clear j tf x xqg rx
-
-            
-        % extract data
-
-        if ismember(coreparams{i},{'PRES'})
-            overlap=true(size(y)); % pressures of different N_PROFs (almost) necessarily overlap
-        else % not PRES
-            % get max and min ranges per nprof
-            xrange=ones(2,1+p_axes_ct)*NaN;
-            overlap=false(size(y)); % and flag portions that don't overlap
-            for k=1:p_axes_ct
-                ind=~isnan(y(:,k)) & xpresqc(:,k);
-                if any(ind) % data in current nprof and with proper pres
-                    xrange(:,1+k)=[min(xpres(ind,k)); max(xpres(ind,k))];
-                    % check if it should be added or not
-                    if isnan(xrange(1,1)) % first nprof with data
-                        xrange(:,1)=xrange(:,1+k);
-                        overlap(:,k)=ind;
-                    else % more than one nprof with data: keep only data outside existing range
-                        overlap(:,k)=ind & (xpres(:,k)>xrange(2,1) | xpres(:,k)<xrange(1,1));
-                        xrange(1,1)=min([xrange(1,1) xrange(1,1+k)]);
-                        xrange(2,1)=max([xrange(2,1) xrange(2,1+k)]);
-                    end
-                end
-            end % cycle all nprofs
-            clear ind xrange
-        end % overlapping portion
-        
-        % do not use <PARAM>_QC of 8 or FillValue
-        yflagqc   = ismember(yqc,[0 1 2 3 4 5]);
-        yflagnoFV = ~isnan(y); 
-        
-        % clean up: only data of current parameter without QC 8, only pflag
-        x       = xpres(xpresqc & yflagqc & yflagnoFV);
-        y       = y(xpresqc & yflagqc & yflagnoFV);
-        overlap = overlap(xpresqc & yflagqc & yflagnoFV);
-        clear yflagqc yflagnoFV yqc
-        
-        if ~isempty(y) % not only NaN/FV data
-            % use only non-overlapping portion
-            x=x(overlap);
-            clear overlap
-            % make monotonic for interpolation (looses nprof priority!)
-            [~,ind]=sort(x); % monotonic sorting
-            x=x(ind);
-            full.(coreparams{i}).x=x;
-        else % empty pressure axis
-            full.(coreparams{i}).x = [];
-        end % not only NaN/FV data
-        clear x y
+        clear obspresence
+        if niter>nitermax
+            disp(['S-PROF_WARNING: File ' bfilestr '.nc: Exceeded maximum number of iterations in selection of synthetic pressure levels. Should not happen... Create synthetic profile only with available core data.'])
+            useind = []; % default to empty presaxis if failed
+            break % loop of pressure levels from bottom
+        end
     end
-    
+    clear niter nitermax
+    presaxis = uallP(useind);
+end % pressure axis cycle from bottom possible
+
+% *********************************************************************
+%  SYNTHETIC PRESSURE AXIS BUILT - NOW PREP TO FILL / ALIGN BGC DATA
+% *********************************************************************
+coreparams = {'PRES';'TEMP';'PSAL'}; % define core parameters
+
+% get non-overlapping pressure axis for core parameters
+xpres   = allP0(:,asort); % keep original pressure
+xpresqc = tgP(:,asort); % and flag to pressure that are not QC=4
+
+% build argo like param matrix for P, T, S to fit Henry's flow
+for i=1:length(coreparams)
+    c_param    = coreparams{i};
+    %disp(c_param)
+    c_param_qc = [c_param ,'_QC'];
+    y       = allP0 * NaN; % predim
+    yqc     = y;
+    for j   = 1:p_axes_ct % step through axes & look for c_param
+        fnames = fieldnames(S.(pfields{j}));
+        tf     = strcmp(fnames, c_param); % is param in structure?
+        if sum(tf) == 0
+            continue
+        end
+        x           = S.(pfields{j}).(c_param);
+        xqc         = S.(pfields{j}).(c_param_qc);
+        rx          = size(x,1);
+        y(1:rx,j)   = x;
+        yqc(1:rx,j) = xqc;
+    end
+    y   = y(:,asort);
+    yqc = yqc(:,asort);
+    clear j tf x xqg rx
+
+
+    % extract data
+
+    if ismember(coreparams{i},{'PRES'})
+        overlap=true(size(y)); % pressures of different N_PROFs (almost) necessarily overlap
+    else % not PRES
+        % get max and min ranges per nprof
+        xrange=ones(2,1+p_axes_ct)*NaN;
+        overlap=false(size(y)); % and flag portions that don't overlap
+        for k=1:p_axes_ct
+            ind=~isnan(y(:,k)) & xpresqc(:,k);
+            if any(ind) % data in current nprof and with proper pres
+                xrange(:,1+k)=[min(xpres(ind,k)); max(xpres(ind,k))];
+                % check if it should be added or not
+                if isnan(xrange(1,1)) % first nprof with data
+                    xrange(:,1)=xrange(:,1+k);
+                    overlap(:,k)=ind;
+                else % more than one nprof with data: keep only data outside existing range
+                    overlap(:,k)=ind & (xpres(:,k)>xrange(2,1) | xpres(:,k)<xrange(1,1));
+                    xrange(1,1)=min([xrange(1,1) xrange(1,1+k)]);
+                    xrange(2,1)=max([xrange(2,1) xrange(2,1+k)]);
+                end
+            end
+        end % cycle all nprofs
+        clear ind xrange
+    end % overlapping portion
+
+    % do not use <PARAM>_QC of 8 or FillValue
+    yflagqc   = ismember(yqc,[0 1 2 3 4 5]);
+    yflagnoFV = ~isnan(y);
+
+    % clean up: only data of current parameter without QC 8, only pflag
+    x       = xpres(xpresqc & yflagqc & yflagnoFV);
+    y       = y(xpresqc & yflagqc & yflagnoFV);
+    overlap = overlap(xpresqc & yflagqc & yflagnoFV);
+    clear yflagqc yflagnoFV yqc
+
+    if ~isempty(y) % not only NaN/FV data
+        % use only non-overlapping portion
+        x=x(overlap);
+        clear overlap
+        % make monotonic for interpolation (looses nprof priority!)
+        [~,ind]=sort(x); % monotonic sorting
+        x=x(ind);
+        full.(coreparams{i}).x=x;
+    else % empty pressure axis
+        full.(coreparams{i}).x = [];
+    end % not only NaN/FV data
+    clear x y
+end
+
 % get all non-overlapping (HR-)TEMP/PSAL levels and synthetic pressure axis levels
 presmerge    = union(union(full.TEMP.x,full.PSAL.x),presaxis); % 'HR' T/S pressure axis and presaxis
 % get indices for synthetic pressure axis
@@ -471,40 +500,40 @@ else
         end
         spresaxis = presmerge(sind); % pressure axis for current parameter
         spresaxis = spresaxis(:); % make sure it's a column vector
-       
+
         if addoffsetflag
             s_offset = 0; % default to 0
             % re-apply vertical offset from scratch for particular parameter
             % e.g., N_PROF with SUNA & CTD has large offset for NITRATE, but none
             % for TEMP & PSAL, and only one S.PRES.value / inpres for both
             %if ismember(ubgcparams{i},voff.linbgcparams)
-                % check to which N_PROF the current parameter  fits
-                ind   = cellfun(@(x)ismember(b_param,x),bgcparams); % for P axis
-                o_ind = strcmp(ubgcparams, b_param); % for offset grab
-                if sum(ind) == 1
-                    s_offset = bgc_offsets(o_ind);
-                end
-                
-                xpres = allP0;
+            % check to which N_PROF the current parameter  fits
+            ind   = cellfun(@(x)ismember(b_param,x),bgcparams); % for P axis
+            o_ind = strcmp(ubgcparams, b_param); % for offset grab
+            if sum(ind) == 1
+                s_offset = bgc_offsets(o_ind);
+            end
 
-                % NaN+offset = NaN so no indexing needed
-                xpres(:,ind)=xpres(:,ind) + ones(size(xpres(:,1)))*s_offset;
-                %xpres(inpres0==FV)=FV; % keep FV
-                xpres=xpres(:,asort);
-                clear ind
+            xpres = allP0;
+
+            % NaN+offset = NaN so no indexing needed
+            xpres(:,ind)=xpres(:,ind) + ones(size(xpres(:,1)))*s_offset;
+            %xpres(inpres0==FV)=FV; % keep FV
+            xpres=xpres(:,asort);
+            clear ind
             %else % no match found
-                %xpres=inpres0(:,asort); % keep original pressure
+            %xpres=inpres0(:,asort); % keep original pressure
             %end % found vertical offsets in config
-            
-%             if strcmp(ubgcparams{i},'PRES')
-%                 xpres=inpres0(:,asort); % forget everything above, use all unadjusted pressures
-%                 %xpres=S.PRES.value(:,asort); % forget everything above, use all unadjusted pressures
-%             end
+
+            %             if strcmp(ubgcparams{i},'PRES')
+            %                 xpres=inpres0(:,asort); % forget everything above, use all unadjusted pressures
+            %                 %xpres=S.PRES.value(:,asort); % forget everything above, use all unadjusted pressures
+            %             end
         else % no addoffsetflag
             xpres=allP0(:,asort); % keep original pressure
         end % addoffsetflag
-        
-        
+
+
         % NEED TO BUILD ARGO LIKE MATRICES FOR EACH BGC PARAM TO FIT
         % HENRY's FLOW
         y   = allP0 * NaN; yqc = y; yadj = y; yadjqc = y; yadjerr = y;% predim
@@ -531,16 +560,16 @@ else
         yadj    = yadj(:,asort);
         yadjqc  = yadjqc(:,asort);
         yadjerr = yadjerr(:,asort);
-        
-        
-        
-        
+
+
+
+
         % extract data
-%         y=S.(ubgcparams{i}).value(:,asort);
-%         yqc=S.([ubgcparams{i} '_QC']).value(:,asort);
-%         yadj=S.([ubgcparams{i} '_ADJUSTED']).value(:,asort);
-%         yadjqc=S.([ubgcparams{i} '_ADJUSTED_QC']).value(:,asort);
-%         yadjerr=S.([ubgcparams{i} '_ADJUSTED_ERROR']).value(:,asort);
+        %         y=S.(ubgcparams{i}).value(:,asort);
+        %         yqc=S.([ubgcparams{i} '_QC']).value(:,asort);
+        %         yadj=S.([ubgcparams{i} '_ADJUSTED']).value(:,asort);
+        %         yadjqc=S.([ubgcparams{i} '_ADJUSTED_QC']).value(:,asort);
+        %         yadjerr=S.([ubgcparams{i} '_ADJUSTED_ERROR']).value(:,asort);
         % check for overlapping portion of N_PROFs
         if ismember(ubgcparams{i},{'PRES'})
             overlap=true(size(y)); % pressures of different N_PROFs (almost) necessarily overlap
@@ -565,7 +594,7 @@ else
                 end
             end % cycle all nprofs
             clear indadj xrangeadj
-            
+
         else % not PRES
             % get max and min ranges per nprof
             xrange=ones(2,1+p_axes_ct)*NaN;
@@ -609,11 +638,11 @@ else
         yflagnoFV = ~isnan(y);
 
 
-        
+
         yflagadjqc = ismember(yadjqc,[0 1 2 3 4 5]);
         %yflagadjnoFV=~isnan(yadj); % double check FV, use only levels without FillValue
         yflagadjnoFV = ~isnan(yadj) | ismember(yadjqc,4);  % double check FV, consider adjusted QC 4 as exception to FillValue
-        
+
         % clean up: only data of current parameter without QC 8, only pflag
         x=xpres(xpresqc & yflagqc & yflagnoFV);
         xadj=xpres(xpresqc & yflagadjqc & yflagadjnoFV);
@@ -627,37 +656,43 @@ else
         overlap=overlap(xpresqc & yflagqc & yflagnoFV);
         yadjerrpresence=~all(isnan(yadjerr)); % error not mandatory for adjusted fields..
         clear yflagqc yflagnoFV yflagadjqc yflagadjnoFV
-        
+
         % preallocate
         synth.(ubgcparams{i}).value=double(spresaxis)*NaN;
-        
-%         if ismember(ubgcparams{i},{'PRES'})
-%             synth.(ubgcparams{i}).value=int32(ones(size(spresaxis))*FV);
-%         else
-%             synth.(ubgcparams{i}).value=double(spresaxis)*NaN;
-%         end
-        
+
+        %         if ismember(ubgcparams{i},{'PRES'})
+        %             synth.(ubgcparams{i}).value=int32(ones(size(spresaxis))*FV);
+        %         else
+        %             synth.(ubgcparams{i}).value=double(spresaxis)*NaN;
+        %         end
+
         synth.([ubgcparams{i} '_QC']).value=double(spresaxis)*NaN;
         synth.([ubgcparams{i} '_ADJUSTED']).value=double(spresaxis)*NaN;
         synth.([ubgcparams{i} '_ADJUSTED_QC']).value=double(spresaxis)*NaN;
         synth.([ubgcparams{i} '_ADJUSTED_ERROR']).value=double(spresaxis)*NaN;
         %synth.([ubgcparams{i} '_dPRES']).value=int32(ones(size(spresaxis))*FV);
         synth.([ubgcparams{i} '_dPRES']).value= ones(size(spresaxis))*NaN;
-        
+
         if ismember(ubgcparams{i},{'PRES'}) % add synthetic levels (incl. vertical offsets of BGC sensors)
             synth.PRES.value(synthind)=presaxis;
         end
-        
+
         if ~isempty(y) % not only NaN/FV data
             % use only non-overlapping portion
             x=x(overlap);y=y(overlap);yqc=yqc(overlap);
             clear overlap
             % make monotonic for interpolation (looses nprof priority! But non-overlapping anyway)
-            [~,ind]=sort(x); % monotonic sorting
+            %[~,ind]=sort(x); % monotonic sorting. Commented out 02/12/24 JP
+
+            % make monotonic & unique for interpolation (ss4003, cycle 29
+            % breaks the above commented out line -has repeated surface 
+            % values). JP 02/12/24
+            [~,ind,~] = unique(x); 
+
             x=x(ind);y=y(ind);yqc=yqc(ind);
             % and make sure that they are column vectors
             x=x(:);y=y(:);yqc=yqc(:);
-            
+
             % copy data for levels that are part of the synthetic pressure axis:
             % get indices to which data to copy
             % take only 'first' occurence (in nprof-priority sorted record!) and
@@ -670,7 +705,7 @@ else
             %    full.(ubgcparams{i}).fillind=fillind;
             %end
             clear fillind cpind
-            
+
             % rest of data:
             % interpolate data for other levels of the synthetic pressure axis:
             % toss away repeated occurence of pressures: e.g., MD5904767_004.nc PSAL @ 46.0 dbar
@@ -741,7 +776,7 @@ else
                     iremove(spresaxis<=max(x)+2 & spresaxis>=min(x)-1)=0; % JP
                 end
             end
-            
+
             % keep an isolated hole between data
             % standard case: 1 isolated hole between two data before and after
             if nos>=5
@@ -762,7 +797,7 @@ else
                 %iremove(find(inomatch(nos) & ~inomatch(nos-2) & ~inomatch(nos-1) & diff(spresaxis([nos-1 nos]))<=1*1000)+nos-1)=0;
                 iremove(find(inomatch(nos) & ~inomatch(nos-2) & ~inomatch(nos-1) & diff(spresaxis([nos-1 nos]))<=1)+nos-1)=0; %JP
             end
-            
+
             if ismember(ubgcparams{i},{'PRES'})
                 %synth.(ubgcparams{i}).value(iremove)=FV;
             else
@@ -776,10 +811,10 @@ else
                 synth.([ubgcparams{i} '_QC']).value(fillind)=8;
             end % PRES (int32) or not (double)
             clear y yqc uind inomatch iremove fillind
-            
-%             if strcmp(ubgcparams{i},'NITRATE'), pause,end % TESTING
-%             %if strcmp(ubgcparams{i},'PRES'), pause,end  % TESTING
-            
+
+            %             if strcmp(ubgcparams{i},'NITRATE'), pause,end % TESTING
+            %             %if strcmp(ubgcparams{i},'PRES'), pause,end  % TESTING
+
             % check dPRES assignment
             % and add pressure difference where it is missing (and there are data)
             %fillind=find(~isnan(synth.([ubgcparams{i} '_QC']).value) & synth.([ubgcparams{i} '_dPRES']).value==FV);
@@ -789,24 +824,30 @@ else
             for k=1:length(fillind)
                 dp=x-spresaxis(fillind(k)); % deeper sample of minimum pressure difference
                 synth.([ubgcparams{i} '_dPRES']).value(fillind(k))=dp(find(abs(dp)==min(abs(dp)),1,'last'));
-                
+
                 %%synth.([ubgcparams{i} '_dPRES']).value(synth.([ubgcparams{i} '_dPRES']).value==FV)=x(uind(nearind(synth.([ubgcparams{i} '_dPRES']).value==FV)))-spresaxis(synth.([ubgcparams{i} '_dPRES']).value==FV);
                 %dpind=abs(x-spresaxis(k))==abs(x(uind(nearind(k)))-spresaxis(k)); % points with same distance and to be used (not in low priority nprofs)
                 %synth.([ubgcparams{i} '_dPRES']).value(k)=max(x(dpind))-spresaxis(k); % take deeper value if there are any two samples at +/- the same distance
                 %clear dpind
             end
             clear x xqc fillind dp
-            
+
             if ~isempty(yadj) % not only NaN/FV adjusted data
                 % use only non-overlapping portion
                 xadj=xadj(overlapadj);yadj=yadj(overlapadj);yadjqc=yadjqc(overlapadj);yadjerr=yadjerr(overlapadj);
                 clear overlapadj
                 % make monotonic for interpolation (looses nprof priority!)
-                [~,ind]=sort(xadj); % monotonic sorting
+                %[~,ind]=sort(xadj); % monotonic sorting, Commented out 02/12/24 JP
+
+                % make monotonic & unique for interpolation (ss4003, cycle 29
+                % breaks the above commented out line -has repeated surface
+                % values). JP 02/12/24
+                [~,ind,~] = unique(xadj);
+
                 xadj=xadj(ind);yadj=yadj(ind);yadjqc=yadjqc(ind);yadjerr=yadjerr(ind);
                 % and make sure that they are column vectors
                 xadj=xadj(:);yadj=yadj(:);yadjqc=yadjqc(:);yadjerr=yadjerr(:);
-                
+
                 % do the same with adjusted fields
                 % copy data for levels that are part of the synthetic pressure axis:
                 [~,fillindadj,cpindadj]=intersect(spresaxis,xadj);
@@ -817,7 +858,7 @@ else
                 %    full.(ubgcparams{i}).fillindadj=fillindadj;
                 %end
                 clear fillindadj cpindadj
-                
+
                 % rest of data:
                 % interpolate data for other levels of the synthetic pressure axis:
                 % toss away repeated occurence of pressures: e.g., MD5904767_004.nc PSAL @ 46.0 dbar
@@ -887,7 +928,7 @@ else
                         iremove(spresaxis<=max(xadj)+2 & spresaxis>=min(xadj)-1)=0; % JP
                     end
                 end
-                
+
                 % but only if it's not an isolated hole between data
                 % standard case: 1 isolated hole between two data before and after
                 if nos>=5
@@ -974,7 +1015,7 @@ INFO.INST_ID          = S.INFO.INST_ID;
 INFO.WMO_ID           = S.INFO.WMO_ID;
 INFO.float_type       = S.INFO.float_type;
 INFO.file_name        = S.INFO.file_name;
-INFO.WMO_ID           = S.INFO.WMO_ID;
+% INFO.WMO_ID           = S.INFO.WMO_ID;
 INFO.BOP_sdn          = S.INFO.BOP_sdn;
 INFO.EOP_sdn          = S.INFO.EOP_sdn;
 INFO.sensors          = S.INFO.sensors;
@@ -990,4 +1031,4 @@ clearvars -except synthfull
 
 
 return
-    
+

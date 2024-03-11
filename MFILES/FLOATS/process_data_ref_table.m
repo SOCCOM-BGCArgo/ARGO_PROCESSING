@@ -9,13 +9,16 @@ function out = process_data_ref_table
 %   A13.5). -9999 vs - vs none as entries. BROKE CRUISE NOW CCAMLR in
 %   special case assignments. Removv fill 0's from numeric strings
 % 12/29/2020 - JP - Sharon's table changed so I updated some indices so
-% cruise, station & cycle values where being extracted properly again
+%   cruise, station & cycle values where being extracted properly again
 % 03/31/21 - TM - tweaks due to changes in Sharon's table structure; plus
-% the addition of the GOBGC data reference table.
+%    the addition of the GOBGC data reference table.
 % 08/22/22 - TM - Temporary (?) fix for Marion Isl station entries in
-% Sharon's table (currently being listed as "AM012**" and that is breaking
-% the code.
-
+%    Sharon's table (currently being listed as "AM012**" and that is breaking
+%    the code.
+% 01/10/23 - JP - updates to catch INST ID which was no longer extracted
+%    properly because of some html formating changes / variants. Also some
+%    general clean up of returned data
+% 07/17/23 - TM - update links to data ref tables now that MBARI is managing.
 
 out.ref_table        = 0;
 out.mbari_names      = 0;
@@ -45,9 +48,11 @@ data_url      = 'https://cchdo.ucsd.edu';
 % GET SHARON'S DATA REFERENCE TABLE AS A STRING
 % BOTH SOCCOM AND GOBGC DATA REF TABLES ARE REQUIRED!
 % ************************************************************************
-data_ref_target1  = 'http://soccom.ucsd.edu/floats/SOCCOM_data_ref.html';
+%data_ref_target1  = 'http://soccom.ucsd.edu/floats/SOCCOM_data_ref.html'; % This link is pre- Sharon-retirement
+data_ref_target1  = 'https://www3.mbari.org/soccom/tables/SOCCOM_data_reference.html';
 big_str1 = webread(data_ref_target1); % Sharon's HTML page as big string
-data_ref_target2  = 'http://go-bgc.ucsd.edu/GOBGC_data_reference.html';
+%data_ref_target2  = 'http://go-bgc.ucsd.edu/GOBGC_data_reference.html'; % This link is pre- Sharon-retirement
+data_ref_target2  = 'https://www3.mbari.org/gobgc/tables/GOBGC_data_reference.html';
 big_str2 = webread(data_ref_target2); % Sharon's HTML page as big string
 big_str = [big_str1 big_str2]; %Cat them together!
 
@@ -93,10 +98,14 @@ try
                 WMO = 'NO WMO';
             end
             INST_str = test_str(col_inds(6):col_inds(7));
-            INST_ID = regexp(INST_str,'(?<=html" >).+(?=</a)', 'once', 'match');
+            %INST_ID = regexp(INST_str,'(?<=html" >).+(?=</a)', 'once', 'match');
+            INST_ID = regexp(INST_str,'(?<=s*html\s*" >).+(?=</a)', 'once', 'match'); % jp 01/10/23
+            if isempty(INST_ID) % maybe no shtml link because float DOA
+                INST_ID = regexp(INST_str,'(?<=>\s*)\d+(?=<)', 'once', 'match');
+            end
+
             cchdo = regexp(test_str,'https://cchdo\.\w+\.\w+/\w+/\w+', ...
                 'once', 'match');
-            
             if isempty(cchdo)
                 cchdo = 'NO URL YET';
             end
@@ -145,6 +154,7 @@ try
     list = list(1:ct,:);
     rlist = size(list,1);
     clist = size(list,2);
+
     out.ref_table        = 1;
 catch
     disp('Reference tables could not be parsed - check link & try again.');
@@ -162,11 +172,14 @@ try
     load([dirs.cal,'MBARI_float_list.mat']);
     MBARI = d;
     for i = 1:rlist
-        tf = strcmp(list{i, iWMO}, MBARI.list(:,3));
+        tf = strcmp(list{i, iWMO}, MBARI.list(:,3)); % WMO
+        tf2 = strcmp(list{i, iINST}, MBARI.list(:,2)); % INST ID
         if sum(tf) > 0
             list{i, iM} = MBARI.list{tf,1};
+        elseif sum(tf2) > 0
+            list{i, iM} = MBARI.list{tf2,1};
         else
-            list{i, iM} = ['NO WMO_',list{i, iINST}];
+            list{i, iM} = 'NO MBARI ID';
         end
     end
     out.mbari_names      = 1;
@@ -174,6 +187,10 @@ catch
     disp(['Could not load: ', dirs.cal,'MBARI_float_list.mat']);
     return
 end
+
+tg    = ~strcmp(list(:,1),'NO MBARI ID');
+list  = list(tg,:);
+rlist = size(list,1);
 
 clear MBARI tf i
 
@@ -394,6 +411,23 @@ clear fid d i tline ns_hdr f_str
 % apply (i.e HAZMAT)
 % ***********************************************************************
 % ***********************************************************************
+% keyboard
+% ((TM 2/14/24)) SOCCOM 17S; final is on cchdo, but code defaults to hy1 file (??) which (in this case only?) has strange entries for bottle (mixed char-numeric).  The exc. file is the most recent and best formatted so hardcode for this!
+% t1 = strcmp(list(:,iCRU),'I7S') & cellfun(@isempty,(list(:,iDF)));
+t1 = strcmp(list(:,iCRU),'I7S');
+if sum(t1) > 0
+    list(t1,iDF) = {'49NZ20191229_usethis.exc.csv'};
+    list(t1,iBF) = {'NO DATA PATH YET'};
+end
+
+% ((TM 2/15/24)) And similar for P17!!!
+% t1 = strcmp(list(:,iCRU),'P17S') & cellfun(@isempty,(list(:,iDF)));
+% keyboard
+t1 = strcmp(list(:,iCRU),'P17S');
+if sum(t1) > 0
+    list(t1,iDF) = {'49NZ20170208_usethis.exc.csv'};
+    list(t1,iBF) = {'NO DATA PATH YET'};
+end
 
 % Kaxis (Deployment crusie aboard AURORA AUSTRALIS - South central indian ocean
 t1 = strcmp(list(:,iCRU),'Kaxis') & cellfun(@isempty,(list(:,iDF)));
@@ -445,6 +479,60 @@ if sum(t1) > 0
     list(t1,iDF) = {'33VB20210803_hy1.csv'};
 end
 
+%A16N 7/17/23 - Preliminary file available for the southern leg of cruise (south of 28N).  This includes stations for 4 of the 7 floats deployed.  
+t1 = strcmp(list(:,iCRU),'A16N') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+    list(t1,iDF) = {'33RO20230306.csv'};
+end
+
+%Aaron, Solomon cruise, see email from Sharon on Aug 15, 2023; linking here https://soccompu.princeton.edu/DeploymentCruises/Pacific/Araon/2023/24HU20230110/Master_Solomon.html
+t1 = strcmp(list(:,iCRU),'Solomon') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+   list(t1,iDF) = {'24HU20230110_preliminary_hy1.csv'};
+end
+
+%Thwaites cruise, see email from Sharon on September 6, 2023; linking here https://soccompu.princeton.edu/DeploymentCruises/Pacific/Palmer/2020/320620200125/Master_Thwaites.html
+t1 = strcmp(list(:,iCRU),'Thwaites') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+   list(t1,iDF) = {'320620200125_hy1.csv'};
+end
+
+%PIPERS cruise; see Sharon's email from 12/4/2023 linking here: https://soccompu.princeton.edu/DeploymentCruises/Pacific/Palmer/2017/320620170410/Master_PIPERS.html
+t1 = strcmp(list(:,iCRU),'PIPERS') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+   list(t1,iDF) = {'320620170410_hy1.csv'};
+end
+
+%GoaFrem, RR2307 cruise; see Sharon's email from 6/5/2024 linking here: https://soccompu.princeton.edu/DeploymentCruises/Indian/Revelle/2023/33RR20230629/Master_GoaFrem_RR2307.html
+t1 = strcmp(list(:,iCRU),'GoaFrem') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+   list(t1,iDF) = {'33RR20230629_hy1.csv'};
+end
+
+%Nitrite_2023 cruise; see Sharon's email from 01/23/2024 linking here: https://soccompu.princeton.edu/DeploymentCruises/Pacific/Revelle/2023/33RR20231118/Master_Nitrite_2023.html
+t1 = strcmp(list(:,iCRU),'Nitrite_2023') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+   list(t1,iDF) = {'33RR20231118_prelim_hy1.csv'};
+end
+
+%A16N_Leg2  cruise; see Sharon's email from 01/25/2024 linking here:https://soccompu.princeton.edu/DeploymentCruises/Atlantic/Brown/2023/33RO20230413/Master_A16N_Leg2.html
+t1 = strcmp(list(:,iCRU),'A16N') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+   list(t1,iDF) = {'33RO20230413_A16N_L2_prelim_v1_hy1.csv'};
+end
+
+%Resing cruise, see email from Sharon on Dec 19, 2023; 
+t1 = strcmp(list(:,iCRU),'Resing') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+   list(t1,iDF) = {'33RR20210918_preliminary_hy1.csv'};
+end
+
+%Resing cruise, see email from Sharon on Feb 14, 2024; 
+t1 = strcmp(list(:,iCRU),'A12(A13.5)') & cellfun(@isempty,(list(:,iDF)));
+if sum(t1) > 0
+   list(t1,iDF) = {'A13-A12_stations_checked_by_Leti_hy1.csv'};
+end
+
 %%SOCCOM A13.5 cruise, 2020; listed as 33RO20200321 but odd file name?
 %t1 = strcmp(list(:,iCRU),'A13.5') & cellfun(@isempty,(list(:,iDF)));
 %if sum(t1) > 0
@@ -462,6 +550,9 @@ end
 % end
 
 clear nM nUW nWMO nCRU nSTA nCST nDF nCCH nBF nCCF nCTD
+
+out.list_hdr = hdr;
+out.list     = list;
 
 % ***********************************************************************
 % PRINT FULL & SHORT LISTS TO TEXT FILE
