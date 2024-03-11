@@ -85,6 +85,8 @@ function varargout = sage()
 %   10/10/21 TM added LIR without O2 as a reference option (eq 8)
 %   10/25/21 TM incorporated Carter et al 2021 ESPER (LIR & NN) routines as
 %   reference options (https://doi.org/10.1002/lom3.10461)
+%   03/30/23 TM added ESPER MIX
+%   02/08/2024 TM added msgbox and prevention of reprocess when QC Matrix does not start at cycle 1!
 
 % NOTES:
 %
@@ -150,16 +152,16 @@ clear d
             'Toolbar', 'none', ...
             'HandleVisibility', 'off' ,...
             'Position',[scrsz(3)*l scrsz(4)*b scrsz(3)*w scrsz(4)*h]);
-        
+
         % + Menu items
         helpMenu = uimenu( gui.Window, 'Label', 'Help' );
         uimenu( helpMenu, 'Label', 'Documentation', 'Callback', @onhelp );
         ackMenu = uimenu( gui.Window,'Label','Acknowledgements');
         uimenu(ackMenu, 'Label','Documentation','Callback', @onack);
-        
+
         % ARRANGE THE MAIN INTERFACE
         mainLayout = uiextras.HBoxFlex( 'Parent', gui.Window, 'Spacing', 3 );
-        
+
         % + Create the panels
         controlPanel = uix.BoxPanel( ...
             'Parent', mainLayout, ...
@@ -169,17 +171,17 @@ clear d
             'Title', 'View Data: ');
         gui.ViewContainer = uicontainer( ...
             'Parent', gui.ViewPanel );
-        
+
         % + Adjust the main layout HBoxFlex widths
         set( mainLayout, 'Widths', [-0.5,-2.5]  );
-        
-        
+
+
         % + Create the controls
         BGC = [0.5 0.5 0.5]; %overarching background color
-        
+
         controlLayout = uix.VBoxFlex( 'Parent', controlPanel, ...
             'Padding', 3, 'Spacing', 3 );
-        
+
         % Control Box 1 (float spec)
         VB1 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);
         VP1 = uix.Panel('Parent',VB1,'Padding',5,'title','Float Data Specs');
@@ -205,7 +207,7 @@ clear d
         E3 = uix.HBox( 'Parent', P3, 'Padding', 5, 'Spacing', 5 );
         gui.GLDPkm = uicontrol('Parent',E3,'Style','edit',...
             'callback',@on_GLODAP);
-        
+
         % Control Box 2 (Plot Type)
         VB2 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);
         VP2 = uix.Panel('Parent',VB2,'Padding',5,'title','Plot Type');
@@ -218,7 +220,7 @@ clear d
         rb2(3) = uicontrol('Parent',bbox,'Style','radiobutton',...
             'String','Profile','tag','3','Value',0,'Callback',@plottype_onClicked );
         gui.rb2 = rb2;
-        
+
         % Control Box 3 (Reference Data)
         VB3 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);
         VP3 = uix.Panel('Parent',VB3,'Padding',5,'title','Reference Data');
@@ -236,8 +238,10 @@ clear d
             'String','ESPER_LIR','tag','ESPER LIR','Value',0,'Callback',@ref_onClicked );
         rb3(6) = uicontrol('Parent',bbox,'Style','radiobutton',...
             'String','ESPER_NN','tag','ESPER NN','Value',0,'Callback',@ref_onClicked );
+        rb3(7) = uicontrol('Parent',bbox,'Style','radiobutton',...
+            'String','ESPER_MIX','tag','ESPER MIX','Value',0,'Callback',@ref_onClicked );
         gui.rb3 = rb3;
-        
+
         % Control Box 5 (Parameter to plot) - This is really control box 4
         % as you go down the layout, but added last, so
         % calling it 5
@@ -256,7 +260,7 @@ clear d
         rb5(5) = uicontrol('Parent',bbox,'Style','radiobutton',...
             'String','Temperature','tag','T','Value',0,'Enable','on','Callback',@plotparam_onClicked );
         gui.rb5 = rb5;
-        
+
         % Control Box 4 (QC Adjustments)
         VP4 = uix.VBox('Parent',controlLayout,'Padding',5,'BackgroundColor',BGC);
         P4 = uix.BoxPanel('Parent',VP4,'title','Data Adjustments:');
@@ -285,11 +289,11 @@ clear d
             'RELOAD FloatQCList.txt','Callback',@on_reloadQC,'Enable','on');
         P4c = uicontrol('parent',P4v,'style','pushbutton','backgroundcolor','red','string',...
             'REPROCESS','fontsize',18,'Callback',@on_reprocess,'Enable','on');
-        
+
         set( controlLayout, 'Heights', [-4 -1.5 -2 -2 -5] ); %Main control vbox heights
         set( vb, 'Heights', [-1 -1 -1.75 -1.75 -1.75] ); %Float spec box heights
         set( P4v, 'Heights', [-1 -1 -3 -.75 -.75] ); %QC adj box heights
-        
+
         % + Create the view
         p = gui.ViewContainer;
         t = uiextras.TabPanel('Parent',p,'BackgroundColor','w');
@@ -306,7 +310,7 @@ clear d
         t1b2 = uicontainer('Parent',t1b);
         t1axes(4) = axes('Parent',t1b2,'Visible','off');
         set(t1b,'widths',[-0.85 -1])
-        
+
         t2 = uix.VBox('Parent',t,'padding',10,'spacing',0.5);
         t2a = uix.HBox('Parent',t2,'padding',0,'spacing',0);
         t2a1 = uicontainer('Parent',t2a);
@@ -381,7 +385,7 @@ clear d
     function updateInterface()
         % Update various parts of the interface in response to the inputs
         % being changed.
-        
+
         if inputs.rorq == 1
             DATA.datatype =  handles.raw_data;
             gui.whichAX = gui.t1ax;
@@ -392,21 +396,21 @@ clear d
             DATA.datatype = handles.qc_data;
             gui.whichAX = gui.t2ax;
         end
-        
-        
+
+
         %Assign proper depth edits for profile view (depending which
         %algorithm chosen)
         if inputs.isprof == 1
-%             if DATA.paramrefnum ==5 || DATA.paramrefnum ==6 %williams
-%                 %inputs.depthedit = [1000 1600];
-%                 inputs.depthedit = [1000 inputs.Dedit(3,2)];
-%             else
-                %inputs.depthedit = [0 1600];
-                inputs.depthedit = inputs.Dedit(3,:);
-%             end
+            %             if DATA.paramrefnum ==5 || DATA.paramrefnum ==6 %williams
+            %                 %inputs.depthedit = [1000 1600];
+            %                 inputs.depthedit = [1000 inputs.Dedit(3,2)];
+            %             else
+            %inputs.depthedit = [0 1600];
+            inputs.depthedit = inputs.Dedit(3,:);
+            %             end
         end
-        
-        
+
+
         set(gui.profmin,'String',num2str(inputs.profedit(1)));
         if max(DATA.datatype.data(:,2)) < inputs.profedit(2)
             set(gui.profmax,'String',num2str(max(DATA.datatype.data(:,2))));
@@ -422,7 +426,7 @@ clear d
         %             hmsg = msgbox({'No Data within assigned depth limits','Expanding lower end of range.'},'Depth Range Adjustment');
         %             set(gui.Pmin,'String',num2str(floor(max(DATA.datatype.data(:,6)))-100));
         %         end
-        
+
         set(gui.GLDPkm,'String',num2str(inputs.GLDPkm));
         depthmin = str2double(get(gui.Pmin,'String'));
         depthmax = str2double(get(gui.Pmax,'String'));
@@ -436,7 +440,7 @@ clear d
             DATA.xlims{1} = [DATA.track(DATA.track(:,2)==PROFmin,1)-1 DATA.track(DATA.track(:,2)==PROFmax,1)+1];
             DATA.xlims{2} = [DATA.track(DATA.track(:,2)==PROFmin,2)-1 DATA.track(DATA.track(:,2)==PROFmax,2)+1];
         end
-        
+
         if nanmax(DATA.xlims{2}(2)) >= 6 % at least 6 cycles
             xtckfac{2} = floor((DATA.xlims{2}(2)-DATA.xlims{2}(1))/5);
         else
@@ -445,21 +449,21 @@ clear d
         DATA.xticks{2} = DATA.xlims{2}(1):xtckfac{2}:DATA.xlims{2}(2);
         [~,xti,~] = intersect(DATA.track(:,2),DATA.xticks{2});
         DATA.xticks{1} = DATA.track(xti,1);
-        
+
         % GET FLOAT DATA, SET MISSING VALUES TO NaN, GET INDICES
         qc_flag = handles.info.qc_flag;
         % % %         dRAW = handles.raw_data;
         DATA.datatype.data(DATA.datatype.data == -1e10) = NaN; % missing values
-        
+
         iP    = find(strcmp('Pressure[dbar]',DATA.datatype.hdr)   == 1);
-        
+
         % CHECK IF QC DATA EXISTS (O,N,PH) IF NOT IT HAS BEEN SET TO RAW
         inputs.data_str  = '';
         if qc_flag == 0
             inputs.data_str = ' !!! NO QC DATA - PLOTTING RAW !!!';
         end
-        
-        
+
+
         % CACULATE MLR OR GET WOA(USE QC DATA FOR THIS)
         %         tNaN_QCO2 = isnan(handles.qc_data.data(:,iO)); %Any NaN's in QC O2 (for MLR)
         %         tNaN_QCS = isnan(handles.qc_data.data(:,iS)); %Any NaN's in QC Salinity (for MLR)
@@ -485,8 +489,10 @@ clear d
                     DATA.refdata = DATA.reftemp(:,DATA.ESPER_LIND);
                 case 'ESPER NN'
                     DATA.refdata = DATA.reftemp(:,DATA.ESPER_NIND);
-%                 case {'MLR W50to80','MLR W30to50'} % REMOVE ?? JP 04/03/21
-%                     DATA.refdata = DATA.MLRdata.(DATA.paramtag).(DATA.refs);
+                case 'ESPER MIX'
+                    DATA.refdata = DATA.reftemp(:,DATA.ESPER_MIND);
+                    %                 case {'MLR W50to80','MLR W30to50'} % REMOVE ?? JP 04/03/21
+                    %                     DATA.refdata = DATA.MLRdata.(DATA.paramtag).(DATA.refs);
                     %                     MLR = DATA.refs.(DATA.paramtag);
                     %                     if ~isempty(MLR) %will be empty for salinity, temp, oxygen
                     %                         tMLR = isnan(handles.qc_data.data(:,iO)) | isnan(handles.qc_data.data(:,iS));
@@ -500,7 +506,7 @@ clear d
                     %                     end
             end
         end
-        
+
         if ~isempty(DATA.IND) && ~isempty(DATA.refdata)
             inputs.y_label = DATA.datatype.hdr{DATA.IND};
             DATA.DIFF_X = DATA.datatype.data(:,DATA.IND) - DATA.refdata;
@@ -508,8 +514,8 @@ clear d
             inputs.y_label = DATA.datatype.hdr{DATA.IND};
             DATA.DIFF_X = DATA.refdata .* NaN;
         end
-        
-        
+
+
         % SUBSET DATA SETS WITHIN DEPTH WINDOW (profile subset will
         % happen in PlotGuiData.  Do this because for calculating
         %         DATA.datasub = DATA.datatype.data(DATA.datatype.data(:,iP) >= depthmin & ...
@@ -525,7 +531,7 @@ clear d
             handles.raw_data.data(:,iP)<=depthmax,:);
         DATA.qcsub = handles.qc_data.data(handles.qc_data.data(:,iP)>=depthmin & ...
             handles.qc_data.data(:,iP)<=depthmax,:);
-        
+
         DATA.datasub = DATA.datatype.data(DATA.datatype.data(:,iP) >= depthmin & ...
             DATA.datatype.data(:,iP) <= depthmax,:);
         DATA.refsub = DATA.refdata(DATA.datatype.data(:,iP) >= depthmin & ...
@@ -533,9 +539,9 @@ clear d
         DATA.diffsub = DATA.DIFF_X(DATA.datatype.data(:,iP) >= depthmin & ...
             DATA.datatype.data(:,iP) <= depthmax,:);
         DATA.glosub = DATA.G.data(DATA.G.data(:,DATA.iGP)>=depthmin & DATA.G.data(:,DATA.iGP)<=depthmax,:);
-        
-        
-        
+
+
+
     end % updateInterface
 
 %-------------------------------------------------------------------------%
@@ -556,6 +562,8 @@ clear d
         % select float data dir from dialog box
         % first set some limits and defaults
         %         handles=[];
+        handles.NOREPROCESS = 0;
+
         if isfield(handles,'CGOD')
             handles = rmfield(handles,'CGOD');
         end
@@ -574,14 +582,15 @@ clear d
         set(gui.rb3(4),'Enable','on')
         set(gui.rb3(5),'Enable','on')
         set(gui.rb3(6),'Enable','on')
+        set(gui.rb3(7),'Enable','on')
         set(gui.rb2(1),'Value',0)
         set(gui.rb2(2),'Value',1)
         set(gui.rb2(3),'Value',0)
-        
+
         set(gui.rb5(1),'Enable','on'); % nitrate -jp
         set(gui.rb5(2),'Enable','on'); % oxygen too!
         set(gui.rb5(3),'Enable','on'); % pH -jp
-        
+
         % CHOOSE FILE
         % FOR MBARI THE TEXT FILES ARE THE DEFAULT SOURCE
         [fn,pn] = uigetfile([dirs.FVlocal,'*.TXT'],'SELECT FILE');
@@ -591,10 +600,10 @@ clear d
             wrk_color = gui.Fbutton.BackgroundColor;
             set(gui.Fbutton,'BackgroundColor','y');
             drawnow
-            
+
             handles.info.file_name  = fn;
             handles.info.file_path  = pn;
-            
+
             % GET WMO ID FROM FILE NAME
             if regexp(fn,'^\d{7}','once')
                 WMO_ID = regexp(fn,'^\d{7}','once','match');
@@ -604,7 +613,7 @@ clear d
                 WMO_ID = regexp(fn,'\d+','once','match');
             end
             handles.info.WMO_ID = WMO_ID;
-            
+
             handles.info.float_name ={};
             handles.info.INST_ID    = {};
             handles.info.float_type = {};
@@ -632,21 +641,21 @@ clear d
                 handles.info.float_name = 'NON-MBARIfloat';
             end
             handles.info.QCadj_file   = [WMO_ID,'_FloatQCList.txt'];
-            
-            
+
+
             %             handles.info.float_name = regexpi(fn,'\w+(?=\QC.txt)|\w+(?=\.txt)', ...
             %                 'match', 'once');
             %             handles.info.UW_ID  = regexp(handles.info.float_name, ...
             %                 '^\d{3}\d+(?=\w+)','match', 'once'); %#'s but chars follow
             %             handles.info.QCadj_file   = [handles.info.float_name,'_FloatQCList.txt'];
-            
+
             % Set flag for ODV file created from Mprof netcdf vs msg files
             % based on file name
             handles.info.Mprof = 0;
             if regexp(handles.info.file_name,'^ODV', 'once')
                 handles.info.Mprof = 1;
             end
-            
+
             % DEFINE DATA QUALITY
             if regexpi(handles.info.file_name, 'QC.TXT', 'once')
                 handles.info.data_quality = 'QC';
@@ -655,10 +664,10 @@ clear d
                 handles.info.data_quality = 'RAW';
                 handles.RAWorQC.String    = 'RAW DATA';
             end
-            
+
             % GET DATA (RAW AND QC)
             % EXCLUDE FLBB & CARBONATE SYSTEM VARIABLES - ONLY CHECKING O, N, pH
-            
+
             % RAW DATA FIRST
             %fv_path = [handles.dirs.FVlocal, handles.info.float_name,'.TXT'];
             %fv_path = [pn, handles.info.float_name,'.TXT'];
@@ -679,14 +688,14 @@ clear d
             DATA.iN    = find(strcmp('Nitrate[µmol/kg]', d.hdr) == 1);
             DATA.iPH   = find(strcmp('pHinsitu[Total]', d.hdr)  == 1);
             DATA.iCHL  = find(strcmp('Chl_a[mg/m^3]', d.hdr)  == 1);
-            
+
             % CHECK MAX DEPTH & ADJUST DEFAULTS ACCORDINGLY
             inputs.Dedit = [0 30; 1480 1520; 0 1600]; % starting conditions
             if max(d.data(:,DATA.iP)) < inputs.depthedit(1)
                 inputs.depthedit = [980 1020]; %default pressure range (deep)
                 inputs.Dedit = [0 30; 980 1020; 0 1100];
             end
-            
+
             handles.info.CHL_sensor = 0;
             if ~isempty(DATA.iCHL) % TEST FOR CHL DATA USED WITH MPROF ADJUSTMENT FILE
                 t1 = d.data(:,DATA.iCHL) ~= -1e10 & ~isnan(d.data(:,DATA.iCHL));
@@ -695,14 +704,14 @@ clear d
                 end
                 clear t1
             end
-            
+
             % CONDENSE THE DATA empty & empty+1 will be ignored
             handles.raw_data.hdr  = d.hdr([1:DATA.iZ+1,DATA.iO:DATA.iOsat+1,DATA.iN,DATA.iN+1,DATA.iPH,DATA.iPH+1]);
             handles.raw_data.data = d.data(:,[1:DATA.iZ+1,DATA.iO:DATA.iOsat+1,DATA.iN,DATA.iN+1,DATA.iPH,DATA.iPH+1]);
             handles.raw_data.data(handles.raw_data.data == -1e10) = NaN;
             r_raw = size(d.data,1);
             clear d
-            
+
             % TRY TO GET QC DATA NEXT
             %fv_path = [handles.dirs.FVlocal,'QC\' handles.info.float_name,'QC.TXT'];
             %fv_path = [pn,'QC',filesep,handles.info.float_name,'QC.TXT'];
@@ -731,22 +740,22 @@ clear d
                 handles.qc_data.data = handles.raw_data.data;
             end
             clear d
-            
+
             % REDO AFTER SUBSETTING
             DATA.iO    = find(strcmp('Oxygen[µmol/kg]', handles.raw_data.hdr)  == 1);
             DATA.iOsat = find(strcmp('OxygenSat[%]', handles.raw_data.hdr)     == 1);
             DATA.iN    = find(strcmp('Nitrate[µmol/kg]', handles.raw_data.hdr) == 1);
             DATA.iPH   = find(strcmp('pHinsitu[Total]', handles.raw_data.hdr)  == 1);
-            
+
             % ONLY WANT GOOD DATA FOR QC PURPOSES & SET SENSOR EXIST FLAGS
             if ~isempty(DATA.iS)
                 tbad = handles.raw_data.data(:,DATA.iS+1) == 8; % SET bad S to NaN
                 handles.raw_data.data(tbad,DATA.iS) = NaN;
-                
+
                 tbad = handles.qc_data.data(:,DATA.iS+1) == 8;
                 handles.qc_data.data(tbad,DATA.iS) = NaN;
             end
-            
+
             if ~isempty(DATA.iO)
                 tbad = handles.raw_data.data(:,DATA.iO+1) == 8; % set bad to NaN before testing for NaN - JP 12/18/18
                 handles.raw_data.data(tbad,DATA.iO) = NaN;
@@ -754,7 +763,7 @@ clear d
                 tbad = handles.qc_data.data(:,DATA.iO+1) == 8;
                 handles.qc_data.data(tbad,DATA.iO) = NaN;
                 handles.qc_data.data(tbad,DATA.iOsat) = NaN;
-                
+
                 if all(isnan(handles.raw_data.data(:,DATA.iO))) % NO DATA!!
                     handles.info.O2_sensor = 0;
                     set(gui.rb5(2),'Enable','off');
@@ -764,7 +773,7 @@ clear d
             else
                 set(gui.rb5(2),'Enable','off');
             end
-            
+
             if ~isempty(DATA.iN)
                 tbad = handles.raw_data.data(:,DATA.iN+1) == 8; % set bad to NaN before testing for NaN - JP 12/18/18
                 handles.raw_data.data(tbad,DATA.iN) = NaN;
@@ -779,7 +788,7 @@ clear d
             else
                 set(gui.rb5(1),'Enable','off');
             end
-            
+
             if ~isempty(DATA.iPH)
                 tbad = handles.raw_data.data(:,DATA.iPH+1) == 8; % set bad to NaN before testing for NaN - JP 12/18/18
                 handles.raw_data.data(tbad,DATA.iPH) = NaN;
@@ -796,9 +805,9 @@ clear d
             else
                 set(gui.rb5(3),'Enable','off');
             end
-            
+
             clear tbad
-            
+
             % LOAD CALIBRATION DATA - IT WILL BE USED LATER FOR SENSOR CHECKS
             % WHEN UPDATING FloatQCList AND MAYBE MORE STUFF
             [dirs.cal,'cal',handles.info.float_name,'.mat']
@@ -806,7 +815,7 @@ clear d
                 handles.info.cal = load([dirs.cal,'cal',handles.info.float_name,'.mat']);
                 %                 handles.info.cal = cal;
             end
-            
+
             % SAVE FLOAT TRACK & GET WOA 2018 NITRATE DATA FOR TRACK
             d = handles.raw_data.data; % Get raw data
             [~,ia,~] = unique(d(:,2));
@@ -814,7 +823,7 @@ clear d
             %             inputs.profedit = [1 DATA.track(end,2)];
             inputs.profedit = [DATA.track(1,2) DATA.track(end,2)];
             DATA.iN    = find(strcmp('Nitrate[µmol/kg]',handles.raw_data.hdr) == 1);
-            
+
             %             set(handles.recumpute_text,'Visible','on')
             %             set(handles.recumpute_text, ...
             %                 'String','LOADING WOA 2018 NITRATE DATA ....')
@@ -823,11 +832,11 @@ clear d
             try
                 WOA_NO3 = get_WOA_local(dirs.woa,DATA.track(:,[1,4,3]), [0 2000], 'NO3');
                 % NOW MATCH WOA DATA TO RAW PROFILE DATA, sample by sample
-                
+
                 WNO3 = ones(size(handles.raw_data.data(:,1))) * NaN; % predim
                 Z = WOA_NO3.Z; % WOA depth grid
                 N = WOA_NO3.d; % WOA nitrate, µM / L
-                
+
                 for cast_ct = 1:size(DATA.track,1) % step through profiles
                     % INTRPOLATE WOA2013 ON TO FLOAT PRESSURE PROFILE
                     t1  = d(:,2) == DATA.track(cast_ct,2); % get profile
@@ -835,8 +844,8 @@ clear d
                     tmpZ = handles.raw_data.data(t1,6); % Get float pressure profile for cast
                     WNO3(t1) = interp1(Z, N(:,cast_ct),tmpZ);
                 end
-                
-                
+
+
                 % NOW CONVERT TO µmol/kg
                 potT  = theta(handles.raw_data.data(:,6), ...
                     handles.raw_data.data(:,8),handles.raw_data.data(:,10),0); % P,T,S,P0
@@ -847,7 +856,7 @@ clear d
                 msgbox({'ERROR: getWOA failed. No WOA reference data will be plotted.'})
                 DATA.WOA_NO3 = [];
             end
-            
+
             % ********************************************************************
             % GET ANY GLODAP DATA THAT IS NEAR ANY FLOAT TRACK POINTS
             %             set(handles.recumpute_text,'Visible','on')
@@ -863,7 +872,7 @@ clear d
             clear track d cycles i t1
             % GET GLODAPv2 DATA & SET INDICES
             DATA.G = handles.GLODAP; % Could be empty if no crossover data
-            
+
             DATA.iGcyc = find(strcmp('float cycle',  DATA.G.hdr) == 1);
             DATA.iGSDN = find(strcmp('Date',  DATA.G.hdr)        == 1);
             DATA.iGP   = find(strcmp('G2pressure',DATA.G.hdr)    == 1);
@@ -872,11 +881,11 @@ clear d
             DATA.iGO   = find(strcmp('G2oxygen',DATA.G.hdr)      == 1);
             DATA.iGN   = find(strcmp('G2nitrate',DATA.G.hdr)     == 1);
             DATA.iGPH  = find(strcmp('ph_insitu',DATA.G.hdr)     == 1);
-            
+
             set( gui.Fbutton,'String','Loading Ref data ...');
             drawnow
             [handles, DATA] = get_LIR_CAN_ESPER(dirs,handles,DATA);
-            
+            %             keyboard
             % GET CALIBRATION BOTTLE DATA IF IT EXISTS
             % LOOKUP TABLE  HEADER = [MBARI_ID UW_ID  WMO   CRUISE   STN   CAST   Data file]
             % LOAD BOTTLE DATA LOOK UP TABLE & STORE IN handles STRUCTURE
@@ -888,18 +897,20 @@ clear d
             handles.bottle_lookup = d;
             clear d fid
             ind = strcmpi(handles.info.float_name, handles.bottle_lookup{1,1});
-            
+
             if sum(ind) > 0 % float(s) exists in lookup table
                 set( gui.Fbutton,'String','Loading bottle data ...');
                 drawnow
+                %                 save('tanyatemp.mat','handles','ind')
                 bottle_fname = handles.bottle_lookup{1,7}{ind};
                 stn = handles.bottle_lookup{1,5}(ind);
-                
+
                 cst = handles.bottle_lookup{1,6}(ind);
-                
+
                 % data file & data exist for float
                 if ~isempty(bottle_fname) && stn ~= -999 && cst ~= -999
                     d = get_shipboard_data([dirs.bottle,bottle_fname]);
+                    %                     save('tanyatemp.mat','DATA','d','handles','bottle_fname','dirs')
                     DATA.iStn  = find(strcmp(d.hdr,'STNNBR') == 1);
                     DATA.iCast = find(strcmp(d.hdr,'CASTNO') == 1);
                     DATA.tStn  = d.data(:,DATA.iStn)  == stn;
@@ -920,7 +931,7 @@ clear d
                 handles.bdata.hdr    = '';
                 handles.bdata.data   = [];
             end
-            
+
             b = handles.bdata; % Could be empty if no calibration data
             DATA.b = b;
             DATA.ibSDN  = find(strcmp('DATE',  b.hdr) == 1);
@@ -933,13 +944,13 @@ clear d
             DATA.ibN    = find(strcmp('NITRAT',b.hdr) == 1);
             DATA.ibPH1  = find(strcmp('PH_TOT_INSITU',b.hdr) == 1);
             DATA.ibPH2  = find(strcmp('PH_TOT_INSITU_ALKDIC',b.hdr) == 1);
-            
+
             % MLR ESTIMATES FOR NITRATE AND PH
             %            DATA.MLR = LoadGuiMLR_GLT;
-            
+
             % SET SOME MORE DEFAULTS UPON LOADING FLOAT
-            set(gui.rb3(1),'Value',1)
-            set(gui.rb3(gui.rb3~=gui.rb3(1)),'Value',0)
+            set(gui.rb3(7),'Value',1)
+            set(gui.rb3(gui.rb3~=gui.rb3(7)),'Value',0)
             set(gui.rb5(1),'Value',1)
             set(gui.rb5(gui.rb5~=gui.rb5(1)),'Value',0)
             %            DATA.reftemp = DATA.L.data;
@@ -954,11 +965,12 @@ clear d
             DATA.LnoO2IND = DATA.iLN_noO2;
             DATA.ESPER_LIND = DATA.iEL_N;
             DATA.ESPER_NIND = DATA.iEN_N;
+            DATA.ESPER_MIND = DATA.iEM_N;
             %                    if max(handles.raw_data.data(:,6)) < inputs.depthedit(1)
             %             hmsg = msgbox({'No Data within assigned depth limits','Expanding lower end of range.'},'Depth Range Adjustment');
             %             inputs.depthedit(1) = floor(max(DATA.datatype.data(:,6)))-100;
             %         end
-            
+
             % GET & DISPLAY QC ADJUSTMENTS IN TABLE
             handles.add_row.Enable = 'on'; % Don't activate until data loaded
             handles.remove_row.Enable = 'on';
@@ -972,9 +984,9 @@ clear d
                 DATA.tableDATA=[1 1 0 0]; % NO QC so add start row
             end
             set(gui.tbl,'Data',DATA.tableDATA)
-            
+
             inputs.rorq = 1; %start with raw data
-            DATA.paramrefnum = 1; %start with LIR
+            DATA.paramrefnum = 7; %start with ESPERmix
             % PLOT THE DATA
             inputs.SFLT = 1;
             set( gui.Fbutton,'String',fn);
@@ -985,18 +997,18 @@ clear d
             updateInterface()
             inputs.SFLT = 2;
             PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
-            
+
             if handles.info.NO3_sensor == 0 && handles.info.PH_sensor == 0
                 msg_str = 'No valid NO3 or pH data to correct';
                 mymsg = msgbox(msg_str,'WARNING!');
             end
-            
+
             disp([fn, ' HAS BEEN LOADED INTO SAGE']);
         else
             disp([fn, ' COULD NOT BE LOADED INTO SAGE']);
         end
         %                 set(gui.Window,'PaperPositionMode','auto')
-        %                 %print(gui.Window,'sageinterface.png','-dpng','-r600')
+        %                 print(gui.Window,'sageinterface.png','-dpng','-r600')
     end %end selectfloat
 %%
 %-------------------------------------------------------------------------%
@@ -1029,11 +1041,11 @@ clear d
             'MarkerEdgeColor','k');
         %         legend_cell = [legend_cell, 'first', 'last'];
         colorbar
-        
+
         %     track_legend.Orientation = 'Horizontal';
         set(gca,'ydir','normal');
         m_grid('linewidth',2,'tickdir','out','xaxislocation','top');
-        
+
         track_legend = legend([Hm1 Hm2],'first', 'last');
         track_legend.Location = 'northeastoutside';
     end
@@ -1056,7 +1068,7 @@ clear d
         PEtag = get(source,'tag');
         PE = get(source,'String');
         if (strcmp(PEtag,'profmin')) == 1
-            
+
             inputs.profedit(1,1) = str2double(PE);
         else
             inputs.profedit(1,2) = str2double(PE);
@@ -1074,23 +1086,23 @@ clear d
         % get plot type
         RB2 = gui.rb2; % plot type radio button handles
         tf  = logical(cell2mat({RB2.Value})); %find active one, 3x1 array
-        
+
         DEtag = get(source,'tag');
         DE = get(source,'String');
         if (strcmp(DEtag,'Pmin')) == 1
-%             if DATA.paramrefnum == 5  && str2double(DE)<1000 % Williams
-%                 mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_50to80S.');
-%                 inputs.depthedit(1,1) = inputs.depthedit(1,1);
-%                 inputs.Dedit(tf,1) = inputs.depthedit(1,1);
-%                 updateInterface()
-%                 return
-%             elseif DATA.paramrefnum == 6  && str2double(DE)<1000 % Williams
-%                 mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_30to80S.');
-%                 inputs.depthedit(1,1) = inputs.depthedit(1,1);
-%                 inputs.Dedit(tf,1) = inputs.depthedit(1,1);
-%                 updateInterface()
-%                 return
-%             end
+            %             if DATA.paramrefnum == 5  && str2double(DE)<1000 % Williams
+            %                 mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_50to80S.');
+            %                 inputs.depthedit(1,1) = inputs.depthedit(1,1);
+            %                 inputs.Dedit(tf,1) = inputs.depthedit(1,1);
+            %                 updateInterface()
+            %                 return
+            %             elseif DATA.paramrefnum == 6  && str2double(DE)<1000 % Williams
+            %                 mW50 = msgbox('WARNING: Depth selection must be >1000m for Williams_30to80S.');
+            %                 inputs.depthedit(1,1) = inputs.depthedit(1,1);
+            %                 inputs.Dedit(tf,1) = inputs.depthedit(1,1);
+            %                 updateInterface()
+            %                 return
+            %             end
             inputs.depthedit(1,1) = str2double(DE);
             inputs.Dedit(tf,1) = str2double(DE);
         else
@@ -1114,7 +1126,7 @@ clear d
         handles.GLODAP = d;
         % GET GLODAPv2 DATA & SET INDICES
         DATA.G = handles.GLODAP; % Could be empty if no crossover data
-        
+
         DATA.iGcyc = find(strcmp('float cycle',  DATA.G.hdr) == 1);
         DATA.iGSDN = find(strcmp('Date',  DATA.G.hdr)        == 1);
         DATA.iGP   = find(strcmp('G2pressure',DATA.G.hdr)    == 1);
@@ -1136,13 +1148,13 @@ clear d
         source.Value = 1; % select this
         RB2 = gui.rb2;
         set( RB2(RB2~=source), 'Value', 0 ); % unselect others
-        
+
         % get track data
         reftag = get(source,'tag');
         SC = str2num(reftag);
         %         SC = get(source,'Selection'); %tabs: (1)surf, (2)depth, (3)profile
         %Dedit = [0 30; 1480 1520; 0 1600]; % commented out, 11/19/18 by jp
-        
+
         inputs.depthedit = inputs.Dedit(SC,:);
         if get(gui.rb2(3),'Value')==1
             inputs.isprof = 1; %profile selected?
@@ -1173,12 +1185,14 @@ clear d
                 DATA.LnoO2IND = DATA.iLN_noO2;
                 DATA.ESPER_LIND = DATA.iEL_N;
                 DATA.ESPER_NIND = DATA.iEN_N;
+                DATA.ESPER_MIND = DATA.iEM_N;
                 set(gui.rb3(1),'Value',0,'Enable','on')
                 set(gui.rb3(2),'Value',0,'Enable','on')
                 set(gui.rb3(3),'Value',0,'Enable','on')
                 set(gui.rb3(4),'Value',0,'Enable','on')
                 set(gui.rb3(5),'Value',0,'Enable','on')
                 set(gui.rb3(6),'Value',0,'Enable','on')
+                set(gui.rb3(7),'Value',0,'Enable','on')
                 set(gui.calcadjs,'Enable','on')
                 set(gui.findchpts,'Enable','on')
                 set(gui.removerow,'Enable','on')
@@ -1194,12 +1208,14 @@ clear d
                 DATA.LnoO2IND = DATA.iLPH_noO2;
                 DATA.ESPER_LIND = DATA.iEL_PH;
                 DATA.ESPER_NIND = DATA.iEN_PH;
+                DATA.ESPER_MIND = DATA.iEM_PH;
                 set(gui.rb3(1),'Value',0,'Enable','on')
                 set(gui.rb3(2),'Value',0,'Enable','on')
                 set(gui.rb3(3),'Value',0,'Enable','on')
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','on')
                 set(gui.rb3(6),'Value',0,'Enable','on')
+                set(gui.rb3(7),'Value',0,'Enable','on')
                 set(gui.calcadjs,'Enable','on')
                 set(gui.findchpts,'Enable','on')
                 set(gui.removerow,'Enable','on')
@@ -1215,6 +1231,7 @@ clear d
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
                 set(gui.rb3(6),'Value',0,'Enable','off')
+                set(gui.rb3(7),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','off')
@@ -1229,6 +1246,7 @@ clear d
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
                 set(gui.rb3(6),'Value',0,'Enable','off')
+                set(gui.rb3(7),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','off')
@@ -1243,6 +1261,7 @@ clear d
                 set(gui.rb3(4),'Value',0,'Enable','off')
                 set(gui.rb3(5),'Value',0,'Enable','off')
                 set(gui.rb3(6),'Value',0,'Enable','off')
+                set(gui.rb3(7),'Value',0,'Enable','off')
                 set(gui.calcadjs,'Enable','off')
                 set(gui.findchpts,'Enable','off')
                 set(gui.removerow,'Enable','of')
@@ -1284,6 +1303,9 @@ clear d
         elseif (strcmp(reftag,'ESPER NN')) == 1
             DATA.reftemp = DATA.ESPER_NN.data;
             DATA.paramrefnum = 6;
+        elseif (strcmp(reftag,'ESPER MIX')) == 1
+            DATA.reftemp = DATA.ESPER_MIX.data;
+            DATA.paramrefnum = 7;
         elseif (strcmp(reftag,'WOA')) == 1
             DATA.reftemp = DATA.WOA_NO3;
             DATA.paramrefnum = 4;
@@ -1319,7 +1341,7 @@ clear d
         if strcmp(DATA.paramtag,'NO3') == 1 % propagate gain for NO3 if not 1
             newrow(2) = celldata(end,2);
         end
-        
+
         new_celldata = [celldata;newrow];
         %         new_ends = [new_celldata(2:end,1);inputs.cyEND];
         DATA.tableDATA=new_celldata;
@@ -1342,7 +1364,7 @@ clear d
         set(gui.tbl,'Data',new_celldata);
         DATA.tableDATA = new_celldata; % jp 12/11/18 otherwise caladj pulls old data
         handles.QCA.(DATA.paramtag) = DATA.tableDATA; % jp 12/18/18 otherwise parameter switch brings back old nodes
-        
+
         if inputs.isprof ~= 1 %not in profile mode update plot as nodes removed-jp
             PlotGuiData_GLT(dirs,gui,DATA,inputs,handles)
         end
@@ -1355,8 +1377,8 @@ clear d
             msgbox('YOU ARE IN "PROFILE" VIEW.  RETURN TO "DEEP" TO EDIT ADJS.')
             return
         end
-        
-        
+
+
         old_data = DATA.tableDATA;
         new_data = source.Data;
         if strcmp(DATA.paramtag,'NO3') == 1 % CHK if NO3 gain was adjusted
@@ -1368,7 +1390,14 @@ clear d
         %set(gui.tbl,'Data',source.Data)
         set(gui.tbl,'Data',new_data);
         DATA.tableDATA = new_data;
-        
+if DATA.tableDATA(1,1)~=1
+    handles.NOREPROCESS = 1;
+else
+    handles.NOREPROCESS = 0;
+end
+
+
+
         handles.QCA.(DATA.paramtag) = DATA.tableDATA;
         handles.new_qc_data = apply_GUIQC_corr_GLT(handles,DATA);
         if strcmp(DATA.paramtag,'O2') == 1 %O2 gain value was modified
@@ -1431,7 +1460,7 @@ clear d
         anoms = flt_data-ref_data;
         anoms_sdn = DATA.rawsub(:,1);
         anoms_cycle = DATA.rawsub(:,2); %carry along for proper indexing in case NaNs are removed on either end
-        
+
         xnan = isnan(anoms); %check for nans, ischange no-likey
         numnans = sum(xnan);
         if numnans ~=0
@@ -1439,16 +1468,16 @@ clear d
             Y = anoms(~xnan);
             [UA,Aidx,UAix] = unique(X);
             X2 = [UA,accumarray(UAix,Y,[],@mean)];
-            
+
             anoms(xnan) = interp1(X2(:,1),X2(:,2),anoms_sdn(xnan));
             disp('NaNs detected in record.  Interpolating for auto-chgpt detection...')
             disp('Interpolation complete.')
         end
-        
+
         if numnans/length(anoms) > .5
             msgbox('WARNING: OVER 50% OF THE DATA SERIES ARE NANS.  CONSIDER CALCULATING CHPTS MANUALLY.')
         else
-            
+
             %last check for nans.  If at end of record, interp won't replace
             %them
             XX = find(~isnan(anoms));
@@ -1490,7 +1519,7 @@ clear d
                 myresids = ref_data(XX) - qc_dat;
                 R = nansum((myresids.*myresids));
                 bic(1,j) = log(1./n*R + errorLim.^2) + K*log(n) / n;
-                
+
                 if bic(1,j) < DATA.BIC
                     N = Nchpts(1,j);
                     chPtCycles = allChPtCycles{j};
@@ -1501,7 +1530,7 @@ clear d
                     SSR = nansum(myresids.*myresids);
                 end
             end
-            
+
             tmprecord = DATA.datasub(XX,2);
             ischng_CHPTS = [tmprecord(1),chPtCycles, tmprecord(end)] ;
             %         ischng_CHPTS = [tmprecord(1),chPtCycles] ;
@@ -1522,13 +1551,14 @@ clear d
             %WARN USER!
             if ischng_CHPTS(1) ~=1
                 msgbox(['WARNING!! QC-MATRIX DOES NOT START AT CYCLE 1!'])
+                handles.NOREPROCESS = 1;
             end
             %check for NaNs
             [inanx,inany] = find(isnan(DATA.tableDATA));
             if ~isempty(inanx) %nans exist
                 msgbox('WARNING -- NANS EXIST IN QC MATRIX!')
             end
-            
+
         end
         updateInterface()
         if inputs.isprof == 1 %profile selected?
@@ -1564,73 +1594,85 @@ clear d
         %                         set(gui.Window,'PaperPositionMode','auto')
         %                 print(gui.Window,'sageinterface_raw.png','-dpng','-r600')
         %                 return
-        update_flag = 1;
-        USER       = getenv('USERNAME');
-        sdn        = datestr(now,'mm/dd/yy HH:MM:SS');
-        title_txt  = ' ';
-        user_input = inputdlg('QC adjustment comments',title_txt, ...
-            [1, length(title_txt)+150])  ;
-        
-        %IF NO COMMENT  OR CANCELED DON'T DO ANYTHING
-        if isempty(user_input) % Canceled or no info - either way stop process
-            msgbox('NO COMMENT ENTERED - PROCESSING UPDATE CANCELED');
+        if handles.NOREPROCESS == 1
+
+            opts.WindowStyle='modal';
+            opts.Interpreter='tex';
+            msg='\color{magenta}\fontsize{20} QC MATRIX DOES NOT START AT CYCLE 1!!!       GO BACK AND FIX THAT PLEASE.';
+            titl='Error Dialog Title';
+            errordlg(msg,titl,opts)
+
+
         else
-            set( gui.Fbutton,'String','Reprocessing float ...');
-            wrk_color = gui.Fbutton.BackgroundColor;
-            set(gui.Fbutton,'BackgroundColor','y');
-            mymsg = figure('Name','UPDATING QC AND REPROCESSING...', ...
-                'NumberTitle','off','units','pixels','position', ...
-                [500 500 200 50],'windowstyle','modal');
-            uicontrol('style','text','string','PLEASE WAIT.','units', ...
-                'pixels','position',[75 10 50 30]);
+
+            update_flag = 1;
+            USER       = getenv('USERNAME');
+            sdn        = datestr(now,'mm/dd/yy HH:MM:SS');
+            title_txt  = ' ';
+            user_input = inputdlg('QC adjustment comments',title_txt, ...
+                [1, length(title_txt)+150])  ;
+
+            %IF NO COMMENT  OR CANCELED DON'T DO ANYTHING
+            if isempty(user_input) % Canceled or no info - either way stop process
+                msgbox('NO COMMENT ENTERED - PROCESSING UPDATE CANCELED');
+            else
+                set( gui.Fbutton,'String','Reprocessing float ...');
+                wrk_color = gui.Fbutton.BackgroundColor;
+                set(gui.Fbutton,'BackgroundColor','y');
+                mymsg = figure('Name','UPDATING QC AND REPROCESSING...', ...
+                    'NumberTitle','off','units','pixels','position', ...
+                    [500 500 200 50],'windowstyle','modal');
+                uicontrol('style','text','string','PLEASE WAIT.','units', ...
+                    'pixels','position',[75 10 50 30]);
+                drawnow
+                % mymsg = msgbox('UPDATING QC AND REPROCESSING....');
+                handles.info.QCadj_log    = 'FloatQCList_log.txt';
+                fid = fopen([dirs.cal, handles.info.QCadj_log],'a');
+                fprintf(fid,'%s\t%s\t%s\t%s\t%s\r\n',handles.info.WMO_ID, ...
+                    handles.info.float_name, sdn, USER, user_input{1});
+                fclose(fid);
+                clear USER sdn title_txt user_input fid
+
+                % MAKE NEW QC ADJUSTMENT LIST
+                tf = NewFloatQCList_GLT(handles,dirs); % Make New QC list
+
+                % IF QCA.O2 empty this means no QClist file existed, but one now
+                % does from reprocessing so update structure - JP
+                if isempty(handles.QCA.O2) % file just made so you can add QCA in
+                    %QCA      = get_QCA(DATA.QCA_path,handles.info.float_name);
+                    QCA      = get_QCA(DATA.QCA_path);
+                    handles.QCA = QCA;
+                    if isempty(QCA.O2) || (~isempty(QCA.O2(1,2)) && QCA.O2(1,2) == 1) % gain equal 1 probably no adjustment yet
+                        mymsg = msgbox({'O2 gain  = 1' 'O2 may not be corrected yet!', ...
+                            'NO3 & pH corrections may not be valid'},'WARNING');
+                    end
+                end
+
+                % REPROCESS FLOATVIZ QC DATAFILE
+                if handles.info.Mprof == 0
+                    %if exist(dirs.msg) && exist(dirs.alt) && exist(dirs.msg_comb)
+                    if exist(dirs.msg,'dir') == 7
+                        tf = Process_GUI_float_GLT(handles,dirs);
+                    else
+                        %9/19/2018 NOTE: CURRENTLY Process_GUI_float_GLT ACCESSES MBARI FLOAT MSG FILES FOR FULL REPROCESS WITH UPDATED QC.
+                        %                THIS CAN BE MODIFIED TO POTENTIALLY JUST REPROCESS THE MBARI TXT FILE FOR EXTERNAL USERS.
+                        %				 COULD PROBABLY DO THIS WITH A SEPARATE CALL TO Make_Mprof_ODVQC, BUT WILL NEED TESTING, AND CHANGES
+                        %				 TO QC FILE NAME AND HEADERS (TO INDICATE QC UPDATE TESTING WAS DONE BY EXTERNAL USER.)
+                        %				 SCHEDULED FOR A POTENTIAL FUTURE UPDATE.  -TMAURER
+                        msgbox('NO ACCESS TO MSG FILES.  CANNOT REPROCESS.')
+                    end
+                elseif handles.info.Mprof == 1
+                    handles.info.float_name = ['ODV',handles.info.WMO_ID];
+                    tf = Make_Sprof_ODVQC(handles);
+                end
+
+            end
+            set( gui.Fbutton,'String',handles.info.file_name);
+            set(gui.Fbutton,'BackgroundColor',wrk_color);
             drawnow
-            % mymsg = msgbox('UPDATING QC AND REPROCESSING....');
-            handles.info.QCadj_log    = 'FloatQCList_log.txt';
-            fid = fopen([dirs.cal, handles.info.QCadj_log],'a');
-            fprintf(fid,'%s\t%s\t%s\t%s\t%s\r\n',handles.info.WMO_ID, ...
-                handles.info.float_name, sdn, USER, user_input{1});
-            fclose(fid);
-            clear USER sdn title_txt user_input fid
-            
-            % MAKE NEW QC ADJUSTMENT LIST
-            tf = NewFloatQCList_GLT(handles,dirs); % Make New QC list
-            
-            % IF QCA.O2 empty this means no QClist file existed, but one now
-            % does from reprocessing so update structure - JP
-            if isempty(handles.QCA.O2) % file just made so you can add QCA in
-                %QCA      = get_QCA(DATA.QCA_path,handles.info.float_name);
-                QCA      = get_QCA(DATA.QCA_path);
-                handles.QCA = QCA;
-                if isempty(QCA.O2) || (~isempty(QCA.O2(1,2)) && QCA.O2(1,2) == 1) % gain equal 1 probably no adjustment yet
-                    mymsg = msgbox({'O2 gain  = 1' 'O2 may not be corrected yet!', ...
-                        'NO3 & pH corrections may not be valid'},'WARNING');
-                end
+            if exist('mymsg','var') == 1 % 04/03/21 JP won't throw error id user closes 1st
+                close(mymsg)
             end
-            
-            % REPROCESS FLOATVIZ QC DATAFILE
-            if handles.info.Mprof == 0
-                %if exist(dirs.msg) && exist(dirs.alt) && exist(dirs.msg_comb)
-                if exist(dirs.msg,'dir') == 7
-                    tf = Process_GUI_float_GLT(handles,dirs);
-                else
-                    %9/19/2018 NOTE: CURRENTLY Process_GUI_float_GLT ACCESSES MBARI FLOAT MSG FILES FOR FULL REPROCESS WITH UPDATED QC.
-                    %                THIS CAN BE MODIFIED TO POTENTIALLY JUST REPROCESS THE MBARI TXT FILE FOR EXTERNAL USERS.
-                    %				 COULD PROBABLY DO THIS WITH A SEPARATE CALL TO Make_Mprof_ODVQC, BUT WILL NEED TESTING, AND CHANGES
-                    %				 TO QC FILE NAME AND HEADERS (TO INDICATE QC UPDATE TESTING WAS DONE BY EXTERNAL USER.)
-                    %				 SCHEDULED FOR A POTENTIAL FUTURE UPDATE.  -TMAURER
-                    msgbox('NO ACCESS TO MSG FILES.  CANNOT REPROCESS.')
-                end
-            elseif handles.info.Mprof == 1
-                handles.info.float_name = ['ODV',handles.info.WMO_ID];
-                tf = Make_Sprof_ODVQC(handles);
-            end
-            
-        end
-        set( gui.Fbutton,'String',handles.info.file_name);
-        set(gui.Fbutton,'BackgroundColor',wrk_color);
-        drawnow
-        if exist('mymsg','var') == 1 % 04/03/21 JP won't throw error id user closes 1st
-            close(mymsg)
         end
     end
 %-------------------------------------------------------------------------%

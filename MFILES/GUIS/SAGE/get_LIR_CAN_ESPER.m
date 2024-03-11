@@ -2,7 +2,7 @@ function [handles, DATA] = get_LIR_CAN_ESPER(dirs,handles,DATA)
 
 % function to calculate reference data for use in SAGE
 % 10/25/21 - TM, incorporated Carter et al (2021) ESPER routine calls
-% *****tm, in progress*****
+% 03/30/23 - TM, added ESPER-MIX
 
 % ********************************************************************
 % GET CANYON NEURAL NETWORK, LINR & LIPHER APROXIMATIONs FOR NO3 AND PH
@@ -134,12 +134,12 @@ DATA.L = handles.LIR ;
 if ~isempty(DATA.L)
     DATA.iLN   = find(strcmp('LIR_no3',DATA.L.hdr)     == 1);
     DATA.iLPH  = find(strcmp('LIR_ph',DATA.L.hdr)      == 1);
-    DATA.reftemp = DATA.L.data;
-    DATA.reftag = 'LIR'; %will be the default on SELECT FLOAT
+%     DATA.reftemp = DATA.L.data;
+%     DATA.reftag = 'LIR'; %will be the default on SELECT FLOAT
 else
     DATA.iLN   = [];
     DATA.iLPH  = [];
-    DATA.reftag = 'NOQC'; %No QC has been done.
+%     DATA.reftag = 'NOQC'; %No QC has been done.
 end
 
 DATA.LnoO2 = handles.LIRnoO2 ;
@@ -174,14 +174,21 @@ if handles.info.qc_flag == 1 && ~isempty(DATA.iO)
                 PredictorTypes, 'Equations', Equations, 'EstDates', dec_yr);
             ENN_NO3 = Estimates.nitrate;
             ENN_pH_OA_ON = Estimates.pH;
-            
+            % ESPER MIX NO3 & pH
+            [Estimates,~] = ESPER_Mixed(DesireVar, OutCoords, Measurements,...
+                PredictorTypes, 'Equations', Equations, 'EstDates', dec_yr);
+            EMIX_NO3 = Estimates.nitrate;
+            EMIX_pH_OA_ON = Estimates.pH;            
         handles.ESPER_LIR.hdr  = [d.hdr([1,2,6]),'ESPER_LIR_no3','ESPER_LIR_ph'];
         handles.ESPER_LIR.data = [d.data(:,[1,2,6]), ELIR_NO3, ELIR_pH_OA_ON];
         handles.ESPER_NN.hdr  = [d.hdr([1,2,6]),'ESPER_NN_no3','ESPER_NN_ph'];
         handles.ESPER_NN.data = [d.data(:,[1,2,6]), ENN_NO3, ENN_pH_OA_ON];
+		handles.ESPER_MIX.hdr  = [d.hdr([1,2,6]),'ESPER_MIX_no3','ESPER_MIX_ph'];
+        handles.ESPER_MIX.data = [d.data(:,[1,2,6]), EMIX_NO3, EMIX_pH_OA_ON];
 else
     handles.ESPER_LIR.data = [];
     handles.ESPER_NN.data = [];
+    handles.ESPER_MIX.data = [];
 end
  
 DATA.ESPER_LIR = handles.ESPER_LIR ;
@@ -201,6 +208,18 @@ if ~isempty(DATA.ESPER_NN)
 else
     DATA.iEN_N   = [];
     DATA.iEN_PH  = [];
+end
+DATA.ESPER_MIX = handles.ESPER_MIX ;
+if ~isempty(DATA.ESPER_MIX)
+    DATA.iEM_N   = find(strcmp('ESPER_MIX_no3',DATA.ESPER_MIX.hdr)     == 1);
+    DATA.iEM_PH  = find(strcmp('ESPER_MIX_ph',DATA.ESPER_MIX.hdr)      == 1);
+    DATA.reftemp = DATA.ESPER_MIX.data;
+    DATA.reftag = 'ESPER MIX'; %will be the default on SELECT FLOAT
+%    DATA.reftemp = DATA.ESPER_NN.data;
+else
+    DATA.iEM_N   = [];
+    DATA.iEM_PH  = [];
+    ATA.reftag = 'NOQC'; %No QC has been done.
 end
 %May want the O2 estimate calls at some point:
 %             % ESPER LIR O2 FROM  T & S

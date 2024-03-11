@@ -27,6 +27,8 @@ function new_qc_data = apply_GUIQC_corr_GLT(handles,DATA)
 %
 % Created 9/28/2016 by jp
 % Updated 07/13/2020 by TM, previously application of pH adjustments assumed reference temperature of 2degC, modified to use temperature at 1500m (if exist)
+% Updated 06/06/2023 by TM, small fix to prevent TCOR operation from
+%   failing when missing data on cycle 1.
 
 % GET SOME DATA AND INFORMATION
 raw_data  = handles.raw_data;
@@ -53,7 +55,10 @@ iCYC   = find(strcmp('Station',raw_data.hdr)  == 1);
 
 if qca(1,1) > min(raw_data.data(:,2)) % 1st QC step does not start at profile 1
     t1 = raw_data.data(:,2) < qca(1,1);
-    raw_data.data(t1,:) = NaN;
+    raw_data.data(t1,iPh) = NaN; % Don't NaN-out ALL columns, else TCOR calculation will barf.  Simple fix is to just NaN the chemical data.
+    raw_data.data(t1,iN) = NaN;
+    raw_data.data(t1,iO) = NaN;
+
 end
 
 % *************************************************************************
@@ -100,7 +105,7 @@ if strcmp(DATA.paramtag, 'PH')
     if length(TCOR)~=size(raw_data.data,1)
         disp('WARNING, TCOR VECTOR LENGTH MISMATCH!')
     end
-    
+    save('tanyatemp.mat','TCOR','raw_data')
     
     last_cor = 0;
     for i = 1:rr

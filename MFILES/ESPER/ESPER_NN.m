@@ -238,7 +238,7 @@ end
 % Checking for MeasUncerts input and setting default if not given
 a=strcmpi(varargin,'MeasUncerts');
 if any(a)
-    InputU=varargin{1,logical([0 a(1:end-1)])};
+    MeasUncerts=varargin{1,logical([0 a(1:end-1)])};
     UseDefaultUncertainties=false;
     % Sanity checking the MeasUncerts argument.  This also deals with the
     % possibility that the user has provided a single set of uncertainties for
@@ -249,7 +249,7 @@ if any(a)
         if ~(size(MeasUncerts,2)==size(PredictorMeasurements,2))
             error('There are different numbers of columns of input uncertainties and input measurements.')
         end
-        InputU=ones(size(PredictorMeasurements(:,1)))*InputU;              % Copying uncertainty estimates for all estimates if only singular values are provided
+        MeasUncerts=ones(size(PredictorMeasurements(:,1)))*MeasUncerts;              % Copying uncertainty estimates for all estimates if only singular values are provided
     end
     if ~(size(PredictorTypes,2)==size(PredictorMeasurements,2))            % Making sure all provided predictors are identified.
         error('The PredictorTypes input does not have the same number of columns as the PredictorMeasurements input.  This means it is unclear which measurement is in which column.');
@@ -307,7 +307,7 @@ C(C(:,1)<0,1)=rem(C(C(:,1)<0,1,1),360)+360;
 
 % Throwing an error if latitudes are out of the expected range.
 if max(abs(C(:,2)))>90
-    error('ESPER_NN: A latitude >90 degrees (N or S) has been detected.  Verify latitude is in the 2nd colum of the coordinate input.');
+    error('ESPER_NN: A latitude >90 degrees (N or S) has been detected.  Verify latitude is in the 2nd column of the coordinate input.');
 end
 
 % Preparing full PredictorMeasurement uncertainty grid
@@ -318,9 +318,9 @@ DefaultUAll(:,PredictorTypes)=PredictorMeasurements* ...
 DefaultUAll(:,ismember(PredictorTypes,[1 2]))=0.003;                       % Then setting additive default uncertainties for T and S.
 DefaultUAll=DefaultUAll(~NaNGridCoords,:);
 if UseDefaultUncertainties==false
-    InputUAll=zeros(size(PredictorMeasurements));
-    InputUAll(:,PredictorTypes)=InputU;
-    InputUAll=max(cat(3,InputUAll, DefaultUAll),[],3);                     % Overriding user provided uncertainties that are smaller than the (minimum) default uncertainties
+    InputUAll=zeros(size(PredictorMeasurements,1),6);                      % Initializing measurement uncertainties
+    InputUAll(:,PredictorTypes)=MeasUncerts;                               % Rearranging user inputs to be in expected order per input parameter key (above)
+    InputUAll=max(cat(3,InputUAll, DefaultUAll),[],3);                     % Overriding user provided uncertainties that are smaller than the (minimum) default uncertainties (see paper for rationale)
 else
     InputUAll=DefaultUAll;
 end    
@@ -339,6 +339,10 @@ MAll(:,PredictorTypes)=PredictorMeasurements(~NaNGridCoords,:);            % Reo
 UAll(:,PredictorTypes)=InputUAll(:,PredictorTypes);                        % This was already limited to viable coordinates for later use.
 EstDates=EstDates(~NaNGridCoords,1);                                       % Limiting Dates to viable coordinates as well
 YouHaveBeenWarnedCanth=false;                                              % Calculating Canth is slow, so this flag is used to make sure it only happens once.
+
+% Light input range checking
+if (any(MAll(:,1)<5) | any(MAll(:,1)>50)) && VerboseTF==true; disp('Warning: Salinities greater than 50 or less than 5 have been found. ESPER is not intended for seawater with these properties.'); end
+if (any(MAll(:,2)<-5) | any(MAll(:,2)>50)) && VerboseTF==true; disp('Warning: Temperatures greater than 50C or less than -5C have been found. ESPER is not intended for seawater with these properties. Note that ESPER expects temperatures in Centigrade.'); end
 
 % Beginning the iterations through the requested properties
 for PIter=1:p                                                              
@@ -417,7 +421,7 @@ for PIter=1:p
         M(:,4)=M(:,4)./densities;
         M(:,5)=M(:,5)./densities;
     end
-
+    
     % *********************************************************************
     % Beginning treatment of inputs and calculations
     if     Property==1; VName='TA';
@@ -468,9 +472,6 @@ for PIter=1:p
             end
         end
     end
-    % Averaging across neural network committee members
-    EstAtl=nanmean(EstAtl,3);
-    EstOther=nanmean(EstOther,3);
     % Averaging across neural network committee members
     EstAtl=nanmean(EstAtl,3);
     EstOther=nanmean(EstOther,3);
@@ -529,10 +530,11 @@ for PIter=1:p
             PertDiff(:,:,Pred)=Est-PertEst.(VName);
             DefaultPertDiff(:,:,Pred)=Est-DefaultPertEst.(VName);
         end
-        UncertEst=real(...
+        Unc=real(...
             (sum(PertDiff.^2,3)-sum(DefaultPertDiff.^2,3)+...              % Adding the user-provided uncertainties and subtracing the smaller default uncertainties
             EMLR.^2).^(1/2));                                              % Adding baseline methodological uncertainties
-        Uncertainties.(VName)=UncertEst;
+        UncertEst(~NaNGridCoords,:)=Unc;                                   % Inserting new estimates into the full array
+        Uncertainties.(VName)=UncertEst;                                   % Inserting estimates into output structure
     end
     
     % DIC and pH estimates are appropriate for 2002 by default.  Here we
@@ -551,13 +553,16 @@ for PIter=1:p
         elseif Property==3
             % Adjusting pH
             % Getting approximate inputs for CO2SYS
-            EstAlk=ESPER_NN(1,C,M(:,1),1,'Equations',16);                  % Approximating alkalinity for the calculation of impacts of anthropogenic CO2 on pH.  Using equation 16 because it is the only one that is viable regardless of inputs.
+            EstAlk=ESPER_NN(1,C,M(:,1),1,'Equations',16,'VerboseTF',false);                  % Approximating alkalinity for the calculation of impacts of anthropogenic CO2 on pH.  Using equation 16 because it is the only one that is viable regardless of inputs.
             EstSi=zeros(size(EstAlk)); EstP=zeros(size(EstAlk));           % Not very sensitive to these so using a poor estimate
             Pressure=sw_pres(C(:,3),C(:,2));
             for Eq=1:e
                 Out=CO2SYS_ESPER(EstAlk.TA,Est(:,Eq),1,3,M(:,1),Temperature,Temperature,Pressure,Pressure,EstSi,EstP,1,10,3);                    % Calculating DIC for estimated TA and pH
                 OutAdj=CO2SYS_ESPER(EstAlk.TA,Out(:,2)+Cant-Cant2002,1,2,M(:,1),Temperature,Temperature,Pressure,Pressure,EstSi,EstP,1,10,3);   % Recalculating pH after increasing DIC for additional Canth
-                Est(:,Eq)=OutAdj(:,18);
+                Est(:,Eq)=real(OutAdj(:,18));
+                if any(isnan(OutAdj(:,18)))
+                    disp('Warning: CO2SYS took >20 iterations to converge. The corresponding estimate(s) will be NaN. This typically happens when ESPER_NN is very poorly suited for estimating water with the given properties (e.g., very high or low salinity or estimates in marginal seas).');
+                end
             end
         end
     elseif (Property==2 || Property==3) && UserProvidedDates==false && YouHaveBeenWarnedCanth==0 && VerboseTF==true
