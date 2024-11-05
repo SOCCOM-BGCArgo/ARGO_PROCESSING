@@ -27,10 +27,14 @@ if handles.info.qc_flag == 1 && ~isempty(DATA.iO)
     %                 set(handles.recumpute_text, ...
     %                     'String','LOADING CANYON NEURAL NETWORK NO3  & PH ESTIMATES ....')
     %                 drawnow
-    canyonB_no3 = CANYONB(d.data(:,1),d.data(:,4),d.data(:,3), ...
-        d.data(:,6),d.data(:,8),d.data(:,10),O2data,{'NO3'});
-    canyonB_ph = CANYONB(d.data(:,1),d.data(:,4),d.data(:,3), ...
-        d.data(:,6),d.data(:,8),d.data(:,10),O2data,{'pH'});
+    iSDN   = find(strcmp('SDN',d.hdr)     == 1);
+    iLAT   = find(strcmp('Lat [°N]',d.hdr)     == 1);
+    iLON   = find(strcmp('Lon [°E]',d.hdr)     == 1);
+
+    canyonB_no3 = CANYONB(d.data(:,iSDN),d.data(:,iLAT),d.data(:,iLON), ...
+        d.data(:,DATA.iP),d.data(:,DATA.iT),d.data(:,DATA.iS),O2data,{'NO3'});
+    canyonB_ph = CANYONB(d.data(:,iSDN),d.data(:,iLAT),d.data(:,iLON), ...
+        d.data(:,DATA.iP),d.data(:,DATA.iT),d.data(:,DATA.iS),O2data,{'pH'});
     %%%Tanya Maurer, June26,2020.  Tested this adjustment to canyon-b
     %%%briefly on 1 float and was VERY MINIMAL! (ie 0.05 millipH)  This
     %%%was at depth, for 1 float.  We should still apply it, and likely
@@ -44,10 +48,10 @@ if handles.info.qc_flag == 1 && ~isempty(DATA.iO)
     canyonB_ph.pH = CBspec;
     
     
-    canyon_no3 = CANYON_jp(dirs,d.data(:,1),d.data(:,4),d.data(:,3), ...
-        d.data(:,6),d.data(:,8),d.data(:,10),O2data,'NO3');
-    canyon_ph = CANYON_jp(dirs,d.data(:,1),d.data(:,4),d.data(:,3), ...
-        d.data(:,6),d.data(:,8),d.data(:,10),O2data,'PH');
+    canyon_no3 = CANYON_jp(dirs,d.data(:,iSDN),d.data(:,iLAT),d.data(:,iLON), ...
+        d.data(:,DATA.iP),d.data(:,DATA.iT),d.data(:,DATA.iS),O2data,'NO3');
+    canyon_ph = CANYON_jp(dirs,d.data(:,iSDN),d.data(:,iLAT),d.data(:,iLON), ...
+        d.data(:,DATA.iP),d.data(:,DATA.iT),d.data(:,DATA.iS),O2data,'PH');
     handles.canyon.hdr  = [d.hdr([1,2,6]),'canyon_no3','canyon_ph','canyonB_no3','canyonB_ph'];
     handles.canyon.data = [d.data(:,[1,2,6]), canyon_no3, canyon_ph canyonB_no3.NO3 canyonB_ph.pH];
 else
@@ -79,8 +83,8 @@ if handles.info.qc_flag == 1
     LXXX_pos = [d.data(:,3), d.data(:,4), d.data(:,DATA.iZ)]; % lon,lat,Z
     
     MeasIDVec    = [1 7]; % PSAL, TEMP, ,
-    Measurements = [d.data(:,10), d.data(:,8)];
-    
+    Measurements = [d.data(:,DATA.iS), d.data(:,DATA.iT)];
+
     Equations    = 8; % S, Theta
     
     [NO3_Est_noO2, N_Uncert_Est, MinUncert_Equ] = LINR(LXXX_pos, ...
@@ -102,7 +106,7 @@ if handles.info.qc_flag == 1
         %         Measurements = [d.data(:,10), ptemp, d.data(:,iO)];
         
         MeasIDVec    = [1 6 7]; % PSAL, DOXY_ADJ, TEMP, ,
-        Measurements = [d.data(:,10), O2data, d.data(:,8)];
+        Measurements = [d.data(:,DATA.iS), O2data, d.data(:,DATA.iT)];
         
         Equations    = 7; % S, Theta, AOU
         

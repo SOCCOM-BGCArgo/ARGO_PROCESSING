@@ -71,6 +71,8 @@ for i = 1:length(WMOs)
     ftp_target = 'ftp.ifremer.fr';
     disp(['CONNECTING TO FTP TARGET AT ',ftp_target,'...'])
     disp('-----------------------------------------------')
+	%Different MATLAB ftp call (depends on your MATLAB version.  If you are having trouble, try this syntax below, and comment out lines 81-83 that call f as a struct)
+	%f = ftp(ftp_target,'anonymous','tmaurer@mbari.org','LocalDataConnectionMethod','passive');
     f = ftp(ftp_target); 
     binary(f)
 

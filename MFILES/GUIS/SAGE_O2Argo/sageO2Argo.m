@@ -413,8 +413,6 @@ function gui = createInterface( ~ )
         drawnow
         set( gui.Fbutton,'String',inputs.floatID);
         DATA = getall_floatdata_sO2Argo(thedatadir,inputs.floatID);
-%         save('floatDATA.mat','DATA')
-%         pause
         set(gui.Mbutton,'Enable','on');
         %inputs.depthedit = [1480 1520]; %default pressure range (deep)
         inputs.depthedit = [0 30]; %default pressure range (deep)
@@ -474,7 +472,7 @@ function gui = createInterface( ~ )
             DATA.rawGAINS_WOA{1} = DATA.WOAsurf'./DATA.RAWorQCwoa(:,2);
         end
         DATA.rawGAINS_WOA{3} = [];
-%         DATA.O2air{1}
+
         if ~isempty(DATA.O2air{1}) && sum(~isnan(DATA.O2air{1}{1}(:,10)))>0 %AIRCAL EXISTS SO USE NCEP OR ERA
             [~,inputs.intersect_cycles,~] = intersect(DATA.track(:,2),DATA.O2air{1}{1}(:,2));
             %______________________________________________________________
@@ -732,6 +730,7 @@ function gui = createInterface( ~ )
             m_proj('stereographic','latitude',-90,'radius',60,'rotangle',45);
         end
         m_tbase('contourf','edgecolor','none');
+        legend_cell = {};
         hold on
         m_plot(track(:,3),track(:,4),'ko-', 'MarkerSize',3)%     xlim(lon_limits);
         title(['FLOAT ',inputs.floatID],'FontSize', 16)
@@ -740,12 +739,14 @@ function gui = createInterface( ~ )
             'MarkerEdgeColor','k');
         Hm2 = m_plot(track(end,3),track(end,4),'o', 'MarkerSize',10, 'MarkerFaceColor','r', ...
             'MarkerEdgeColor','k');
+        legend_cell = [legend_cell, 'first', 'last'];
         colorbar
-        m_grid('linewidth',2,'tickdir','out','xaxislocation','top');
-		hold off
-        track_legend = legend([Hm1 Hm2],'first','last');
+
+        track_legend = legend([Hm1 Hm2],legend_cell);
+    %     track_legend.Orientation = 'Horizontal';
         track_legend.Location = 'northeastoutside';
-        %set(gca,'ydir','normal');
+        set(gca,'ydir','normal');
+        m_grid('linewidth',2,'tickdir','out','xaxislocation','top');
     end
 
 %-------------------------------------------------------------------------%
@@ -805,7 +806,7 @@ function gui = createInterface( ~ )
        GDkm = get(source,'String');
        inputs.GLDPkm = str2double(GDkm);
        updateInterface()
-       if inputs.isprof == 1
+       if gui.TP.Selection == 3
            redraw_PROF_sageO2Argo(dirs,gui,DATA,inputs);
        end
    end

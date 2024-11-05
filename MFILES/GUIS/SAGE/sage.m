@@ -511,7 +511,8 @@ clear d
             inputs.y_label = DATA.datatype.hdr{DATA.IND};
             DATA.DIFF_X = DATA.datatype.data(:,DATA.IND) - DATA.refdata;
         else
-            inputs.y_label = DATA.datatype.hdr{DATA.IND};
+%             inputs.y_label = DATA.datatype.hdr{DATA.IND};
+            inputs.y_label = ' ';
             DATA.DIFF_X = DATA.refdata .* NaN;
         end
 
@@ -909,6 +910,7 @@ clear d
 
                 % data file & data exist for float
                 if ~isempty(bottle_fname) && stn ~= -999 && cst ~= -999
+                    disp([dirs.bottle,bottle_fname])
                     d = get_shipboard_data([dirs.bottle,bottle_fname]);
                     %                     save('tanyatemp.mat','DATA','d','handles','bottle_fname','dirs')
                     DATA.iStn  = find(strcmp(d.hdr,'STNNBR') == 1);
@@ -1013,41 +1015,65 @@ clear d
 %%
 %-------------------------------------------------------------------------%
     function on_showmap( ~,~ )
+
         track = DATA.track; % float track
         tnan = track(:,3) == 1e-10;
         track(tnan,3:4) = NaN;
         lon_limits = [min(track(:,3))-10 max(track(:,3))+10];
         lat_limits = [min(track(:,4))-6 max(track(:,4))+6];
-        handles.float_track = figure;
-        set(gcf,'Position', [350 50 860 620]);
-        DATA.CMAP = load('SOCCOM_NCP_cmap.mat');
-        DATA.CMAP = DATA.CMAP.cmap;
-        colormap(handles.float_track,DATA.CMAP);
-        if max(track(:,4)) > -30 % Don't use stereographic projection
-            m_proj('lambert','lon',lon_limits,'lat',lat_limits);
-        else
-            m_proj('stereographic','latitude',-90,'radius',60,'rotangle',45);
-        end
-        %m_tbase('contourf','edgecolor','none');
-        m_etopo2('contourf','edgecolor','none');
-        %         legend_cell = {};
-        hold on
-        m_plot(track(:,3),track(:,4),'ko-', 'MarkerSize',3)%     xlim(lon_limits);
-        title(['FLOAT ',handles.info.WMO_ID,' (',handles.info.float_name,')'],'FontSize', 16)
-        hold on
-        Hm1 = m_plot(track(1,3),track(1,4),'o', 'MarkerSize',10, 'MarkerFaceColor','g', ...
-            'MarkerEdgeColor','k');
-        Hm2 = m_plot(track(end,3),track(end,4),'o', 'MarkerSize',10, 'MarkerFaceColor','r', ...
-            'MarkerEdgeColor','k');
-        %         legend_cell = [legend_cell, 'first', 'last'];
-        colorbar
+        
+        %================ NEW MAP CODE =====================
+        figure;
+        gax = geoaxes; % initiate the geographic axes
+        geobasemap(gax, 'landcover'); % several options to choose from
+        geoplot(gax, track(:,4), track(:,3),'k.-','MarkerSize',10); % lat, lon
+        hold(gax,'on')
+        Hm1 = geoplot(gax, track(1,4), track(1,3),'ko','MarkerSize',7,...
+            'MarkerFaceColor', 'g');
+        Hm2 = geoplot(gax, track(end,4), track(end,3),'ko','MarkerSize',7,...
+            'MarkerFaceColor', 'r');
+        hold(gax,'off')
+        gax.Title.String = ['FLOAT ',handles.info.WMO_ID,' (',handles.info.float_name,')'];%app.finfo.wmo;
+        gax.FontSize = 14;
+        %================ END NEW MAP CODE =====================
 
-        %     track_legend.Orientation = 'Horizontal';
-        set(gca,'ydir','normal');
-        m_grid('linewidth',2,'tickdir','out','xaxislocation','top');
+        %================ ORIGINAL SAGE CODE =====================
+        % track = DATA.track; % float track
+        % tnan = track(:,3) == 1e-10;
+        % track(tnan,3:4) = NaN;
+        % lon_limits = [min(track(:,3))-10 max(track(:,3))+10];
+        % lat_limits = [min(track(:,4))-6 max(track(:,4))+6];
+        % handles.float_track = figure;
+        % set(gcf,'Position', [350 50 860 620]);
+        % DATA.CMAP = load('SOCCOM_NCP_cmap.mat');
+        % DATA.CMAP = DATA.CMAP.cmap;
+        % colormap(handles.float_track,DATA.CMAP);
+        % if max(track(:,4)) > -30 % Don't use stereographic projection
+        %     m_proj('lambert','lon',lon_limits,'lat',lat_limits);
+        % else
+        %     m_proj('stereographic','latitude',-90,'radius',60,'rotangle',45);
+        % end
+        % %m_tbase('contourf','edgecolor','none');
+        % m_etopo2('contourf','edgecolor','none');
+        % %         legend_cell = {};
+        % hold on
+        % m_plot(track(:,3),track(:,4),'ko-', 'MarkerSize',3)%     xlim(lon_limits);
+        % title(['FLOAT ',handles.info.WMO_ID,' (',handles.info.float_name,')'],'FontSize', 16)
+        % hold on
+        % Hm1 = m_plot(track(1,3),track(1,4),'o', 'MarkerSize',10, 'MarkerFaceColor','g', ...
+        %     'MarkerEdgeColor','k');
+        % Hm2 = m_plot(track(end,3),track(end,4),'o', 'MarkerSize',10, 'MarkerFaceColor','r', ...
+        %     'MarkerEdgeColor','k');
+        % %         legend_cell = [legend_cell, 'first', 'last'];
+        % colorbar
+        % 
+        % %     track_legend.Orientation = 'Horizontal';
+        % set(gca,'ydir','normal');
+        % m_grid('linewidth',2,'tickdir','out','xaxislocation','top');
 
-        track_legend = legend([Hm1 Hm2],'first', 'last');
+        track_legend = legend([Hm1 Hm2],'First', 'Last');
         track_legend.Location = 'northeastoutside';
+        %================ END ORIGINAL SAGE CODE =====================
     end
 
 %-------------------------------------------------------------------------%
