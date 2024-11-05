@@ -31,6 +31,13 @@ function data = parse_NAVISmsg4ARGO(msg_file)
 %    01/16/23 JP - re-vamp of original code. Got rid of CSAE / SWITCH blocks.
 %                  Now processes OCR data & deals with cp data in seperate
 %                  cp file, SorfaceOBS & in-air sequence flavors extracted
+%    04/29/24 JP - update to account an additional O2AirCal: line variant.
+%                  wn14572 is a no heeader case with an additional col for
+%                  unix time
+%    06/06/24 JP - minor tweak to gps extraction to account for  bogus gps
+%                  fix line in 1115.125.msg (5th gps fix cycle):
+%                  lon      lat mm/dd/yyyy hhmmss nsat
+%                  Fix: -143.2526 -39.2285 08/04/2022 232# GPS fix obtained in 8 seconds.
 
 
 % TESTING
@@ -42,6 +49,9 @@ function data = parse_NAVISmsg4ARGO(msg_file)
 %msg_file = 'C:\temp\1512.000.msg';
 %msg_file = 'C:\temp\0062.003.msg';
 %msg_file = 'C:\temp\1341.002.msg'; % 3XO2 NOT WORKING YET
+%msg_file = 'C:\temp\1120.079.msg';
+%msg_file = 'C:\temp\1542.003.msg';
+%msg_file = 'C:\temp\1115.125.msg';
 
 
 
@@ -112,6 +122,7 @@ if tline == -1 % Go to next i
 end
 
 tf_o2_air = 0;
+tf_o2_air_sz =[]; % use to figure out parsing format
 
 while ischar(tline) % loop through & find header lines & meta data
 
@@ -173,10 +184,15 @@ while ischar(tline) % loop through & find header lines & meta data
         if regexp(tline,'^Fix:','once')
             gps = sscanf(tline,'%*s %f %f',2); % lon lat
             if ~isempty(gps)
-                gps_sdn = char(sscanf(tline,'%*s %*f %*f %17c',1))'; %[mm/dd/yyyy; hhmmss]
-                if size(gps_sdn,2) == 17
-                    Gsdn = datenum(gps_sdn,'mm/dd/yyyy HHMMSS');
+                dstr_pat = '\d{2}/\d{2}/\d{4}\s\d{6}'; % mm/dd/yyyy hhmmss
+                gps_sdn = regexp(tline, dstr_pat, 'match', 'once');
+                if ~isempty(gps_sdn)
+                    Gsdn     = datenum(gps_sdn,'mm/dd/yyyy HHMMSS');
                     data.gps = [data.gps; [Gsdn gps']];
+                    % gps_sdn = char(sscanf(tline,'%*s %*f %*f %17c',1))'; %[mm/dd/yyyy; hhmmss]
+                    % if size(gps_sdn,2) == 17
+                    %     Gsdn = datenum(gps_sdn,'mm/dd/yyyy HHMMSS');
+                    %     data.gps = [data.gps; [Gsdn gps']];
                 else
                     data.gps = [data.gps; [data.sdn NaN NaN]];
                 end
@@ -189,6 +205,8 @@ while ischar(tline) % loop through & find header lines & meta data
             % No header provided for some air cal sequences so use a
             % counter as a flag (ie 0061, 0062
             tf_o2_air = tf_o2_air +1;
+            % jp 04/29/24 use to count data cols for dif flavors
+            tf_o2_air_sz = [tf_o2_air_sz; size(regexp(tline,'\s+'),2)];
         end
 
      % *****************  FIND PARK HEADER LINE  *********************
@@ -244,10 +262,14 @@ if isempty(data.gps) % NO GPS FIX FOUND SET DUMMY ARRAY WITH PROFILE SDN
     data.gps = [data.sdn NaN NaN];
 end
 
-% CREATE AIR CAL SEQUENCE HEADER IF NEED BE
+% CREATE AIR CAL SEQUENCE HEADER IF NEED BE (Is IT MISSING IN MSG?)
 if isempty(data.aircal_hdr) && sum(tf_o2_air) > 0 % i.e. 0061, 0062
     data.aircal_hdr = {'Date' 'pnm' 'P' 'O2ph' 'O2T'}; % no hdr provided
-    air_format = ['%*s%s%s%s%s',repmat('%f',1,size(data.aircal_hdr,2)-1)];
+    if mode(tf_o2_air_sz,1) == 8
+        air_format = ['%*s%s%s%s%s',repmat('%f',1,size(data.aircal_hdr,2)-1)];
+    elseif mode(tf_o2_air_sz,1) == 9 % ie wn1472 w/ SBE83 has unix time too
+        air_format = ['%*s%s%s%s%s%*f',repmat('%f',1,size(data.aircal_hdr,2)-1)];
+    end
 end
 
 frewind(fid); % go back to top of file (prep for data extraction)

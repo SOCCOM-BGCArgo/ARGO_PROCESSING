@@ -1,4 +1,4 @@
-function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
+function [tf_float,FULLreprocess] = Process_NAVIS_float(MBARI_ID_str, dirs, update_str, ISDEAD)
 % % ************************************************************************
 % PURPOSE:
 %    This function processes raw message files for a given NAVIS float
@@ -38,9 +38,14 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 %   dirs.temp      = path to temporary working dir
 %   dirs.FV        = path to FloatViz files served to web
 %   dirs.QCadj     = path to QC adjustment list for all floats
+%   ISDEAD         = binary, 1 = inactive (0 = active).  carrying along
+%                       because we don't need to trigger a reprocess on old floats that are no
+%                       longer reporting (but have partials coming in that are divisible by 5,
+%                       but no data to process)
 %
 % OUTPUTS:
 %   tf_float =  1 if processing was a success, 0 otherwise
+%   FULLreprocess = 1 if every 5th cycle (trigger a full reprocess in  Loop_Argo_float)
 %
 %   Files are saved to WMO dir. This output is intended for input to ARGO
 %   NetCDF files via Annie Wong at Univ. of washington and for MBARI use
@@ -130,6 +135,11 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 % 01/16/23 JP, Implemeted code to process NAVIS Nautilus with OCR & cp file
 % 01/18/24 TM, Further modification for NAVIS Nautilus incorporation (carry parsing through to final ODV file; however, surfaceobs and park data code requrie further vetting/finalization).
 % 02/08/24 TM, Modification to calls to Calc_SBE63_O2 to better differentiate cases where optode temperature are in volts vs degC.  Also finished verifying code mods for in-air and park depth processing for Navis Nautilus case.
+% 03/12/24 TM, Added capability for triggering a full reprocess on everyfifth cycle (this is stored as a logical output, to be assessed in Loop_Argo_float)
+% 4/30/24, TM, added INFO.ice_flag (T/F) for ice detection logical
+% 5/14/24, TM, added CHLA_FLUORESCENCE variable (per Argo documentation) to LR output
+% 6/10/24 TM, fixed some old hard-wired indices that were mucking up the
+%           sirocco flag grab (post addition of the ice column)!
 % ************************************************************************
 
 % FOR TESTING
@@ -148,6 +158,8 @@ function tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str)
 % SET FORMATS, DEFAULT DIRS, PREDIMENSION STRUCTURE, BOOKKEEPING
 % ************************************************************************
 fclose all; % CLOSE ANY OPEN FILES
+FULLreprocess = 0;  %This gets changed to '1' for every 5th cycle coming in in 'update' mode.  TM 2/12/24
+springchicken = 30;
 tf_float.status       = 0; % Flag for float processing success 0 = no good
 tf_float.new_messages = {};
 tf_float.bad_messages = {};
@@ -303,7 +315,7 @@ RCR.OCR412 = [-1 2.9];
 RCR.OCR443 = [-1 10]; % TM placeholder for now!!! 5/31/23
 RCR.OCR490 = [-1 3.4];
 RCR.OCRPAR = [-1 4672];
-
+RCR.OCR555 = [-1 100]; % crude placeholder for now
 %UW_ID_str = regexp(MBARI_ID_str,'^\d+', 'once','match');
 crazy_val = 99990;
 
@@ -443,6 +455,15 @@ if strcmp(update_str, 'update') && last_cast > 0
         mlist.list = mlist.list(t1|t2,:);
     end
 
+        timechk = cell2mat(mlist.list(:,end)); %timestamp of receipt for 'new' files identified
+%     springchicken = 30;
+    xxtimechk = find(timechk>datenum(now-springchicken)); %find timestamps for 'new' files that are less than 'springchicken' days old
+    if ISDEAD && isempty(xxtimechk) % Remember, we are still in UPDATE MODE ONLY!  None of this is relevant for an 'all' full reprocess of a dead float.
+        FULLreprocess = 0;
+        disp(['Stale files found for dead float ',MBARI_ID_str,'! Continuing on to next float...'])
+        return
+    end
+
     if ~isempty(ilist.list)
         tmp   = (regexp(ilist.list(:,1),'(?<=\d+\.)\d{3}(?=\.isus)','match','once'));
         casts = str2double(tmp);
@@ -574,6 +595,13 @@ if rr > 0
             new_msgs{ct} = str;
             tf_float.status = 1;
         end
+        REMAINDER = rem(tmp_cycle,5); % If the remainder is 0 then store a flag to trigger a full reprocess in loop-argo-float (but only if in update mode!!).
+        if REMAINDER == 0 && strcmp(update_str, 'update')
+            if mdir(m_ct).datenum > now-springchicken %new files
+                FULLreprocess = 1;
+                %         return %if we are doing a full reprocess...then don't need to progress further as the full float will get reprocessed in the next line of Loop_Argo_float (so break out here).
+            end
+        end
     end
     tf_float.new_messages = new_msgs(1:ct); % list of new msgs from float
     %clear mdir rr new_msgs str
@@ -612,26 +640,14 @@ for msg_ct = 1:size(msg_list,1)
     LROptTvolt  = any(strcmp(d.lr_hdr,'O2tV')); %1 if found otherwise zero, jp 02/09/24
     HROptTvolt  = any(strcmp(d.hr_hdr,'O2tV')); %1 if found otherwise zero, jp 02/09/24
     AIROptTvolt = any(strcmp( d.aircal_hdr,'O2tV')); %1 if found otherwise zero, jp 02/09/24
-
-
-% 	LROptTvolt = 0;
-%     HROptTvolt = 0;
-% 	AIROptTvolt = 0;
-% 
-% 	LRTv = strfind(d.lr_hdr,'O2tV'); Index = find(not(cellfun('isempty',LRTv)));
-%     if ~isempty(Index)
-%     	LROptTvolt = 1;
-%     end
-%     HRTv = strfind(d.lr_hdr,'O2tV'); Index = find(not(cellfun('isempty',HRTv)));
-%     if ~isempty(Index)
-%     	HROptTvolt = 1;
-%     end
-%     if isfield(d,'aircal_hdr')
-%         AIRTv = strfind(d.aircal_hdr,'O2tV'); Index = find(not(cellfun('isempty',AIRTv)));
-%         if ~isempty(Index)
-%             AIROptTvolt = 1;
-%         end
-%     end
+    
+    % Add ice detection true/false
+    INFO.ice_flag = 0;
+    if isfield(d,'ice_flag')
+        if d.ice_flag
+            INFO.ice_flag = 1;
+        end
+    end
 	
     if ~isempty(d.lr_hdr)
         if strcmp(d.lr_hdr{7},'Mch1') %Quick hack to get around different column headers in msg file for flbb!!
@@ -1481,10 +1497,19 @@ for msg_ct = 1:size(msg_list,1)
         LR.CHLA_ADJUSTED        = fill0 + fv.bio;
         LR.CHLA_ADJUSTED_QC     = fill0 + fv.QC;
         LR.CHLA_ADJUSTED_ERROR  = fill0 + fv.bio;
+		LR.CHLA_FLUORESCENCE                 = fill0 + fv.bio;
+        LR.CHLA_FLUORESCENCE_QC              = fill0 + fv.QC;
+        LR.CHLA_FLUORESCENCE_ADJUSTED        = fill0 + fv.bio;
+        LR.CHLA_FLUORESCENCE_ADJUSTED_QC     = fill0 + fv.QC;
+        LR.CHLA_FLUORESCENCE_ADJUSTED_ERROR  = fill0 + fv.bio;
         INFO.CHLA_SCI_CAL_EQU   = 'not applicable';
         INFO.CHLA_SCI_CAL_COEF  = 'not applicable';
         INFO.CHLA_SCI_CAL_COM   = 'not applicable';
         INFO.CHLA_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
+        INFO.CHLA_FLUORESCENCE_SCI_CAL_EQU   = 'not applicable';
+        INFO.CHLA_FLUORESCENCE_SCI_CAL_COEF  = 'not applicable';
+        INFO.CHLA_FLUORESCENCE_SCI_CAL_COM   = 'not applicable';
+        INFO.CHLA_FLUORESCENCE_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
 
         HR.FLUORESCENCE_CHLA    = fill0_hr + fv.bio;
         HR.FLUORESCENCE_CHLA_QC = fill0_hr + fv.QC;
@@ -1493,6 +1518,11 @@ for msg_ct = 1:size(msg_list,1)
         HR.CHLA_ADJUSTED        = fill0_hr + fv.bio;
         HR.CHLA_ADJUSTED_QC     = fill0_hr + fv.QC;
         HR.CHLA_ADJUSTED_ERROR  = fill0_hr + fv.bio;
+		HR.CHLA_FLUORESCENCE                 = fill0_hr + fv.bio;
+        HR.CHLA_FLUORESCENCE_QC              = fill0_hr + fv.QC;
+        HR.CHLA_FLUORESCENCE_ADJUSTED        = fill0_hr + fv.bio;
+        HR.CHLA_FLUORESCENCE_ADJUSTED_QC     = fill0_hr + fv.QC;
+        HR.CHLA_FLUORESCENCE_ADJUSTED_ERROR  = fill0_hr + fv.bio;
 
         lr_nan = isnan(lr_d(:,iChl)); % NaN's in data if any
         LR.FLUORESCENCE_CHLA(~lr_nan)    = lr_d(~lr_nan,iChl);
@@ -1509,11 +1539,17 @@ for msg_ct = 1:size(msg_list,1)
             LR.CHLA(~lr_nan) = (lr_d(~lr_nan,iChl) - cal.CHL.ChlDC) .* ...
                 cal.CHL.ChlScale;
             LR.CHLA_QC(~lr_nan) =  3; % 3 do not use w/o adjusting
+			LR.CHLA_FLUORESCENCE(~lr_nan) = (lr_d(~lr_nan,iChl) - cal.CHL.ChlDC) .* ...
+                cal.CHL.ChlScale;
+            LR.CHLA_FLUORESCENCE_QC(~lr_nan) =  3; % 3 do not use w/o adjusting
 
             if r_hr > 0
                 HR.CHLA(~hr_nan) = (hr_d(~hr_nan,iChl) - cal.CHL.ChlDC) ...
                     .* cal.CHL.ChlScale;
                 HR.CHLA_QC(~hr_nan) =  3; % 3 do not use w/o adjusting
+				HR.CHLA_FLUORESCENCE(~hr_nan) = (hr_d(~hr_nan,iChl) - cal.CHL.ChlDC) ...
+                    .* cal.CHL.ChlScale;
+                HR.CHLA_FLUORESCENCE_QC(~hr_nan) =  3; % 3 do not use w/o adjusting
             end
 
             % ADJUSTED DATA BASED ON ADMT18 CONCENSUS -WILL BE UPDATED
@@ -1544,11 +1580,20 @@ for msg_ct = 1:size(msg_list,1)
             LR.CHLA_ADJUSTED_QC(~lr_nan) =  1;
             LR.CHLA_ADJUSTED_ERROR(~lr_nan) = ...
                 abs(LR.CHLA_ADJUSTED(~lr_nan) * 2);
+				
+			LR.CHLA_FLUORESCENCE_ADJUSTED(~lr_nan) = (lr_d(~lr_nan,iChl) - ...
+                CHL_DC) .* cal.CHL.ChlScale;
+            LR.CHLA_FLUORESCENCE_ADJUSTED_QC(~lr_nan) =  1;
+
 
             if r_hr > 0 % ONLY NEED TO DO NPQ ON HR DATA, LR DEEP ONLY
                 HR.CHLA_ADJUSTED(~hr_nan) = (hr_d(~hr_nan,iChl) - ...
                     CHL_DC) .* cal.CHL.ChlScale ./ 2;
                 HR.CHLA_ADJUSTED_QC(~hr_nan) =  1;
+				
+				HR.CHLA_FLUORESCENCE_ADJUSTED(~hr_nan) = (hr_d(~hr_nan,iChl) - ...
+                    CHL_DC) .* cal.CHL.ChlScale;
+                HR.CHLA_FLUORESCENCE_ADJUSTED_QC(~hr_nan) =  1;
 
                 % NPQ NEXT
                 NPQ_CHL = HR.CHLA_ADJUSTED;
@@ -1579,6 +1624,10 @@ for msg_ct = 1:size(msg_list,1)
             INFO.CHLA_SCI_CAL_COEF = 'A=2';
             INFO.CHLA_SCI_CAL_COM  =['A is best estimate ', ...
                 'from Roesler et al., 2017, doi: 10.1002/lom3.10185'];
+				
+			INFO.CHLA_FLUORESCENCE_SCI_CAL_EQU  = ['CHLA_FLUORESCENCE_ADJUSTED = ((FLUORESCENCE_CHLA-DARK"_CHLA)*SCALE_CHLA)'];
+            INFO.CHLA_FLUORESCENCE_SCI_CAL_COEF = ['DARK"_CHLA = ',num2str(CHL_DC),', SCALE_CHLA = ',num2str(cal.CHL.ChlScale)];
+            INFO.CHLA_FLUORESCENCE_SCI_CAL_COM  =['CHLA_FLUORESCENCE RT adj specified in http://dx.doi.org/10.13155/35385'];
 
 
             % DO A FINAL RANGE CHECK ON VALUES, IF BAD SET QF = 4
@@ -1588,7 +1637,9 @@ for msg_ct = 1:size(msg_list,1)
             LR.FLUORESCENCE_CHLA_QC(t_bio) = LR.FLUORESCENCE_CHLA_QC(t_bio) ...
                 * ~BSLflag + BSLflag*theflag;
             LR.CHLA_QC(t_bio) = LR.CHLA_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+            LR.CHLA_FLUORESCENCE_QC(t_bio) = LR.CHLA_FLUORESCENCE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             LR.CHLA_QC(t_chk) = 4;
+			LR.CHLA_FLUORESCENCE_QC(t_chk) = 4;
             LR.FLUORESCENCE_CHLA_QC(t_chk) = 4;
 
             if r_hr > 0
@@ -1597,8 +1648,10 @@ for msg_ct = 1:size(msg_list,1)
                 HR.FLUORESCENCE_CHLA_QC(t_bio) = HR.FLUORESCENCE_CHLA_QC(t_bio) ...
                     * ~BSLflag + BSLflag*theflag;
                 HR.CHLA_QC(t_bio) = HR.CHLA_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+                HR.CHLA_FLUORESCENCE_QC(t_bio) = HR.CHLA_FLUORESCENCE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
                 HR.FLUORESCENCE_CHLA_QC(t_chk) = 4;
                 HR.CHLA_QC(t_chk) = 4;
+				HR.CHLA_FLUORESCENCE_QC(t_chk) = 4;
             end
 
 
@@ -1608,15 +1661,21 @@ for msg_ct = 1:size(msg_list,1)
                     (LR.CHLA_ADJUSTED < RC.CHL(1)|LR.CHLA_ADJUSTED > RC.CHL(2));
                 LR.CHLA_ADJUSTED_QC(t_bio) = LR.CHLA_ADJUSTED_QC(t_bio) ...
                     * ~BSLflag + BSLflag*theflag;
+                LR.CHLA_FLUORESCENCE_ADJUSTED_QC(t_bio) = LR.CHLA_FLUORESCENCE_ADJUSTED_QC(t_bio) ...
+                    * ~BSLflag + BSLflag*theflag;                
                 LR.CHLA_ADJUSTED_QC(t_chk) = 4;
-
+				LR.CHLA_FLUORESCENCE_ADJUSTED_QC(t_chk) = 4;
+				
                 if r_hr > 0
                     t_bio = HR.CHLA_ADJUSTED ~= fv.bio;
                     t_chk = t_bio & ...
                         (HR.CHLA_ADJUSTED < RC.CHL(1)|HR.CHLA_ADJUSTED > RC.CHL(2));
                     HR.CHLA_ADJUSTED_QC(t_bio) = HR.CHLA_ADJUSTED_QC(t_bio) ...
                         * ~BSLflag + BSLflag*theflag;
+                    HR.CHLA_FLUORESCENCE_ADJUSTED_QC(t_bio) = HR.CHLA_FLUORESCENCE_ADJUSTED_QC(t_bio) ...
+                        * ~BSLflag + BSLflag*theflag;                    
                     HR.CHLA_ADJUSTED_QC(t_chk) = 4;
+					HR.CHLA_FLUORESCENCE_ADJUSTED_QC(t_chk) = 4;
                 end
             end
         end
@@ -1640,9 +1699,11 @@ for msg_ct = 1:size(msg_list,1)
                         else
                             if LR.CHLA~=fv.bio
                                 LR.CHLA_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                LR.CHLA_FLUORESCENCE_QC(xxtmp) = str2double(singleBADSflags{i2});
                             end
                             if LR.CHLA_ADJUSTED~=fv.bio
                                 LR.CHLA_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                LR.CHLA_FLUORESCENCE_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});                                
                             end
                         end
                     end
@@ -1651,7 +1712,8 @@ for msg_ct = 1:size(msg_list,1)
                 for i3=1:length(rangeBADs)
                     LR.CHLA_QC(LR.PRES>=rangeBADs{i3}(1) & LR.PRES<=rangeBADs{i3}(2) & LR.CHLA~=fv.bio) = str2double(rangeBADsflags{i3});
                     LR.CHLA_ADJUSTED_QC(LR.PRES>=rangeBADs{i3}(1) & LR.PRES<=rangeBADs{i3}(2)& LR.CHLA_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
-                end
+                    LR.CHLA_FLUORESCENCE_QC(LR.PRES>=rangeBADs{i3}(1) & LR.PRES<=rangeBADs{i3}(2) & LR.CHLA~=fv.bio) = str2double(rangeBADsflags{i3});
+                    LR.CHLA_FLUORESCENCE_ADJUSTED_QC(LR.PRES>=rangeBADs{i3}(1) & LR.PRES<=rangeBADs{i3}(2)& LR.CHLA_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});                end
                 clear i3
             end
         end
@@ -1675,9 +1737,11 @@ for msg_ct = 1:size(msg_list,1)
                         else
                             if HR.CHLA~=fv.bio
                                 HR.CHLA_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                HR.CHLA_FLUORESCENCE_QC(xxtmp) = str2double(singleBADSflags{i2});                                
                             end
                             if HR.CHLA_ADJUSTED~=fv.bio
                                 HR.CHLA_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                HR.CHLA_FLUORESCENCE_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});                                
                             end
                         end
                     end
@@ -1686,6 +1750,8 @@ for msg_ct = 1:size(msg_list,1)
                 for i3 = 1:length(rangeBADs)
                     HR.CHLA_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2) & HR.CHLA~=fv.bio) = str2double(rangeBADsflags{i3});
                     HR.CHLA_ADJUSTED_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2)& HR.CHLA_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                    HR.CHLA_FLUORESCENCE_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2) & HR.CHLA_FLUORESCENCE~=fv.bio) = str2double(rangeBADsflags{i3});
+                    HR.CHLA_FLUORESCENCE_ADJUSTED_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2)& HR.CHLA_FLUORESCENCE_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
                 end
                 clear i3
             end
@@ -1746,7 +1812,7 @@ for msg_ct = 1:size(msg_list,1)
             %Version 1.2, July 21th 2016
             X      = 1.142*2*pi; % MCOMS @ 700
             LAMBDA = 700; % wavelength
-            THETA  = 149; % meas. angle, BBP processing doc July 2016
+            THETA  = 150; % meas. angle, BBP processing doc March 2018
             DELTA  = 0.039;      % depolarization ratio
 
             BETA_SW_ind = find(lr_nan == 0);
@@ -3115,8 +3181,11 @@ for msg_ct = 1:size(msg_list,1)
 
     % DO UNADJUSTED QF's FIRST
     if ~isempty(FV_data)
+        ifvT    = find(strcmp('Temperature[°C]',FV_data.hdr)   == 1);
+        ifvP    = find(strcmp('Pressure[dbar]',FV_data.hdr)   == 1);
+        ifvSTN    = find(strcmp('Station',FV_data.hdr)   == 1);
         iQF = find(strcmp(FV_data.hdr,'QF') == 1); % FIND QF column indices
-        tFV         = FV_data.data(:,2) == INFO.cast;
+        tFV         = FV_data.data(:,ifvSTN) == INFO.cast;
         FV_cast     = FV_data.data(tFV,:);   % get an exisitng FloatViz cast
         FV_QF_sum   = sum(FV_cast(:,iQF),1); % sum of QF columns
         if sum(FV_QF_sum) > 0        % ANY ODV QF FLAGS GREATER THAN ZERO?
@@ -3127,7 +3196,7 @@ for msg_ct = 1:size(msg_list,1)
                 % FLOAVIZ VAR MATCHES LIST, LR VAR EXISTS, GET MATCHING QF's
                 if sum(ind) > 0 && isfield(LR,QCvars{ind,2})
                     % P,T and QC col of interest
-                    ODV_QF  = [FV_cast(:,6),FV_cast(:,8), ...
+                    ODV_QF  = [FV_cast(:,ifvP),FV_cast(:,ifvT), ...
                         FV_cast(:,indQF(QF_ct))]; % P, T & QC
                     % CONVERT BACK TO ARGO VALUES
                     if strcmp(QCvars{ind,2},'BBP700') == 1 || strcmp(QCvars{ind,2},'BBP532') == 1
@@ -3191,15 +3260,19 @@ for msg_ct = 1:size(msg_list,1)
                     end
                 end
             end
-            clear tFV FV_cast FV_QF_sum indQF QF_ct ODV_QF ARGO_QF ct i dP t1
+            clear ifvP ifvT ifvSTN tFV FV_cast FV_QF_sum indQF QF_ct ODV_QF ARGO_QF ct i dP t1
             clear min_dP min_dT dT
         end
     end
 
     % NOW DO ADJUSTED DATA QF's
     if ~isempty(FV_QCdata) && FVQC_flag == 1
+        ifvT    = find(strcmp('Temperature[°C]',FV_QCdata.hdr)   == 1);
+        ifvP    = find(strcmp('Pressure[dbar]',FV_QCdata.hdr)   == 1);
+        ifvSTN    = find(strcmp('Station',FV_QCdata.hdr)   == 1);
+
         iQF = find(strcmp(FV_QCdata.hdr,'QF') == 1); % QF column indices
-        tFVQC       = FV_QCdata.data(:,2) == INFO.cast;
+        tFVQC       = FV_QCdata.data(:,ifvSTN) == INFO.cast;
         FVQC_cast   = FV_QCdata.data(tFVQC,:); % get individual QF FloatViz cast
         FVQC_QF_sum = sum(FVQC_cast(:,iQF),1); % sum of cast QF columns
 
@@ -3209,7 +3282,7 @@ for msg_ct = 1:size(msg_list,1)
                 ind = strcmp(FV_QCdata.hdr{indQF(QF_ct)-1},QCvars(:,1));
                 % FLOAVIZ VAR MATCHES LIST, GET MATCHING QF's
                 if sum(ind) > 0 && isfield(LR,[QCvars{ind,2},'_ADJUSTED'])
-                    ODV_QF  = [FVQC_cast(:,6), FVQC_cast(:,8), ...
+                    ODV_QF  = [FVQC_cast(:,ifvP), FVQC_cast(:,ifvT), ...
                         FVQC_cast(:,indQF(QF_ct))];% P&T&QC
                     if strcmp(QCvars{ind,2},'BBP700') == 1 || strcmp(QCvars{ind,2},'BBP532') == 1
                         ODV_QF(ODV_QF(:,3) == 4,3) = 2;
@@ -3235,7 +3308,7 @@ for msg_ct = 1:size(msg_list,1)
                         end
                         t1 = dP == min_dP & dT == min_dT; % there should only be one
                         if ODV_QF(t1,3) > ARGO_QF(i,3) % ODV QF worse than ARGO
-                            ARGO_QF(i,3) = ODV_QF(t1,3); % replace argo w/ ODV
+                            ARGO_QF(i,3) = unique(ODV_QF(t1,3)); % replace argo w/ ODV
                             ct =ct+1;
                         end
                     end
@@ -3274,7 +3347,7 @@ for msg_ct = 1:size(msg_list,1)
                     end
                 end
             end
-            clear tFV FVQC_cast FVQC_QF_sum indQF QF_ct ODV_QF ARGO_QF ct i
+            clear ifvT ifvP ifvSTN tFV FVQC_cast FVQC_QF_sum indQF QF_ct ODV_QF ARGO_QF ct i
             clear dP t1 min_dP
         end
     end
@@ -3354,8 +3427,10 @@ for msg_ct = 1:size(msg_list,1)
 
         if sum(LR.CHLA_ADJUSTED<99999)>0 || sum(HR.CHLA_ADJUSTED<99999)>0 % there is adjusted data for that profile --> adjustment has been made
             INFO.CHLA_DATA_MODE = 'A';
+            INFO.CHLA_FLUORESCENCE_DATA_MODE = 'A';
         else
             INFO.CHLA_DATA_MODE = 'R';
+            INFO.CHLA_FLUORESCENCE_DATA_MODE = 'R';
         end
     end
     %-----------------------------------------------------------

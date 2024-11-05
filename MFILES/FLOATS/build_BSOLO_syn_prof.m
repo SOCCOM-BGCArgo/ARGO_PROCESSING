@@ -102,6 +102,7 @@ S       = load(mat_file); % load cycle mat vars into structure
 fields    = fieldnames(S);
 cycle     = S.INFO.cast;
 gps       = S.INFO.gps;
+theice    = S.INFO.ice_flag;
 
 if ~tf_APEX_OCR
     EOP_sdn   = S.INFO.EOP_sdn;
@@ -1015,6 +1016,7 @@ INFO.INST_ID          = S.INFO.INST_ID;
 INFO.WMO_ID           = S.INFO.WMO_ID;
 INFO.float_type       = S.INFO.float_type;
 INFO.file_name        = S.INFO.file_name;
+INFO.ice_flag         = S.INFO.ice_flag;
 % INFO.WMO_ID           = S.INFO.WMO_ID;
 INFO.BOP_sdn          = S.INFO.BOP_sdn;
 INFO.EOP_sdn          = S.INFO.EOP_sdn;

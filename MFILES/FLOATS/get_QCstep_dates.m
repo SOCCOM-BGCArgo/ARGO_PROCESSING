@@ -41,6 +41,9 @@ function sdn = get_QCstep_dates(WMO,QC_data,dirs)
 %   06/15/2022 JP Updated SOLO time stamp extraction. Was using *.mat files
 %        but if process mode is "all", all *.mat files are wiped before they
 %        are loaded in this function producing an error
+%  06/17/2024 JP Added more specificity to regexp profile date time
+%        extrction as the partial msg file for cycle 74, ua21298  broke the code
+%        around line 153
 % ************************************************************************
 % CREATE REG & ALT DIR PATHS USING FLOAT NAME
 % ************************************************************************
@@ -147,7 +150,9 @@ for i = 1:rows
         if exist([reg_dir,msg_file],'file')
             fid = fopen([reg_dir,msg_file]);
             while ischar(tline)
-                if regexp(tline,'^\$ Profile', 'once')
+                %if regexp(tline,'^\$ Profile', 'once') % jp 06/17/24
+                %ua21298 cycle 74 partial msg broke this
+                if regexp(tline,'^\$ Profile.+\d{4}$', 'once') % jp  06/17/24
                     tline = strtrim(tline);
                     d_str = textscan(tline,msg_time_format,'CollectOutput',1);
                     d_str = d_str{1}; % cells: mmm dd hh:mm:ss 2008

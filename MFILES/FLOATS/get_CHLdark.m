@@ -25,6 +25,8 @@ function DrkStats = get_CHLdark(cal, dirs, range)
 %       there will be a suite of additional fields. The entire cal
 %       structure is now an input vs cal.info since the cal was being
 %       loaded inside anyway.
+%   05/15/24 - TM - begin implementation of rtqc on in-situ dark (don't modify flags yet!)
+%
 % ************************************************************************
 % TESTING
 % cal_fn = sprintf('cal%s.mat','ua21910');
@@ -132,11 +134,16 @@ for sct = 1:size(chl_cals,2)
     end
  
     % Fill output structure
-    nstr = regexp(Cstr,'\d+','match','once'); % strip #, empty for CHL 
-    DrkStats.(['DC',nstr])   = median(data(:,3));
+    nstr = regexp(Cstr,'\d+','match','once'); % strip #, empty for CHL
+    DrkMED = median(data(:,3));
+    DrkStats.(['DC',nstr])   = DrkMED;
     DrkStats.(['N',nstr])    = size(data,1);
     DrkStats.(['std',nstr])  = std(data(:,3));
     DrkStats.(['data',nstr]) = data;
+	
+	if abs(DrkMED-cal.(Cstr).ChlDC) > 0.25.*(cal.(Cstr).ChlDC) % per Argo CHLA QC doc, Sept2023 : http://dx.doi.org/10.13155/35385  p16 
+		disp(['WARNING: calculated in-situ CHLA dark differs significantly from factory-cal-dark for ',cal.info.WMO_ID,'!!!!!!'])  %just put a warning in for now to assess how often it is happening in our system...!
+	end
 end
 
 clearvars -except DrkStats

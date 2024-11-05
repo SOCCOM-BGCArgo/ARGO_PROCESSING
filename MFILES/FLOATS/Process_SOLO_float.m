@@ -84,6 +84,7 @@ function tf_float = Process_SOLO_float(MBARI_ID_str, dirs, update_str)
 % 11/06/23 TM  -- missing no3 spectra, so wait; should get returned with
 %           the next cycle.  ie solo 002.103
 % 02/01/2024 TM, modifications in support of ss4003.
+% 05/16/2024 TM, integrated CHLA_FLUORESCENCE variable into processing (per Argo documentation).
 % ************************************************************************
 
 % ************************************************************************
@@ -495,8 +496,18 @@ master_FLBB = 0; % some floats (i.e.7558) change mode, start 1 , always 1
 
 % GET BAD SENSOR LIST FOR FLOAT IF ANY
 BSL = dirs.BSL;
-
 disp(['Processing SOLO float ' cal.info.name, '.........'])
+%------------------------------------Tanya temp
+if str2num(WMO) == 1902370
+    M = cellstr(msg_list);
+    mm = regexp(M,'\d+(?=\.phy)','once','match');
+    x2 = str2num(cell2mat(mm));
+    s_ind = find(x2>=6 & x2<=12);
+    msg_list(s_ind,:) = []; %remove from processing loop
+    tf_float.new_messages(s_ind)=[]; %remove from email notificaiton list
+end
+%------------------------------------END Tanya temp
+
 for msg_ct = 1:size(msg_list,1)
     clear LR HR INFO
     msg_file = strtrim(msg_list(msg_ct,:));
@@ -513,6 +524,7 @@ for msg_ct = 1:size(msg_list,1)
     if str2num(cast_num) == 0
         continue
     end
+
     %TM 3/2/22; issue with cycle 44 pressures returned; In touch with John
     %Gilson about this.  Breaking our code, but waiting to hear more
     %details before addressing a proper fix.  Skip over this cycle for now.
@@ -559,6 +571,9 @@ for msg_ct = 1:size(msg_list,1)
     if Loop_CHK == 1 % some file type is missing!  skip this cycle, so need to break out of second loop
         continue
     end
+
+        INFO.ice_flag = 0;
+
     %----------------------------------------------------------------------
     %%%%% NOW PARSE DATA, CHECK FOR EMPTY RETURN, AND BUILD REVERSE INDICES.
     %%%%% ARGO WANTS SHALLOW TO DEEP
@@ -640,6 +655,14 @@ for msg_ct = 1:size(msg_list,1)
         end
         continue
     end
+
+    % Add ice detection true/false (as of May, 2024, there is currently no ice algorithm on solo floats...so if will default to INFO.ice_flag = 0.)
+%     INFO.ice_flag = 0;
+% %     if isfield(d,'ice_flag')
+% %         if d.ice_flag
+% %             INFO.ice_flag = 1;
+% %         end
+% %     end
 
     %----------------------------------------------------------------------
     %%%%TM NOTE:
@@ -1242,7 +1265,6 @@ for msg_ct = 1:size(msg_list,1)
             INFO.DOXY_SCI_CAL_COEF = 'not applicable';
             INFO.DOXY_SCI_CAL_COM  = 'not applicable';
             INFO.DOXY_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
-
             if strcmp(cal.O.type,'SBE83')
                 myOdata = [DOXarray.PRES(~t_nan) DOXarray.TEMPi(~t_nan) DOXarray.PSALi(~t_nan) dox_d((~t_nan),iPhase),dox_d((~t_nan),iTo)];
                 [ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myOdata, cal.O, 0); % jp 02/0924 looks like all SOLO's report Optode T  in deg C
@@ -1465,6 +1487,15 @@ for msg_ct = 1:size(msg_list,1)
         INFO.CHLA_SCI_CAL_COEF  = 'not applicable';
         INFO.CHLA_SCI_CAL_COM   = 'not applicable';
         INFO.CHLA_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
+		ECOarray.CHLA_FLUORESCENCE                 = fill0 + fv.bio;
+        ECOarray.CHLA_FLUORESCENCE_QC              = fill0 + fv.QC;
+        ECOarray.CHLA_FLUORESCENCE_ADJUSTED        = fill0 + fv.bio;
+        ECOarray.CHLA_FLUORESCENCE_ADJUSTED_QC     = fill0 + fv.QC;
+        ECOarray.CHLA_FLUORESCENCE_ADJUSTED_ERROR  = fill0 + fv.bio;
+        INFO.CHLA_FLUORESCENCE_SCI_CAL_EQU   = 'not applicable';
+        INFO.CHLA_FLUORESCENCE_SCI_CAL_COEF  = 'not applicable';
+        INFO.CHLA_FLUORESCENCE_SCI_CAL_COM   = 'not applicable';
+        INFO.CHLA_FLUORESCENCE_DATA_MODE  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
 
         t_nan = isnan(eco_d(:,iChl)); % NaN's in data if any
 
@@ -1472,10 +1503,14 @@ for msg_ct = 1:size(msg_list,1)
         ECOarray.FLUORESCENCE_CHLA_QC(~t_nan) = fv.QC;
 
         if isfield(cal,'CHL') % Sensor could be bad so maybe no cal info
+            ECOarray.CHLA_FLUORESCENCE(~t_nan) = (eco_d(~t_nan,iChl) - cal.CHL.ChlDC) .* ...
+                cal.CHL.ChlScale;
+            ECOarray.CHLA_FLUORESCENCE_QC(~t_nan) =  3; % 3 do not use w/o adjusting
+
             ECOarray.CHLA(~t_nan) = (eco_d(~t_nan,iChl) - cal.CHL.ChlDC) .* ...
                 cal.CHL.ChlScale;
             ECOarray.CHLA_QC(~t_nan) =  3; % 3 do not use w/o adjusting
-
+			
             % ADJUSTED DATA BASED ON ADMT18 CONCENSUS -WILL BE UPDATED
             % WITHIN THE YEAR - jp 12/13/2017
 
@@ -1497,18 +1532,17 @@ for msg_ct = 1:size(msg_list,1)
             else
                 CHL_DC = cal.CHL.ChlDC; % NO IN SITU DARKS YET OR EVER
             end
-
+            ECOarray.CHLA_FLUORESCENCE_ADJUSTED(~t_nan) = (eco_d(~t_nan,iChl) - ...
+                CHL_DC) .* cal.CHL.ChlScale; %no factor of 2 scale correction for CHLA_FLUORESCENCE!
+            ECOarray.CHLA_FLUORESCENCE_ADJUSTED_QC(~t_nan) =  2;
+			
             ECOarray.CHLA_ADJUSTED(~t_nan) = (eco_d(~t_nan,iChl) - ...
                 CHL_DC) .* cal.CHL.ChlScale ./ 2;
             ECOarray.CHLA_ADJUSTED_QC(~t_nan) =  2;
             % NPQ NEXT
             NPQ_CHL = ECOarray.CHLA_ADJUSTED;
             NPQ_CHL(t_nan) = NaN; % fill back to NaN
-            %                 NPQ = get_NPQcorr([INFO.sdn, nanmean(INFO.gps,1)], ...
-            %                 %INFO.gps now includes sdn, TM 10/27/20
-            % %             if str2num(cast_num) == 80
-            % %             keyboard
-            % %             end
+
             NPQ = get_NPQcorr(nanmean(INFO.gps,1), ...
                 [[ECOarray.PRES,ECOarray.TEMPi,ECOarray.PSALi],NPQ_CHL], dirs);
             NPQ.data(t_nan,2:end) = fv.bio; % nan back to fill
@@ -1523,6 +1557,7 @@ for msg_ct = 1:size(msg_list,1)
                 ECOarray.CHLA_ADJUSTED_QC(tNPQ & ~t_nan) =  5;
 
             end
+			
             ECOarray.CHLA_ADJUSTED_ERROR(~t_nan) = ...
                 abs(ECOarray.CHLA_ADJUSTED(~t_nan) * 2);
 
@@ -1532,6 +1567,10 @@ for msg_ct = 1:size(msg_list,1)
             INFO.CHLA_SCI_CAL_COEF = 'A=2';
             INFO.CHLA_SCI_CAL_COM  =['A is best estimate ', ...
                 'from Roesler et al., 2017, doi: 10.1002/lom3.10185'];
+				
+			INFO.CHLA_FLUORESCENCE_SCI_CAL_EQU  = ['CHLA_FLUORESCENCE_ADJUSTED = ((FLUORESCENCE_CHLA-DARK"_CHLA)*SCALE_CHLA)'];
+            INFO.CHLA_FLUORESCENCE_SCI_CAL_COEF = ['DARK"_CHLA = ',num2str(CHL_DC),', SCALE_CHLA = ',num2str(cal.CHL.ChlScale)];
+            INFO.CHLA_FLUORESCENCE_SCI_CAL_COM  =['CHLA_FLUORESCENCE RT adj specified in http://dx.doi.org/10.13155/35385'];
 
 
 
@@ -1541,19 +1580,23 @@ for msg_ct = 1:size(msg_list,1)
             ECOarray.FLUORESCENCE_CHLA_QC(t_bio) = ECOarray.FLUORESCENCE_CHLA_QC(t_bio) ...
                 * ~BSLflag + BSLflag*theflag;
             ECOarray.CHLA_QC(t_bio) = ECOarray.CHLA_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-
+            ECOarray.CHLA_FLUORESCENCE_QC(t_bio) = ECOarray.CHLA_FLUORESCENCE_QC(t_bio) * ~BSLflag + BSLflag*theflag;
             t_chk = t_bio & (ECOarray.CHLA < RCR.CHL(1)|ECOarray.CHLA > RCR.CHL(2));
             ECOarray.CHLA_QC(t_chk) = 4;
             ECOarray.FLUORESCENCE_CHLA_QC(t_chk) = 4;
+            ECOarray.CHLA_FLUORESCENCE_QC(t_chk) = 4;
 
 
             if isfield(cal.CHL, 'SWDC')
                 t_bio   = ECOarray.CHLA_ADJUSTED ~= fv.bio;
                 ECOarray.CHLA_ADJUSTED_QC(t_bio) = ECOarray.CHLA_ADJUSTED_QC(t_bio) ...
                     * ~BSLflag + BSLflag*theflag;
+				ECOarray.CHLA_FLUORESCENCE_ADJUSTED_QC(t_bio) = ECOarray.CHLA_FLUORESCENCE_ADJUSTED_QC(t_bio) ...
+                    * ~BSLflag + BSLflag*theflag;
                 t_chk = t_bio & ...
                     (ECOarray.CHLA_ADJUSTED < RC.CHL(1)|ECOarray.CHLA_ADJUSTED > RC.CHL(2));
                 ECOarray.CHLA_ADJUSTED_QC(t_chk) = 4;
+				ECOarray.CHLA_FLUORESCENCE_ADJUSTED_QC(t_chk) = 4;
             end
 
             if yesBSAML == 1 && yesBSAMLcyc==1
@@ -1572,14 +1615,18 @@ for msg_ct = 1:size(msg_list,1)
                             else
                                 if ECOarray.CHLA~=fv.bio
                                     ECOarray.CHLA_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                    ECOarray.CHLA_FLUORESCENCE_QC(xxtmp) = str2double(singleBADSflags{i2});									
                                 end
                                 if ECOarray.CHLA_ADJUSTED~=fv.bio
                                     ECOarray.CHLA_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                                    ECOarray.CHLA_FLUORESCENCE_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});									
                                 end
                             end
                         end
                     end
                     for i3 = 1:length(rangeBADs)
+                        ECOarray.CHLA_FLUORESCENCE_QC(ECOarray.PRES>=rangeBADs{i3}(1) & ECOarray.PRES<=rangeBADs{i3}(2) & ECOarray.CHLA_FLUORESCENCE~=fv.bio) = str2double(rangeBADsflags{i3});
+                        ECOarray.CHLA_FLUORESCENCE_ADJUSTED_QC(ECOarray.PRES>=rangeBADs{i3}(1) & ECOarray.PRES<=rangeBADs{i3}(2)& ECOarray.CHLA_FLUORESCENCE_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});					
                         ECOarray.CHLA_QC(ECOarray.PRES>=rangeBADs{i3}(1) & ECOarray.PRES<=rangeBADs{i3}(2) & ECOarray.CHLA~=fv.bio) = str2double(rangeBADsflags{i3});
                         ECOarray.CHLA_ADJUSTED_QC(ECOarray.PRES>=rangeBADs{i3}(1) & ECOarray.PRES<=rangeBADs{i3}(2)& ECOarray.CHLA_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
                     end
@@ -1593,8 +1640,10 @@ for msg_ct = 1:size(msg_list,1)
             %         if isfield(cal.CHL,'SWDC') && isfield(cal.CHL.SWDC,'DC') && sum(LR.CHLA_ADJUSTED<99999)>0  % median dark count has been quantified (and there is data for that profile) --> adjustment has been made
             if sum(ECOarray.CHLA_ADJUSTED<99999)>0  % median dark count has been quantified (and there is data for that profile) --> adjustment has been made
                 INFO.CHLA_DATA_MODE = 'A';
+				INFO.CHLA_FLUORESCENCE_DATA_MODE = 'A';
             else
                 INFO.CHLA_DATA_MODE = 'R';
+                INFO.CHLA_FLUORESCENCE_DATA_MODE = 'R';				
             end
         end
     end
@@ -2110,6 +2159,7 @@ for msg_ct = 1:size(msg_list,1)
     % DO DEPTH CORRECTION 1st
     % CONVERT TO µmol/kg
     % ****************************************************************
+
     if ~isempty(iNO3)
         BGCIND = find(not(cellfun('isempty',strfind(FLTsensors,'NO3'))))-CTD_Nax; %#ok<STRCL1>
         eval(['NO3array = BGC0',num2str(BGCIND),';']); %to reduce the number of eval calls, rename to temporary structure until all desired fields are populated.

@@ -7,6 +7,7 @@ function d = merge_SOLO_mat(WMO_ID, dirs)
 %     being turned off. float param list determined from 1st cycle file,
 %     then check field exisitence every time before assigning data
 % 02/01/2024 TM, modifications in support of ss4003 (OCR555)
+% 05/06/24 TM - Added IceEvasionRecord True/False column to output
 % *************************************************************************
 % % TESTING
 % % WMO_ID = '4903026'; % ss0001
@@ -184,8 +185,8 @@ for file_ct = 1:r_list
             end
         end
         hdr_size = size(rhdr,2);
-        rhdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' rhdr];
-        ahdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' ahdr];
+        rhdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' 'IceEvRec' rhdr];
+        ahdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' 'IceEvRec' ahdr];
         
         % PREDIM OUTPUT DATA MATRICES
         rdata = ones(r_list*500, size(rhdr2,2)) * NaN;
@@ -219,9 +220,10 @@ for file_ct = 1:r_list
     % BUILD MATRIX OF CAST SDN LON and LAT
     tmp =[fill_0+INFO.cast, fill_0+INFO.sdn, fill_0+gps(2), ...
           fill_0+gps(3)]; %gps indexing changed after addition of sdn to gps vector (TM, 10/2020)
-    
-    rdata(line_ct:line_ct+sample_rows-1,:) = [tmp,rtmp];
-    adata(line_ct:line_ct+sample_rows-1,:) = [tmp,atmp];
+%     keyboard
+    tmpICE = [fill_0+INFO.ice_flag]; % add ice flag column separately (will go as the last column in ODV files) 
+    rdata(line_ct:line_ct+sample_rows-1,:) = [tmp,tmpICE,rtmp];
+    adata(line_ct:line_ct+sample_rows-1,:) = [tmp,tmpICE,atmp];
     line_ct = line_ct+sample_rows;
 end
 fprintf('\r\n ')

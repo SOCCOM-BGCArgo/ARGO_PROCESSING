@@ -67,9 +67,11 @@ end
 % ****************************  PATHS and VARIABLES **********************
 %        NCEPPath can be a URL, network dir (ie CHEM) or a local dir
 % ************************************************************************
-%NCEPpath1   = 'C:\Users\bgcargovm\Documents\MATLAB\ARGO_PROCESSING\DATA\NCEP_TEMPORARY\';
+user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+user_dir = [user_dir, '\Documents\MATLAB\'];
+NCEPpath1   = [user_dir,'\ARGO_PROCESSING\DATA\NCEP_TEMPORARY\'];
 %NCEPpath1 = dirs.NCEP_TEMP;
-NCEPpath1   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface_gauss/';
+%NCEPpath1   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface_gauss/';
 % NCEPpath1   = 'https://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis2/gaussian_grid/';
 %NCEPpath2   = 'http://www.esrl.noaa.gov/psd/thredds/dodsC/Datasets/ncep.reanalysis/surface/';
 landmask = [dirs.NCEP_TEMP,filesep,'land.sfc.gauss.nc'];

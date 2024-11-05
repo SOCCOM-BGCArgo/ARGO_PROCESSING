@@ -37,6 +37,11 @@ function Loop_ARGO_float(update_str,filter_str,exclude_floats)
 %		 float refresh done manually was required for such cases).  Also enhanced the notification system to better
 % 		 differentiate between such cases and msg files received in sequence.
 %        5/16/2022: TM Remove MLR "flavor" of data files for upcoming snapshot archive!
+%        3/12/24:  TM added capability to do a full reprocess every fifth
+%                     cycle (for both APEX and Navis)
+
+% LG 05/22/24; Added MBARI_floatCount_summary to append the emails with a
+% float count summary.
 
 % ************************************************************************
 % ------------------------------------------------------------------------
@@ -159,7 +164,8 @@ clear d iS iT iP tS1 tS0 tT PID rPID kill_str
 setpref('Internet','SMTP_Server','mbarimail.mbari.org'); % define server
 setpref('Internet','E_mail','tmaurer@mbari.org'); % define sender
 %email_list ={'johnson@mbari.org';'tmaurer@mbari.org';'jplant@mbari.org'}; %5/16/19, Ken asked to be removed from processing email list.
-email_list ={'tmaurer@mbari.org';'jplant@mbari.org';'johnson@mbari.org';'nicolag@mbari.org'}; %TM 8/16/21 added Emily to recipients. TM 7/12/23 added Nicola.
+email_list ={'tmaurer@mbari.org';'jplant@mbari.org';'johnson@mbari.org';'nicolag@mbari.org';...
+             'lgrady@mbari.org';'yui@mbari.org';'sbartoloni@mbari.org'}; %TM 7/12/23 added Nicola.  %4/16/24 added Logan. %4/25/24 TM added Yui 
 %email_list ={'tmaurer@mbari.org'};
 new_msg_fn = ['new_argo_msgs',datestr(now,'yyyymmddHHMM.txt')];
 bad_msg_fn = ['bad_argo_msgs',datestr(now,'yyyymmddHHMM.txt')];
@@ -297,7 +303,11 @@ for loop_ctr = start_num: stop_num
                 disp(['****************FULL REPROCESS TRIGGERED FOR FLOAT',MBARI_ID_str,'****************'])
             end
         elseif strcmp('NAVIS',FLOAT_LIST{loop_ctr,iFLT})
-            tf_float = Process_NAVIS_float(MBARI_ID_str, dirs, update_str);
+            [tf_float,FULLreprocess] = Process_NAVIS_float(MBARI_ID_str, dirs, update_str,ISDEAD);
+            if FULLreprocess==1 && strcmp(update_str, 'update')
+                [~,~]  = Process_NAVIS_float(MBARI_ID_str, dirs, 'all',ISDEAD);
+                disp(['****************FULL REPROCESS TRIGGERED FOR FLOAT',MBARI_ID_str,'****************'])
+            end
         elseif strcmp('SOLO',FLOAT_LIST{loop_ctr,iFLT})
             tf_float = Process_SOLO_float(MBARI_ID_str, dirs, update_str);
         else
@@ -419,29 +429,6 @@ for loop_ctr = start_num : stop_num % TM 3/3/21 - why is this a separate loop?
         end
         fclose('all');
     end
-%% TM 5/16/22: Remove MLR "flavor" of data files for upcoming snapshot archive!!!    
-% % % %     try
-% % % %         ODV_tf = argo2odv_MLR(WMO_ID, dirs, update_str,1);
-% % % %         if ODV_tf == 0
-% % % %             %continue
-% % % %         else
-% % % %             disp(['A NEW ODV FILE WAS CREATED USING ',...
-% % % %                 'Williams MLR ALKALINITY']);
-% % % %         end
-% % % %         
-% % % %     catch ME
-% % % %         disp(['ARGO ODV FILE CREATION FAILED ON FLOAT ',MBARI_ID_str,', WMO: ',WMO_ID, ...
-% % % %             ' at ', datestr(now,'mm/dd/yyyy HH:MM:SS')]);
-% % % %         new_msgs = [new_msgs; ['ODV(MLR) FILE CREATION ERROR: ',MBARI_ID_str,', WMO: ',WMO_ID]];
-% % % %         new_msgs = [new_msgs; ME.message];
-% % % %         
-% % % %         for k=1:length(ME.stack)
-% % % %             ME.stack(k)
-% % % %             new_msgs = [new_msgs; [ME.stack(k).file, 'LINE: ', ...
-% % % %                 ME.stack(k).line]];
-% % % %         end
-% % % %         fclose('all');
-% % % %     end
 end
 end_txt_time = now;
 
@@ -470,7 +457,7 @@ end
                      MBARI_id_str,' AND GENERATING PH DIAGNOSTIC TXT FILE FOR USE IN E-VIZ.'])
                  dirs.save = [user_dir,'ARGO_PROCESSING\', ...
                      'DATA\PH_DIAGNOSTICS\'];
-                 Merge_dura_msgs(MBARI_id_str, dirs)
+                 Merge_dura_msgs(MBARI_id_str, dirs);
              end
              
              %             thefloattype = float_types{ifp};
@@ -495,7 +482,7 @@ end
                      MBARI_id_str,' AND GENERATING NO3 DIAGNOSTIC TXT FILE FOR USE IN N-VIZ.'])
                  dirs.save = [user_dir,'ARGO_PROCESSING\', ...
                      'DATA\NO3_DIAGNOSTICS\'];
-                 Merge_isus_msgs(MBARI_id_str, dirs)
+                 Merge_isus_msgs(MBARI_id_str, dirs);
              end
              disp(['DONE PROCESSING .ISUS FILES FOR FLOAT ',...
                  MBARI_id_str,' AND GENERATING NO3 DIAGNOSTIC TXT FILE FOR USE IN N-VIZ.'])
@@ -573,7 +560,19 @@ if strcmp(update_str, 'update') && ~isempty(new_msgs)
         fprintf('fid = %f and rows in new msgs variable = %f', ...
             fid,size(new_msgs,1));
     end
+    %Add a summary of float counts at the end of the email
+
+    floatCount = MBARI_floatCount_summary();
+    b1 = cellstr(" ");
+    b2 = cellstr(" ");
+    b3 = cellstr(" ");
+    btmp = {};
+    btmp = cellstr(floatCount);
+    new_msgs = [new_msgs; b1; b2; b3; btmp];
+
+    %test_email_list ={'lgrady@mbari.org'};
     disp('sending mail now')
+	%keyboard
     sendmail(email_list,'ARGOSY: NEW BGC ARGO MESSAGES PROCESSED', new_msgs)
 end
 

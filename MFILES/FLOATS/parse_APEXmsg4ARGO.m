@@ -71,6 +71,12 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %              updates
 %   06/14/23 - TM; small bug fix to the single air-measurement extraction
 %   section (formatting irregularities on the SBS83 test floats!!)
+%
+%   04/23/24 - TM; small update to P=0 exclusion line at end of function,
+%               based on correspondence with AOML.  They are now excluding only lines
+%               where ALL data returns are zero (not just P=0...).  Case in
+%               point is 20329.010.msg HR first sample.
+%   08/19/2024 TM; Modification to aircal parsing to include flbb data.
 
 %----------------
 % FOR TESTING
@@ -97,6 +103,8 @@ function data = parse_APEXmsg4ARGO(msg_file)
 %msg_file = 'c:\temp\20974.010.msg'; % 6 sensor test msg w OCR
 %msg_file = 'c:\temp\19806.040.msg';
 %msg_file = 'c:\temp\12688.074.msg';
+% msg_file = 'c:\temp\18169.001.msg';
+
 %----------------
 
 
@@ -140,7 +148,8 @@ data.ParkPressure  = [];
 
 f_aircal         = '%*s%s%s%s%s%*f%f%f%f%f%f';
 f83_aircal       = '%*s%s%s%s%s%*f%f%f%f%f';
-sixsensor_aircal = '%*s%s%s%s%s%*f%f%f%f%f%f%8x%8x%8x%8x';
+% sixsensor_aircal = '%*s%s%s%s%s%*f%f%f%f%f%f%8x%8x%8x%8x';
+sixsensor_aircal = '%*s%s%s%s%s%*f%f%f%f%f%f%s%s%s%8x%8x%8x%8x'; %need to include flbb!?
 high_res_format  = '%4x%4x%4x%2x';
 
 pk_ct = 0; % park sample counter
@@ -428,15 +437,15 @@ while ischar(tline)
                     d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
                         ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
                     if ~isempty(ac_tmp{1,2})
-                        if OCR_mode
-                            data.aircal =[data.aircal; ...
-                                datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
-                                ac_tmp{1,2}, double(ac_tmp{1,3})];
-                        else
+%                         if OCR_mode
+%                             data.aircal =[data.aircal; ...
+%                                 datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+%                                 ac_tmp{1,2}, double(ac_tmp{1,3})];
+%                         else
                             data.aircal =[data.aircal; ...
                                 datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
                                 ac_tmp{1,2}];
-                        end
+%                         end
                     end
                     clear ac_tmp d_str
                 end
@@ -539,16 +548,16 @@ while ischar(tline)
                 ac_tmp = textscan(tline,f_aircal,1,'collectoutput',1);
                 d_str  = [ac_tmp{1,1}{1},' ',ac_tmp{1,1}{2},' ', ...
                     ac_tmp{1,1}{3},' ',ac_tmp{1,1}{4}];
-                if ~isempty(ac_tmp{1,2})
-                    if OCR_mode
-                        data.aircal =[data.aircal; ...
-                            datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
-                            ac_tmp{1,2}, double(ac_tmp{1,3})];
-                    else
+                if ~isempty(ac_tmp{1,2}) % TM 8/19/24, I'm not sure why we need to carry along the OCR data in the aircal??  For float 20126 data was getting parsed incorrectly (flbb data missing?!).  Do all APEX with OCR have flbb?  Need to double check...
+%                     if OCR_mode
+%                         data.aircal =[data.aircal; ...
+%                             datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
+%                             ac_tmp{1,2}, double(ac_tmp{1,3})];
+%                     else
                         data.aircal =[data.aircal; ...
                             datenum(d_str,'mmm dd yyyy HH:MM:SS'), ...
                             ac_tmp{1,2}];
-                    end
+%                     end
                 end
                 clear ac_tmp d_str
             end
@@ -646,7 +655,14 @@ else
     if ~isempty(high_res)
         %check for any zero pressure level - remove (ie 12892.064.msg; AOML
         %screens for this)
-        xx = find(high_res(:,1)==0);
+        if strfind(msg_file,'12892')
+            xx = find(high_res(:,1)==0);
+            high_res(xx,:) = [];
+        end
+%       % update 4/23/24; modify logic to only exclude lines where all PTS
+%       are zero (per AOML).  This won't be backwards compatible with
+%       12892...so hard-code exception for now...
+        xx = find(all(high_res == 0,2));
         high_res(xx,:) = [];
         data.hr_d  = high_res(:,1:4); % p t s nbin
         data.hr_hdr = [float_vars(1:3);'nbin ctd'];

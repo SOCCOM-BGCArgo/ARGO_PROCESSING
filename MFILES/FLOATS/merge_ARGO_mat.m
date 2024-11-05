@@ -57,6 +57,10 @@ function d = merge_ARGO_mat(WMO_ID, dirs)
 % 05/31/23 JP - Added CHL435 as another parameter
 % 05/31/23 TM - Added OCR443 as another parameter
 % 06/21/23 TM - Added psal-proxy (ARMOR3D) capabilities.
+% 04/03/24 TM - Added checks for iridium positionin when gps is empty; only
+%               gets incorporated if iridium fix is within 6hrs of gps timestamp
+% 04/30/24 TM - Added IceEvasionRecord True/False column to output
+% 07/11/24 JP - Added OCR555 to the master raw & adj variable lists
 
 %
 % ************************************************************************
@@ -69,6 +73,7 @@ function d = merge_ARGO_mat(WMO_ID, dirs)
 % WMO_ID = '5906481'; % ua19842 2XO2 float
 % WMO_ID     = '5906341';
 % WMO_ID     = 'NO_WMO_ua21291';
+% WMO_ID     = '7902112';
 % dirs =[];
 % *************************************************************************
 %  SET DATA DIRS AND PATHS
@@ -174,6 +179,8 @@ raw_vars(31,1) = {'DOWN_IRRADIANCE490'};
 raw_vars(32,1) = {'DOWN_IRRADIANCE490_QC'}; 
 raw_vars(33,1) = {'DOWNWELLING_PAR'};
 raw_vars(34,1) = {'DOWNWELLING_PAR_QC'};
+raw_vars(35,1) = {'DOWN_IRRADIANCE555'}; 
+raw_vars(36,1) = {'DOWN_IRRADIANCE555_QC'};
 
 
 adj_vars(1,1)  = {'PRES_ADJUSTED'}; % ADJUSTED VARIABLES
@@ -210,11 +217,13 @@ adj_vars(31,1) = {'DOWN_IRRADIANCE490_ADJUSTED'};
 adj_vars(32,1) = {'DOWN_IRRADIANCE490_ADJUSTED_QC'}; 
 adj_vars(33,1) = {'DOWNWELLING_PAR_ADJUSTED'};
 adj_vars(34,1) = {'DOWNWELLING_PAR_ADJUSTED_QC'}; 
+adj_vars(35,1) = {'DOWN_IRRADIANCE555'}; 
+adj_vars(36,1) = {'DOWN_IRRADIANCE555_QC'};
 
 raw_vars_ct = size(raw_vars,1);
 adj_vars_ct = size(adj_vars,1);
 if adj_vars_ct ~= raw_vars_ct
-    dip('RAW and ADJ variable list should be the same size')
+    disp('RAW and ADJ variable list should be the same size')
     return
 end
 
@@ -248,7 +257,22 @@ for file_ct = 1 : r_list
     else
         gps = INFO.gps(1,:);
     end
-        
+
+    %%% TM potential ingestion of iridium fix.  test. 4/1/24
+    if strcmp(INFO.float_type,'APEX')
+        if isnan(gps(1,2)) %position info missing
+            if isfield(INFO,'iridium')
+                if ~isempty(INFO.iridium)
+                    [a,b] = min(abs(INFO.iridium(:,1)-gps(1,1)),[],'omitnan');
+                    if a*24 <=6 % iridium and gps fix are less than 6hr apart
+                        gps = INFO.iridium(b,:); %use it!
+                        disp('GPS info missing!  Using Iridium fix for position info.')
+                    end
+                end
+            end
+        end
+    end
+
     if gps(2) < 0, gps(2) = gps(2) + 360; end %index changed from 1 to 2 after addition of sdn to gps vector (TM 10/2020)
     
     % RECENT ADDITION OF PRES, PRES_QC, PRES_ADJUSTED & PRES_ADJUSTED_QC
@@ -285,8 +309,8 @@ for file_ct = 1 : r_list
             end
         end
         hdr_size = size(rhdr,2);
-        rhdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' rhdr];
-        ahdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' ahdr];
+        rhdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' 'IceEvRec' rhdr];
+        ahdr2 =['Station' 'Matlab SDN' 'Lon [ºE]' 'Lat [ºN]' 'IceEvRec' ahdr];
     end
 
     % ********************************************************************
@@ -404,9 +428,9 @@ for file_ct = 1 : r_list
     % BUILD MATRIX OF CAST SDN LON and LAT
     tmp =[fill_0+INFO.cast, fill_0+INFO.sdn, fill_0+gps(2), ...
           fill_0+gps(3)]; %gps indexing changed after addition of sdn to gps vector (TM, 10/2020)
-      
-    rdata = [rdata; tmp,rtmp];
-    adata = [adata; tmp,atmp];
+    tmpICE = [fill_0+INFO.ice_flag]; % add ice flag column separately (will go as the last column in ODV files) 
+    rdata = [rdata; tmp,tmpICE,rtmp];
+    adata = [adata; tmp,tmpICE,atmp];
     psalprox = [psalprox; psalproxtmp]; %only need psal prox in one LR field for computation of derived parameters in argo2odv (not needed for HR files, as we won't be writing the psal-proxy itself to file, only used in derived param calcs.
     
     % ********************************************************************
@@ -439,8 +463,8 @@ for file_ct = 1 : r_list
         
         tmp =[hr_fill_0+INFO.cast, hr_fill_0+INFO.sdn, ...
             hr_fill_0+gps(2), hr_fill_0+gps(3)]; %gps indexing changed after addition of sdn to gps vector (TM, 10/2020)
-        
-        hrrdata = [hrrdata; tmp,hrrtmp];  
+        hrtmpICE = [hr_fill_0+INFO.ice_flag]; %hr files should mention whether ice detected or not as well.
+        hrrdata = [hrrdata; tmp,hrtmpICE,hrrtmp];  
     end
     
 end

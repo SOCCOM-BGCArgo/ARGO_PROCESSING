@@ -86,6 +86,7 @@ function tf_odv = argo2odv_LIAR(WMO_ID, dirs, update_str, HR_flag)
 % 02/01/2024 TM, modifications in support of ss4003 (different combo of OCR channels.
 % 02/03/2024 JP, added code so raw OCR gets propagated to ADJ ODV file
 %               similar to CHL, BBP & some general code cleanup/houskeeping
+%5/2024 	TM - added ice evasion record column to ODV processed file.
 
 % !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 % TESTING
@@ -99,10 +100,7 @@ function tf_odv = argo2odv_LIAR(WMO_ID, dirs, update_str, HR_flag)
 % WMO_ID = '5906522';
 % WMO_ID = '5906495';
 
-%WMO_ID = 'NO_WMO_un0948';
-%WMO_ID = '7901106'; % OCR APEX ua21146	
-%WMO_ID = '5904672'; % un0565 Navis with Bbp532 instead of CDOM
-%WMO_ID = '5906540'; % un1452 chl,cdom, bbp	
+% WMO_ID = 'NO_WMO_un0948';
 % dirs       = [];
 % update_str = 'all';
 % HR_flag    = 1;
@@ -237,6 +235,7 @@ if isempty(d)
 end
 info    = d.INFO;
 rhdr    = d.rhdr; % raw data
+% keyboard
 rdata   = d.rdata;
 
 ahdr    = d.ahdr; % adjusted data
@@ -253,6 +252,11 @@ hrrdata     = d.hrrdata; % if not an APEX float this will be empty
 % INTERP QF FLAG = 3, POSITIONS STILL MISSING = NaN, QF = 99, GOOD = 1
 % LOOK FOR MISSING PROFILES TOO
 % ************************************************************************
+
+% First, generate explanation of the IceEvRec column.  This goes in every file, regardless of Ice Algorithm presence or status!
+iceEvRec_hdr_str = '"IceEvRec" = 1 indicates that the float was unable to surface as a result of the ice-avoidance algorithm. Note that this result does not necessarily signify the presence of sea-ice.';
+iceEvRec_hdr_str2 = '"IceEvRec" = 0 indicates that the float was able to surface as a result of the ice-avoidance algorithm (and/or the absence of ice-avoidance algorithm software, ie for low-latitude floats)';
+iceEvRec_hdr_str3 = 'For more information on the technical aspects of the ice-avoidance algorithm onboard profiling floats, please see Riser et al (2018)  https://doi.org/10.1002/2017JC013419';
 fill_0     = ones(dr,1)*0; % for adding QF arrays
 hr_fill_0  = ones(hrdr,1)*0; % for adding QF arrays
 
@@ -401,10 +405,9 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if not all nans, try 
         end
         
     end
-    %adata(:,3:5) = rdata(:,3:5); % ADJUSTED POSITIONS EQUAL RAW
+    adata(:,3:5) = rdata(:,3:5); % ADJUSTED POSITIONS EQUAL RAW
     %clear t_nan t_nan2 t_nan3
 end
-adata(:,3:5) = rdata(:,3:5); % ADJUSTED POSITIONS EQUAL RAW
 [dr,dc]     = size(rdata); % raw and adjusted are the same size
 [hrdr,hrdc] = size(hrrdata);
 
@@ -470,17 +473,17 @@ float_z_QF(isnan(float_z)) = 99;
 clear nan_lat mean_lat
 
 % ADD P,T,S QF's DENSITY AND DEPTH TO THE DATA SETS
-raw_hdr = [rhdr(1:iL+1),rhdr(iP),'PRES_QC',rhdr(iT:iT+3), ...
+raw_hdr = [rhdr(1:iL+2),rhdr(iP),'PRES_QC',rhdr(iT:iT+3), ...
     'SIGMA_THETA','SIGMA_THETA_QC','DEPTH','DEPTH_QC',rhdr(iS+2:dc)];
 
-raw_data = [rdata(:,1:iL+1), rdata(:,iP), PRES_QF, rdata(:,iT), ...
+raw_data = [rdata(:,1:iL+2), rdata(:,iP), PRES_QF, rdata(:,iT), ...
     TEMP_QF, rdata(:,iS), PSAL_QF, den, den_QF, float_z, float_z_QF, ...
     rdata(:,iS+2:dc)];
 
-adj_hdr = [ahdr(1:iL+1),ahdr(iP),'PRES_ADJUSTED_QC',ahdr(iT:iT+3), ...
+adj_hdr = [ahdr(1:iL+2),ahdr(iP),'PRES_ADJUSTED_QC',ahdr(iT:iT+3), ...
     'SIGMA_THETA','SIGMA_THETA_QC','DEPTH','DEPTH_QC',ahdr(iS+2:dc)];
 
-adj_data = [adata(:,1:iL+1), adata(:,iP), PRES_QF, adata(:,iT), ...
+adj_data = [adata(:,1:iL+2), adata(:,iP), PRES_QF, adata(:,iT), ...
     TEMP_QF, adata(:,iS), PSAL_QF, den, den_QF, float_z, float_z_QF, ...
     adata(:,iS+2:dc)];
 
@@ -526,7 +529,7 @@ if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR%
     hrfloat_z_QF = hr_fill_0 + 1;
     hrfloat_z_QF(isnan(hrfloat_z)) = 99;
     
-    hrraw_data = [hrrdata(:,1:iL+1), hrrdata(:,iP), hrPRES_QF, hrrdata(:,iT), ...
+    hrraw_data = [hrrdata(:,1:iL+2), hrrdata(:,iP), hrPRES_QF, hrrdata(:,iT), ...
         hrTEMP_QF, hrrdata(:,iS), hrPSAL_QF, hrden, hrden_QF, hrfloat_z, hrfloat_z_QF, ...
         hrrdata(:,iS+2:hrdc)];
     
@@ -945,17 +948,21 @@ if ~isempty(iPH) % pH data exists
         
         adj_data(isnan(adj_data(:,iPH25)), iPH25+1) = 99; % MVI QF VALUE
         adj_data(isnan(adj_data(:,iDIC)), iDIC+1)   = 99;
-        adj_data(isnan(adj_data(:,iPCO2)), iPCO2+1) = 99;   
+        adj_data(isnan(adj_data(:,iPCO2)), iPCO2+1) = 99;
+        
+
     end
 end
 
 clear iP iT iS %iO iN
+
 
 % ************************************************************************
 % CONVERT ARGO DATA QUALITY FLAGS TO ODV DATA QUALITY FLAGS
 % DO THIS BEFORE CHECKING FOR BOSS DATA AT U MAINE
 % U MAINE QUALITY FLAGS ALREADY ODV STYLE
 % ************************************************************************
+
 for i = 1:raw_c
     % SETTING ALL QF's TO 1, EXCEPT FOR PTSZ & OBVIOUSLY BAD
     if regexp(raw_hdr{i},'\_QC', 'once')
@@ -1018,7 +1025,9 @@ for i = 1:adj_c
     end
 end
 
-if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR
+
+
+if strcmp(info.float_type, 'APEX') & ~tf_APEX_OCR
     for i = 1:hrdc
         if regexp(raw_hdr{i},'\_QC', 'once')
             tmp2 = hrraw_data(:,i);
@@ -1431,9 +1440,7 @@ end
 if sum(strcmp(ODV_adj{11,3},adj_hdr))
     ODV_adj(11,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %bbp700
 end
-% if sum(strcmp(ODV_adj{12,3},adj_hdr))
-%     ODV_adj(12,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %bbp700 cor
-% end
+
 if sum(strcmp(ODV_adj{12,3},adj_hdr))
     ODV_adj(12,4:6) = {cal.BB.type cal.BB.SN Bio_optics_str}; %POC
 end
@@ -1648,6 +1655,10 @@ if ~isempty(missing_pos_str)
     fprintf(fid_raw,['//',missing_pos_str,'\r\n']);
 end
 fprintf(fid_raw,['//',raw_missing_data_str,'\r\n']);
+	fprintf(fid_raw,['//',iceEvRec_hdr_str,'\r\n']);
+	fprintf(fid_raw,['//',iceEvRec_hdr_str2,'\r\n']);
+	fprintf(fid_raw,['//',iceEvRec_hdr_str3,'\r\n']);
+    fprintf(fid_raw,['//<MetaVariable>label="IceEvRec" value_type="INTEGER" significant_digits="0"</MetaVariable>','\r\n']);
 
 % PRINT OUT SPECIAL NOTES IF THEY EXIST
 if notes_flag == 1
@@ -1677,7 +1688,7 @@ fprintf(fid_raw,'//Note: all timestamps are in GMT. \r\n');
 
 % NOW PRINT THE RAW DATA HEADER
 std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
-    'Lon [°E]' 'Lat [°N]' 'QF'}; % SIZE = 8
+    'Lon [°E]' 'Lat [°N]' 'QF' 'IceEvRec'}; % SIZE = 9
 std_size = size(std_ODV_vars,2);
 
 for i = 1:std_size % PRINT STANDARD HEADER VARS
@@ -1698,7 +1709,7 @@ end
 dummy_out  = ones(raw_r, raw_var_ct) * NaN;
 fill_MVI = ones(raw_r, 1) * -1e10;
 fill_QC  = ones(raw_r, 1);
-ODV_std_f = '%s\t%0.0f\t%s\t%s\t%s\t%0.3f\t%0.3f\t%0.0f\t'; %std_vars
+ODV_std_f = '%s\t%0.0f\t%s\t%s\t%s\t%0.3f\t%0.3f\t%0.0f\t%0.0f\t'; %std_vars
 ODV_raw_f =''; ODV_space_f = '';
 for i = 0:raw_var_ct-1
     c_ct = i*2+1; % Need to add data and QC col
@@ -1739,7 +1750,7 @@ for sample_ct = 1 : raw_r
         time_str = datestr(raw_data(sample_ct,2),'HH:MM');
         std_str  = sprintf(ODV_std_f, info.WMO, cast_num, 'C', ...
             date_str, time_str, raw_data(sample_ct,3), ...
-            raw_data(sample_ct,4), raw_data(sample_ct,5));
+            raw_data(sample_ct,4), raw_data(sample_ct,5), raw_data(sample_ct,6));
         std_str = regexprep(std_str,'NaN',MVI_str);
     end
     data_str = sprintf(ODV_raw_f, dummy_out(sample_ct,:));
@@ -1829,7 +1840,11 @@ if QC_check == 1
         fprintf(fid_adj,['//',missing_pos_str,'\r\n']);
     end
     fprintf(fid_adj,['//',adj_missing_data_str,'\r\n']);
-    
+    fprintf(fid_adj,['//',iceEvRec_hdr_str,'\r\n']);
+	fprintf(fid_adj,['//',iceEvRec_hdr_str2,'\r\n']);
+	fprintf(fid_adj,['//',iceEvRec_hdr_str3,'\r\n']);
+    fprintf(fid_adj,['//<MetaVariable>label="IceEvRec" value_type="INTEGER" significant_digits="0"</MetaVariable>','\r\n']);
+
     % PRINT OUT SPECIAL NOTES IF THEY EXIST
     if notes_flag == 1
         fprintf(fid_adj,'//\r\n//SPECIAL NOTICE:\r\n');
@@ -1910,14 +1925,14 @@ if QC_check == 1
         '1=Missing or not inspected \r\n']);
     fprintf(fid_adj,['//Note: all timestamps are in GMT. \r\n']);
     
-    std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
-        'Lon [°E]' 'Lat [°N]' 'QF'}; % SIZE = 8
+std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
+    'Lon [°E]' 'Lat [°N]' 'QF' 'IceEvRec'}; % SIZE = 9
     std_size = size(std_ODV_vars,2);
     
     % ************************************************************************
     % PRINT THE ADJUSTED DATA HEADER
     std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
-        'Lon [°E]' 'Lat [°N]' 'QF'}; % SIZE = 8
+        'Lon [°E]' 'Lat [°N]' 'QF' 'IceEvRec'}; % SIZE = 9
     std_size = size(std_ODV_vars,2);
     
     for i = 1:std_size % PRINT STANDARD HEADER VARS
@@ -1938,7 +1953,7 @@ if QC_check == 1
     dummy_out  = ones(adj_r, adj_var_ct) * NaN;
     fill_MVI = ones(adj_r, 1) * -1e10;
     fill_QC  = ones(adj_r, 1);
-    ODV_std_f = '%s\t%0.0f\t%s\t%s\t%s\t%0.3f\t%0.3f\t%0.0f\t'; %std_vars
+    ODV_std_f = '%s\t%0.0f\t%s\t%s\t%s\t%0.3f\t%0.3f\t%0.0f\t%0.0f\t'; %std_vars
     ODV_adj_f =''; ODV_space_f = '';
     
     for i = 0:adj_var_ct-1
@@ -1980,7 +1995,7 @@ if QC_check == 1
             time_str = datestr(adj_data(sample_ct,2),'HH:MM');
             std_str  = sprintf(ODV_std_f, info.WMO, cast_num, 'C', ...
                 date_str, time_str, adj_data(sample_ct,3), ...
-                adj_data(sample_ct,4), adj_data(sample_ct,5));
+                adj_data(sample_ct,4), adj_data(sample_ct,5), adj_data(sample_ct,6));
             std_str = regexprep(std_str,'NaN',MVI_str);
         end
         data_str = sprintf(ODV_adj_f, dummy_out(sample_ct,:));
@@ -2037,7 +2052,10 @@ if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR && HR_flag == 1
         fprintf(fid_raw,['//',missing_pos_str,'\r\n']);
     end
     fprintf(fid_raw,['//',raw_missing_data_str,'\r\n']);
-    
+	fprintf(fid_raw,['//',iceEvRec_hdr_str,'\r\n']);
+	fprintf(fid_raw,['//',iceEvRec_hdr_str2,'\r\n']);
+	fprintf(fid_raw,['//',iceEvRec_hdr_str3,'\r\n']);
+    fprintf(fid_raw,['//<MetaVariable>label="IceEvRec" value_type="INTEGER" significant_digits="0"</MetaVariable>','\r\n']);
     % PRINT OUT SPECIAL NOTES IF THEY EXIST
     if notes_flag == 1
         fprintf(fid_raw,'//\r\n//SPECIAL NOTICE:\r\n');
@@ -2064,7 +2082,7 @@ if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR && HR_flag == 1
     
     % NOW PRINT THE RAW DATA HEADER
     std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
-        'Lon [°E]' 'Lat [°N]' 'QF'}; % SIZE = 8
+        'Lon [°E]' 'Lat [°N]' 'QF' 'IceEvRec'}; % SIZE = 9
     std_size = size(std_ODV_vars,2);
     
     for i = 1:std_size % PRINT STANDARD HEADER VARS
@@ -2085,7 +2103,7 @@ if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR && HR_flag == 1
     dummy_out = ones(allraw_r, raw_var_ct) * NaN;
     fill_MVI  = ones(allraw_r, 1) * -1e10;
     fill_QC   = ones(allraw_r, 1);
-    ODV_std_f = '%s\t%0.0f\t%s\t%s\t%s\t%0.3f\t%0.3f\t%0.0f\t'; %std_vars
+    ODV_std_f = '%s\t%0.0f\t%s\t%s\t%s\t%0.3f\t%0.3f\t%0.0f\t%0.0f\t'; %std_vars
     ODV_raw_f =''; ODV_space_f = '';
     for i = 0:raw_var_ct-1
         c_ct = i*2+1; % Need to add data and QC col
@@ -2126,7 +2144,7 @@ if strcmp(info.float_type, 'APEX') && ~tf_APEX_OCR && HR_flag == 1
             time_str = datestr(allraw_data(sample_ct,2),'HH:MM');
             std_str  = sprintf(ODV_std_f, info.WMO, cast_num, 'C', ...
                 date_str, time_str, allraw_data(sample_ct,3), ...
-                allraw_data(sample_ct,4), allraw_data(sample_ct,5));
+                allraw_data(sample_ct,4), allraw_data(sample_ct,5), allraw_data(sample_ct,6));
             std_str = regexprep(std_str,'NaN',MVI_str);
         end
         data_str = sprintf(ODV_raw_f, dummy_out(sample_ct,:));
@@ -2190,7 +2208,10 @@ if QC_check == 1 && HR_flag == 1
             fprintf(fid_adj,['//',missing_pos_str,'\r\n']);
         end
         fprintf(fid_adj,['//',adj_missing_data_str,'\r\n']);
-        
+        fprintf(fid_adj,['//',iceEvRec_hdr_str,'\r\n']);
+		fprintf(fid_adj,['//',iceEvRec_hdr_str2,'\r\n']);
+		fprintf(fid_adj,['//',iceEvRec_hdr_str3,'\r\n']);
+        fprintf(fid_adj,['//<MetaVariable>label="IceEvRec" value_type="INTEGER" significant_digits="0"</MetaVariable>','\r\n']);
         % PRINT OUT SPECIAL NOTES IF THEY EXIST
         if notes_flag == 1
             fprintf(fid_adj,'//\r\n//SPECIAL NOTICE:\r\n');
@@ -2258,8 +2279,8 @@ if QC_check == 1 && HR_flag == 1
         fprintf(fid_adj,['//Note: all timestamps are in GMT. \r\n']);
         
         % NOW PRINT THE ADJUSTED DATA HEADER
-        std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
-            'Lon [°E]' 'Lat [°N]' 'QF'}; % SIZE = 8
+std_ODV_vars   = {'Cruise' 'Station' 'Type' 'mon/day/yr' 'hh:mm' ...
+    'Lon [°E]' 'Lat [°N]' 'QF' 'IceEvRec'}; % SIZE = 9
         std_size = size(std_ODV_vars,2);
         
         for i = 1:std_size % PRINT STANDARD HEADER VARS
@@ -2280,7 +2301,7 @@ if QC_check == 1 && HR_flag == 1
         dummy_out = ones(alladj_r, adj_var_ct) * NaN;
         fill_MVI  = ones(alladj_r, 1) * -1e10;
         fill_QC   = ones(alladj_r, 1);
-        ODV_std_f = '%s\t%0.0f\t%s\t%s\t%s\t%0.3f\t%0.3f\t%0.0f\t'; %std_vars
+        ODV_std_f = '%s\t%0.0f\t%s\t%s\t%s\t%0.3f\t%0.3f\t%0.0f\t%0.0f\t'; %std_vars
         ODV_adj_f =''; ODV_space_f = '';
         
         for i = 0:adj_var_ct-1
@@ -2323,7 +2344,7 @@ if QC_check == 1 && HR_flag == 1
                 time_str = datestr(alladj_data(sample_ct,2),'HH:MM');
                 std_str  = sprintf(ODV_std_f, info.WMO, cast_num, 'C', ...
                     date_str, time_str, alladj_data(sample_ct,3), ...
-                    alladj_data(sample_ct,4), alladj_data(sample_ct,5));
+                    alladj_data(sample_ct,4), alladj_data(sample_ct,5), alladj_data(sample_ct,6));
                 std_str = regexprep(std_str,'NaN',MVI_str);
             end
             data_str = sprintf(ODV_adj_f, dummy_out(sample_ct,:));

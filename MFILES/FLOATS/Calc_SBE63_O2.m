@@ -37,7 +37,7 @@ function [pO2, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(data, cal, OptTvolt)
 %  0.0015....
 %  01/18/24, TM, added case for new Navis Nautilus (0063 and future) which have SBS83 optode temperature expressed as voltage
 %  02/08/24, TM, Further modified this code in support of new Navis Nautilus (0063 and future) which have SBS83 optode temperature expressed as voltage in the PROFILE data only!  Optode temp is in degC for in-air....
-
+%  07/17/24, TM, Another minor modification to reconcile lack of ctd temp in surface obs for sbs83
 
 % TESTING
 % data = lr_d(:,[iP,iT,iS,iPhase,iTo]);
@@ -77,9 +77,14 @@ if contains(cal.type,'SBE63') || tf_3X02 || (OptTvolt)
     OTV(tbad) = 3.3; % set bad to crazy value
 	L      = log(100000 * OTV  ./ (3.3 - OTV ));
 	denom  = (Tcf(1) + Tcf(2).*L + Tcf(3).*L.^2 + Tcf(4).*L.^3);
-	O2_T   = 1./denom - 273.15; % window temperature (degrees C)
+	O2_T   = 1./denom - 273.15 % window temperature (degrees C)
 else
 	O2_T = OTV;
+end
+
+% check if ctd T not available (ie surface obs); then use opt T
+if sum(isnan(T)) == length(T)
+    T = O2_T;
 end
 
 % ************************************************************************
@@ -129,7 +134,7 @@ L      = polyval(pA,Ts) + S_corr;
 O2sol  = (1000/O2_volume) * exp(L); % Oxygen solubility real gas, mmol/m^3 =uM/L
 theExp = (0.317.*P)./(8.314.*TK); % TM 5/25/21; in accordance with Argo O2 cookbook (for aircal pO2, P=0, this exp term does nothing)
 % CALCULATE VAPOR PRESSURE H2O
-pH2O = exp(52.57 -(6690.9./TK) - 4.681 .* log(TK));
+pH2O = exp(52.57 -(6690.9./TK) - 4.681 .* log(TK)); %maybe modify to eqn in O2 proc doc section 7.3.2.
 pO2 = (O2_uM ./ O2sol) .* ((1013.25- pH2O) * 0.20946) .* exp(theExp);  
 
 %Perform final check for imaginary #'s. If found set to crazy value

@@ -7,9 +7,9 @@
 % TESTING
 %mbari_id = 'ss0001';
 %mbari_id = 'ss0002';
-mbari_id = 'ss0003';
+%mbari_id = 'ss0003';
 
-mbari_id = 'ss4003' %not processed with code  - missing O2 pdf cab get 
+mbari_id = 'ss4004' %not processed with code  - missing O2 pdf cab get 
 %data from *.meta but not incorperated yet
 
 

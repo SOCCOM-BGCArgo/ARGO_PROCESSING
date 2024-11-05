@@ -533,6 +533,12 @@ if sum(t1) > 0
    list(t1,iDF) = {'A13-A12_stations_checked_by_Leti_hy1.csv'};
 end
 
+%P02E; error in process_data_ref after 4/11/24 when TRD file added to 'unmerged data' section of https://cchdo.ucsd.edu/cruise/33RR20220613 ...?
+t1 = strcmp(list(:,iCRU),'P02E');
+if sum(t1) > 0
+   list(t1,iDF) = {'33RR20220613_hy1.csv'};
+end
+
 %%SOCCOM A13.5 cruise, 2020; listed as 33RO20200321 but odd file name?
 %t1 = strcmp(list(:,iCRU),'A13.5') & cellfun(@isempty,(list(:,iDF)));
 %if sum(t1) > 0

@@ -70,6 +70,10 @@ function d = MBARI_float_list(dirs)
 %   08/24/2023 - JP: Added 'ua21105' to the missing_pos cell array (missing 1st cycle position)
 % % 02/01/2024 TM, modifications in support of ss4003 Bfile type - solos
 % % 02/22/2024 TM, Added "R" option for dead_float_exp variable (was missing and 0949 on the non-program table was translating to active on the MBARI-float-list)
+%   06/06/2024 TM, some exceptions added to the missing-position array;
+%                 including some additional code modifications to account
+%                 for those cases.
+% % 07/08/2024 TM, Added Navis Type 7 for Navis Nautilus.
 
 % are still hard-coded!!  Not the best....
 
@@ -178,6 +182,11 @@ missing_pos(2,:) = {'ua20520' '5906483' -100.23  12.32 '01/09/2022 063856' 'Posi
 missing_pos(3,:) = {'ua17545' '5906555' -144  -60 '01/03/2023 000000' 'http://soccom.ucsd.edu/SOCCOM_data_reference.html'};
 missing_pos(4,:) = {'ua19045' '5906495' 27.0783  -68.7133 '04/08/2022 023511' 'time from 001.msg, position from http://soccom.ucsd.edu/SOCCOM_data_reference.html'};
 missing_pos(5,:) = {'ua21105' '2903457' -174.7050 -47.675 '01/03/2023 000000' 'from L. Talley deployment notification email June 5, 2023'};
+missing_pos(6,:) = {'ua18340' '5906543' -124.9996 -57.6994 '11/25/2022 193000' 'from initial deployment email'};
+missing_pos(7,:) = {'ua19061' '5906341' -52.3324 35.8859 '03/27/2021 080000' 'from initial deployment email'};  % float died on deployment, never got any data but was deployed
+missing_pos(8,:) = {'un1353' '4903460' -23.000167 -1.999167 '11/13/2022 141500' 'from initial deployment email'}; % float died on deployment, never got any data but was deployed
+missing_pos(9,:) = {'un1526' '5907057' -80.9998 -20.2218 '12/11/2023 201100' 'from initial deployment email'}; % float died on deployment, never got any data but was deployed
+
 %missing_pos(6,:) = {'un0511' '5904478' -174.7050 -47.675 '01/03/2023 000000' 'from L. Talley deployment notification email June 5, 2023'};
 
 
@@ -750,6 +759,8 @@ NAVIS_types(5,:) = {5,'O2ph O2tV Fl Bb Cdm phV phT', -99, -99, ''};
 % diagnostics on spot samples.  pHT column also removed from msg file.
 NAVIS_types(6,:) = {6,'no3 O2ph O2tV Mch1 Mch2 Mch3 phVrs phVk phIb pHIk', -99, -99, ''};
 
+% NAVIS TYPE 7: Navis Nautilus
+NAVIS_types(7,:) = {7,'no3 O2ph O2tV Mch1 Mch2 Mch3 OCRch1 OCRch2 OCRch3 OCRch4 tilt phVrs phVk phIb pHIk', -99, -99, ''};
 
 % ************************************************************************
 % SOLO FLOAT DEFINITIONS: annie type, hdr vars, FlbbMode, PalMode, flt filter
@@ -811,7 +822,8 @@ for fct = 1:size(out,1)
         FLOAT_types = NAVIS_types;
     elseif strcmp(out{fct,I.TYP},'SOLO')
         FLOAT_types = SOLO_types;
-        if strcmp(float_name,'ss4003')
+        %if strcmp(float_name,'ss4003')
+        if str2num(float_name(3:end)) > 4000 %early solos are type 1.  Make this smarter!
             annie_types(fct) = 2;
         else
             annie_types(fct) = 1; %hard code solotype1 for now for ss0001... TM 2/10/22
@@ -846,7 +858,14 @@ for fct = 1:size(out,1)
     else
         d        = get_bsolo_file_list(cal_info, 'CTD');
         dlist    = d.list;
-        cycles   = str2double(regexp(dlist(:,1),'\d{3}(?=\.phy)','match','once'));
+        if ~isempty(dlist)
+            cycles   = str2double(regexp(dlist(:,1),'\d{3}(?=\.phy)','match','once'));
+        else
+            continue
+        end
+        %         %TM move this cycles definition in block below; if float is
+        %         prepped but not yet in the water dlist will be empty!
+
     end
 
     if isempty(dlist)
@@ -855,6 +874,15 @@ for fct = 1:size(out,1)
         log_ct = log_ct+1;
         log{log_ct} = str;
         disp(str)
+        t1 = strcmp(missing_pos(:,2),wmo);
+        if sum(t1) > 0
+            tf_gps = 1;
+            gps = '';
+            mis_pos = [cell2mat(missing_pos(t1,3:4)), ...
+                datenum(missing_pos(t1,5),'mm/dd/yyyy HHMMSS')];
+            fprintf('1st position fix from missing start position list\n');
+            GPS_fix(fct,1:3) = mis_pos; % lon, lat, sdn
+        end
         continue
     end
 
@@ -901,9 +929,21 @@ for fct = 1:size(out,1)
 
     % LOOK IN MSG FILES FOR INFO
     msg_files = dlist(tAnnie,:); % 1st 6
+    if isempty(msg_files)
+        t1 = strcmp(missing_pos(:,2),wmo);
+        if sum(t1) > 0
+            tf_gps = 1;
+            gps = '';
+            mis_pos = [cell2mat(missing_pos(t1,3:4)), ...
+                datenum(missing_pos(t1,5),'mm/dd/yyyy HHMMSS')];
+            fprintf('1st position fix from missing start position list\n');
+            GPS_fix(fct,1:3) = mis_pos; % lon, lat, sdn
+        end
+    end
 
     sensors_str    = '(?<=AXIS\:).+(?=\])|SBE\w+'; % for SOLO
     hdr_line = '';
+
     for ct = 1:size(msg_files,1) % Try 1st 3 msg files for header line
         msg_fn = msg_files{ct,1};
         fp = fullfile(msg_files{ct,2}, msg_fn);
@@ -935,8 +975,8 @@ for fct = 1:size(out,1)
                 % only irradiance float
                 %thdr = regexp(tline,'^\$\s+p\s+t\s+s\s+', 'once','end');
                 thdr = regexp(tline,'^\$\s+p\s+t\s+s\s*', 'once','end');
-%                 tline
-%                 pause
+                %                 tline
+                %                 pause
                 if ~isempty(thdr)
                     hdr_line = tline;
                     hdr_start = thdr;
@@ -996,55 +1036,52 @@ for fct = 1:size(out,1)
                 end
             end
 
-                        if tline == -1 & (tf_hdr == 0 || tf_gps == 0)
-                            continue
-                        end
+            if tline == -1 & (tf_hdr == 0 || tf_gps == 0)
+                continue
+            end
 
 
 
-                % IF YOU GET HERE ALL IS GOOD - NOW TRY AND MATCH TO ANNIE TYPES
-                % AND ADD PROFILE GPS INFO
-                % TM, Float 20520 (5906483) does not have gps the first few cycles, manually enter this info!
+            % IF YOU GET HERE ALL IS GOOD - NOW TRY AND MATCH TO ANNIE TYPES
+            % AND ADD PROFILE GPS INFO
+            % TM, Float 20520 (5906483) does not have gps the first few cycles, manually enter this info!
 
-                if size(gps,2) == 10 % SOLO
-                    %GPS_fix(fct,1:2) = str2double(gps(2:3)); % lon and lat recovered
-                    GPS_fix(fct,1:2) = str2double(gps([3,2])); % lon and lat recovered
-                elseif size(gps,2) >= 3 % APEX or NAVIS
-                    GPS_fix(fct,1:2) = str2double(gps(2:3)); % lon and lat recovered
-                elseif isempty(gps)
-                    GPS_fix(fct,1:3) = mis_pos; % lon, lat, sdn
+            if size(gps,2) == 10 % SOLO
+                %GPS_fix(fct,1:2) = str2double(gps(2:3)); % lon and lat recovered
+                GPS_fix(fct,1:2) = str2double(gps([3,2])); % lon and lat recovered
+            elseif size(gps,2) >= 3 % APEX or NAVIS
+                GPS_fix(fct,1:2) = str2double(gps(2:3)); % lon and lat recovered
+            elseif isempty(gps)
+                GPS_fix(fct,1:3) = mis_pos; % lon, lat, sdn
+            end
+
+            if size(gps,2) >=5
+                dstr = [gps{4},' ',gps{5}]; % date & time to one string
+                if ~strcmp(out{fct,I.TYP},'SOLO')
+                    GPS_fix(fct,3) = datenum(dstr,'mm/dd/yyyy HHMMSS');
+                else
+                    GPS_fix(fct,3) = datenum(dstr,'yyyy/mm/dd HH:MM:SS'); % SOLO
                 end
-
-                if size(gps,2) >=5
-                    dstr = [gps{4},' ',gps{5}]; % date & time to one string
-                    if ~strcmp(out{fct,I.TYP},'SOLO')
-                        GPS_fix(fct,3) = datenum(dstr,'mm/dd/yyyy HHMMSS');
-                    else
-                        GPS_fix(fct,3) = datenum(dstr,'yyyy/mm/dd HH:MM:SS'); % SOLO
-                    end
-                    dvec = datevec(GPS_fix(fct,3));
-                    if dvec(1) == 2099
-                        disp(['GPS time for this profile is > 20 years past start ', ...
-                            '- gps week day number bug?!!'])
-                        dvec(1)  = 1999; % per aoml suggestion don't quite understand jump to 2099
-                        GPS_fix(fct,3) = datenum(dvec) + 1024*7;
-                    end
+                dvec = datevec(GPS_fix(fct,3));
+                if dvec(1) == 2099
+                    disp(['GPS time for this profile is > 20 years past start ', ...
+                        '- gps week day number bug?!!'])
+                    dvec(1)  = 1999; % per aoml suggestion don't quite understand jump to 2099
+                    GPS_fix(fct,3) = datenum(dvec) + 1024*7;
                 end
-% 
-% if strcmp(float_name,'ss4003')
-% keyboard
-% end
-                hdr_str     = regexprep(hdr_line(hdr_start+1:end),' ',''); %remove spaces
-                tf_flt_type = strcmp(hdr_lines, hdr_str);  % match header params
-                tflbb       = cell2mat(FLOAT_types(:,3)) == flbb_mode;
-                tpal        = cell2mat(FLOAT_types(:,4)) == pal_mode;
-                ttype       = tf_flt_type & tflbb & tpal & tf_flt_filt;
+            end
 
-                if sum(ttype) == 1 % A MATCH!
-                    annie_types(fct) = cell2mat(FLOAT_types(ttype,1));
-                    tf_type   = 1; % SUCCESS!
-                    break % get out of msg file loop & go to next float
-                end
+            hdr_str     = regexprep(hdr_line(hdr_start+1:end),' ',''); %remove spaces
+            tf_flt_type = strcmp(hdr_lines, hdr_str);  % match header params
+            tflbb       = cell2mat(FLOAT_types(:,3)) == flbb_mode;
+            tpal        = cell2mat(FLOAT_types(:,4)) == pal_mode;
+            ttype       = tf_flt_type & tflbb & tpal & tf_flt_filt;
+
+            if sum(ttype) == 1 % A MATCH!
+                annie_types(fct) = cell2mat(FLOAT_types(ttype,1));
+                tf_type   = 1; % SUCCESS!
+                break % get out of msg file loop & go to next float
+            end
         else
             str = ['Msg file ', fp, ' not found'];
             log_ct = log_ct+1;
@@ -1052,6 +1089,8 @@ for fct = 1:size(out,1)
             disp(str)
         end
     end
+
+
 
     if tf_type == 0
         if tf_hdr == 1
@@ -1167,7 +1206,7 @@ fclose(fid);
 
 stop_time = toc;
 fprintf('MBARI master float list built in %2.1f minutes\n',stop_time/60);
-% COPY LIST FILES TO MBARI BFIL & FTP DIRS
+% % COPY LIST FILES TO MBARI BFIL & FTP DIRS
 copyfile([dirs.cal,out_name,'*'], dirs.bfile);
 copyfile([dirs.cal,out_name,'*'], dirs.ftp); % ACTIVATE ONCE LIVE
 

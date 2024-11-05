@@ -69,7 +69,8 @@ tf_NO3    = cell2mat(FLOAT_LIST(:,iTFNO3)) == 1;
 % LOAD SHARON'S MAT STRUCTURE FILE INFO, BUT TREAT AS TEXT DATA - FASTER
 %--------------------------------------------------------------------------
 % sharonMasterURL = 'http://soccom.ucsd.edu/FLOAT_INFO/AllFloatInfo.m'; %SOCCOM only
-sharonMasterURL = 'http://go-bgc.ucsd.edu/FLOAT_INFO/SOCCOM_GOBGC_FloatInfo.m';  % This file loc includes SOCCOM & GOBGC (Sharon cats the 2 files together for us now).
+%sharonMasterURL = 'http://go-bgc.ucsd.edu/FLOAT_INFO/SOCCOM_GOBGC_FloatInfo.m';  % This file loc includes SOCCOM & GOBGC (Sharon cats the 2 files together for us now).
+sharonMasterURL = 'https://www3.mbari.org/gobgc/tables/FLOAT_INFO/SOCCOM_GOBGC_FloatInfo.m';
 
 adopt_success = 0;
 try

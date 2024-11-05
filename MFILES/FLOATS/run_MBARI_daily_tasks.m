@@ -32,8 +32,8 @@ pause(30)
 % (3) -------------------------------------------------------------------------
 % % Check for bottle file updates and regenerate shipboard data lookup table
 % % (gets used in GUIs)
-process_data_ref_table
-pause(30)
+%process_data_ref_table
+%pause(30)
 
 MATLABfinish
 % 

@@ -26,6 +26,8 @@ function status = rewrite_XViz_html(dirs)
 % 8/1/2022 TM - modified handling of Sharon's Adopt-a-float master list.
 %   Also moved from including school & name on html, to name & wmo (per
 %   George request)
+% 09/12/2024 JP - updated excusion list to remove test OCR's and and a few
+%                 more DOA float
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
@@ -33,7 +35,6 @@ function status = rewrite_XViz_html(dirs)
 % SET DIRECTORIES
 %--------------------------------------------------------------------------
 
-dirs = [];
 if isempty(dirs) % TESTING SET UP
     user_dir        = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\bgcargovm'
     user_dir        = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
@@ -92,7 +93,10 @@ FLOAT_LIST = FLOAT_LIST(IX,:); % SORT BY WMO
 % deployed but doa
 
 % LIST SUBSET TESTS
-exclude_str = '5906341|5906320|5906446'; % ua19061, WMO 5906341
+% Dead on deployment floats: ua19061|ua18340|ua21960|wn1353|un1526 JP 09/2024
+exclude_str = '5906341|5906543|2903871|4903460|5907057'; % 
+
+%exclude_str = '5906341|5906320|5906446'; % ua19061, WMO 5906341
 %exclude_str = '5906026|5906341'; % ua19061, WMO 5906341 % un1248, WMO 5906026
 tf_exclude = cellfun(@isempty, regexp(FLOAT_LIST(:,iWMO), exclude_str,'once'));
 FLOAT_LIST = FLOAT_LIST(tf_exclude,:);
@@ -108,7 +112,7 @@ tf_NO3    = cell2mat(FLOAT_LIST(:,iTFNO3)) == 1;
 % LOAD SHARON'S MAT STRUCTURE FILE INFO, BUT TREAT AS TEXT DATA - FASTER
 %--------------------------------------------------------------------------
 % sharonMasterURL = 'http://soccom.ucsd.edu/FLOAT_INFO/AllFloatInfo.m'; % This file loc just includes SOCCOM
-sharonMasterURL = 'http://go-bgc.ucsd.edu/FLOAT_INFO/SOCCOM_GOBGC_FloatInfo.m';  % This file loc includes SOCCOM & GOBGC (Sharon cats the 2 files together for us now).
+%sharonMasterURL = 'http://go-bgc.ucsd.edu/FLOAT_INFO/SOCCOM_GOBGC_FloatInfo.m';  % This file loc includes SOCCOM & GOBGC (Sharon cats the 2 files together for us now).
 sharonMasterURL = 'https://www3.mbari.org/gobgc/tables/FLOAT_INFO/SOCCOM_GOBGC_FloatInfo.m';
 adopt_success = 0;
 try
@@ -126,7 +130,7 @@ if adopt_success == 1
     % TM 8/1/22, I think loading array is more straightforward; less prone
     % to regexp error when Sharon changes things.  The indexing was all
     % mucked up.  
-    Sharon_SOCCOMMasterFloatInfo
+    Sharon_SOCCOMMasterFloatInfo;
     Fnm = fieldnames(FLOAT);
     for idn = 1:length(Fnm)
         tmpflt = FLOAT.(Fnm{idn});

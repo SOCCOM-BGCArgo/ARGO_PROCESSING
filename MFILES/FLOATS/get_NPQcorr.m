@@ -37,6 +37,7 @@ function CHL = get_NPQcorr(gps, data, dirs)
 %     refrence depth samples or missing data below the MLD. -jp
 %  03/02/2020 - JP - added a shallow profile check to account for 0889 surf
 %  only measurements
+%  05/15/24 - TM modification to smoothing and MLD specs per most recent Argo QC doc.  Argo CHLA QC doc Sept2023 : http://dx.doi.org/10.13155/35385 
 
 % ************************************************************************
 % TESTING:
@@ -187,8 +188,11 @@ clear tTMLD mld_temp_threshold
 % iMLD = data(:,iP) == max(data(tMLD,iP)); % base of mld index
 
 % !!! FOR NOW ONLY USING DMLD PER ADMT18 CONSENSUS - jp 12/14/17 !!!
-tMLD = data(:,iP) <= CHL.Dmld; % shallower of 2
-iMLD = data(:,iP) == max(data(tMLD,iP)); % base of mld index
+%tMLD = data(:,iP) <= CHL.Dmld; % shallower of 2
+tMLD = data(:,iP) <= CHL.Dmld.*0.9; % per Argo CHLA QC doc Sept2023 : http://dx.doi.org/10.13155/35385 pg 17.
+% %iMLD not used??  And causing error in cases where 0.9*CHL.Dmld is
+% %shallower than shallowest measurement... ie 3902559 cycle 87.  TM 5/16/24
+% iMLD = data(:,iP) == max(data(tMLD,iP)); % base of mld index
 
 % ************************************************************************
 % ************************************************************************
@@ -199,10 +203,11 @@ P      = data(:,iP);
 CHLA   = data(:,iC);
 dp     = nanmean(abs(diff(P(P<100))));
 
+% TM modified window sizes per Argo CHLA QC doc Sept2023 : http://dx.doi.org/10.13155/35385 pg 17.
 if dp > 3
-    win    = 3; % APEX filter window, keep odd
+    win    = 5; % APEX filter window, keep odd
 else
-    win    = 5; % NAVIS / PROVOR filter window, keep odd
+    win    = 7; % NAVIS / PROVOR filter window, keep odd
 end
 
 offset = (win-1)/2;
@@ -388,6 +393,12 @@ end
 chl_tmp = CHLAm;
 chl_tmp(~tMLD) = NaN; % Set values below MLD to NaN
 Cmax = find(chl_tmp == max(chl_tmp),1, 'last'); % max chl above MLD index
+if isempty(Cmax)
+    CHL.exit_msg = 'No surface chl max found in selected range - exiting';
+    disp(CHL.exit_msg)
+    CHL.data =[];
+    return
+end
 Xing_MLD  = CHLA; % Get original chl profile
 Xing_MLD(1:Cmax) = chl_tmp(Cmax);
 CHL.XMLDZ = P(Cmax);
