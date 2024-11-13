@@ -22,6 +22,7 @@ function dirs = SetupDirs_sage
 % UPDATES: Updated 3/8/17 to allow gui user to more easily work from
 %          preferred directory location.
 %          Updated 10/25/2017 to improve path install process.
+%          Updated 11/13/24 to WOA2023 TM
 % NOTES:   Before launching SageO2, be sure you have run INSTALL_sageO2
 % from ../ARGO_PROCESSING/MFILES/GUIS/SAGE_O2/.
 % ************************************************************************
@@ -38,7 +39,7 @@ end
 
 dirs.user_dir = topdir;
 dirs.mfiles    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'MFILES',filesep];
-dirs.woa       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2018',filesep];
+dirs.woa       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'WOA2023',filesep];
 dirs.glodap    = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'GLODAP',filesep];
 dirs.mat       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'FLOATS',filesep];
 dirs.cal       = [dirs.user_dir,'ARGO_PROCESSING',filesep,'DATA',filesep,'CAL',filesep];

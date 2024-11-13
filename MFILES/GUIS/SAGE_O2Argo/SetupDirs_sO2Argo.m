@@ -22,6 +22,7 @@ function dirs = SetupDirs_sO2Argo
 % UPDATES: Updated 3/8/17 to allow gui user to more easily work from
 %          preferred directory location.
 %          Updated 10/25/2017 to improve path install process.
+%		11/13/24: TM updated to WOA2023
 % NOTES:   Before launching SageO2, be sure you have run INSTALL_sageO2
 % from ../ARGO_PROCESSING/MFILES/GUIS/SAGE_O2/.
 % ************************************************************************
@@ -42,7 +43,7 @@ dirs.bottle    = [dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'SHIPBOARD',fp
 dirs.QCadj     = [dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'CAL',fp,'QC_LISTS',fp]; % empty, but DACs may populate.  GUI checks for QC_LISTs (pre-stored adjustments to populate table)
 dirs.NCEP_TEMP = [dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'NCEP_TEMPORARY',fp];
 dirs.Argo      = [dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'ARGO_REPO',fp];
-dirs.woa       =[dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp];
+dirs.woa       =[dirs.user_dir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2023',fp];
 dirs.temp = [dirs.user_dir,fp,'temp',fp];
 if ~exist(dirs.temp, 'dir')
     mkdir(dirs.temp)

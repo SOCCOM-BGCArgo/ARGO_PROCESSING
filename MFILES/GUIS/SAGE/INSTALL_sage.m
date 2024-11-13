@@ -20,8 +20,8 @@ function INSTALL_sage
 %
 % DATE: 9/17/18
 % UPDATES: 01/08/21: TM ftp dir no longer exists, moved to websave to
-%                     extract files from ncei.noaa.gov.
-%          01/10/23: TM minor modification to file grab syntax.
+%          11/13/24:  TM update to WOA2023
+% extract files from ncei.noaa.gov.
 % NOTES:   
 % ************************************************************************
 %
@@ -40,13 +40,13 @@ else
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'FLOATS',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GLODAP',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'LIAR',fp]);
+    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'ESPER',fp]));
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE_O2Argo',fp]);
 	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'MISC',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'WOA',fp]);
 	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'CANYON',fp]);
 	addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'CANYON_B',fp]);
-    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'ESPER',fp]));
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,]);
 
     disp('INSTALLING "ARGO_PROCESSING\DATA" PATHS...')
@@ -58,7 +58,7 @@ else
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'FLOATVIZ',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'LIAR',fp]);
     addpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'SHIPBOARD',fp]);
-    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp]));
+    addpath(genpath([topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2023',fp]));
 
     if ~isempty(strfind(computer,'PC'))
         tmploc     = ['C:',filesep,'temp',filesep];
@@ -74,27 +74,27 @@ end
 save([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE',fp,'sage_workingDIR.mat'],'topdir');
 
 % CHECK FOR WOA DATA.  IF DOESN'T EXIST, DOWNLOAD IT.
-disp('CHECKING FOR LOCAL WOA2018 OXYGEN FILES...')
-WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp,'oxygen',fp];
-wdir = dir([WOAdir,'woa18_all_o*_01.nc']);
+disp('CHECKING FOR LOCAL WOA2023 OXYGEN FILES...')
+WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2023',fp,'oxygen',fp];
+wdir = dir([WOAdir,'woa23_all_o*_01.nc']);
 woafiles = char(wdir.name);
 if size(woafiles,1)<17 %not all files exist on repo
-    disp('POPULATING LOCAL WOA2018 REPOSITORY FOR OXYGEN...')
+    disp('POPULATING LOCAL WOA2023 REPOSITORY FOR OXYGEN...')
     disp('May take a few minutes.')
     disp(['You can monitor download progress at ',WOAdir])
     try
         % Jan2021 -- TM. ftp site no longer exists.  Use websave with
         % 'https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/oxygen/netcdf/all/1.00/'
         % to download all 17 files.
-        WOAurl = 'https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/oxygen/netcdf/all/1.00/';
+        WOAurl = 'https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/oxygen/netcdf/all/1.00/';
         for i = 1:17 %hard-coded for now so that error will inform of any data file removals.  Could parse html from webread to get filenames, but could be risky if html format suddenly changes.
-        	woaFname = ['woa18_all_o',num2str(i-1,'%02d'),'_01.nc'];
+        	woaFname = ['woa23_all_o',num2str(i,'%02d'),'_01.nc'];
             websave([WOAdir,woaFname],[WOAurl,woaFname])
-            disp([woaFname,' SUCCESSFULLY DOWNLOADED FROM https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/oxygen/netcdf/all/1.00/.'])
+            disp([woaFname,' SUCCESSFULLY DOWNLOADED FROM https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/oxygen/netcdf/all/1.00/.'])
         end
     catch
-        disp('CONNECTION TO https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/oxygen/netcdf/all/1.00/ FAILED.  NOW ATTEMPTING TO DOWNLOAD WOA NITRATE...')
-%         return
+        disp('CONNECTION TO https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/oxygen/netcdf/all/1.00/ FAILED.  ENDING INSTALL.')
+        return
     end
 else
     disp('WOA files were found:')
@@ -102,26 +102,26 @@ else
 end
 
 %pause(30)
-disp('CHECKING FOR LOCAL WOA2018 NITRATE FILES...')
-WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp,'nitrate',fp];
-wdir = dir([WOAdir,'woa18_all_n*_01.nc']);
+disp('CHECKING FOR LOCAL WOA2023 NITRATE FILES...')
+WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2023',fp,'nitrate',fp];
+wdir = dir([WOAdir,'woa23_all_n*_01.nc']);
 woafiles = char(wdir.name);
 if size(woafiles,1)<17 %not all files exist on repo
-    disp('POPULATING LOCAL WOA2018 REPOSITORY FOR NITRATE...')
+    disp('POPULATING LOCAL WOA2023 REPOSITORY FOR NITRATE...')
     disp('May take a few minutes.')
     disp(['You can monitor download progress at ',WOAdir])
     try
         % Jan2021 -- TM. ftp site no longer exists.  Use websave with
         % 'https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/oxygen/netcdf/all/1.00/'
         % to download all 17 files.
-        WOAurl = 'https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/nitrate/netcdf/all/1.00/';
+        WOAurl = 'https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/nitrate/netcdf/all/1.00/';
         for i = 1:17 %hard-coded for now so that error will inform of any data file removals.  Could parse html from webread to get filenames, but could be risky if html format suddenly changes.
-        	woaFname = ['woa18_all_n',num2str(i-1,'%02d'),'_01.nc'];
+        	woaFname = ['woa23_all_n',num2str(i,'%02d'),'_01.nc'];
             websave([WOAdir,woaFname],[WOAurl,woaFname])
-            disp([woaFname,' SUCCESSFULLY DOWNLOADED FROM https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/nitrate/netcdf/all/1.00/.'])
+            disp([woaFname,' SUCCESSFULLY DOWNLOADED FROM https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/nitrate/netcdf/all/1.00/.'])
         end
     catch
-        disp('CONNECTION TO https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/nitrate/netcdf/all/1.00/ FAILED.  ENDING INSTALL.')
+        disp('CONNECTION TO https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/nitrate/netcdf/all/1.00/ FAILED.  ENDING INSTALL.')
         return
     end
 else

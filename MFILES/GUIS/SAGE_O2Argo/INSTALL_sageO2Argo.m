@@ -29,6 +29,7 @@ function INSTALL_sageO2Argo
 %       01/08/21: TM WOA ftp dir no longer exists, moved to websave to
 %                 extract files from ncei.noaa.gov.
 %       01/10/23: TM minor modification to file grab syntax.
+%		11/13/24: TM updated to WOA2023
 % NOTES:   
 % ************************************************************************
 %
@@ -60,26 +61,26 @@ end
 save([topdir,fp,'ARGO_PROCESSING',fp,'MFILES',fp,'GUIS',fp,'SAGE_O2Argo',fp,'sageO2Argo_workingDIR.mat'],'topdir');
 
 % CHECK FOR WOA DATA.  IF DOESN'T EXIST, DOWNLOAD IT.
-disp('CHECKING FOR LOCAL WOA2018 FILES...')
-WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2018',fp,'o2sat',fp];
-wdir = dir([WOAdir,'woa18_all_O*_01.nc']);
+disp('CHECKING FOR LOCAL WOA2023 FILES...')
+WOAdir = [topdir,fp,'ARGO_PROCESSING',fp,'DATA',fp,'WOA2023',fp,'o2sat',fp];
+wdir = dir([WOAdir,'woa23_all_O*_01.nc']);
 woafiles = char(wdir.name);
 if size(woafiles,1)<17 %not all files exist on repo
-    disp('POPULATING LOCAL WOA2018 REPOSITORY...')
+    disp('POPULATING LOCAL WOA2023 REPOSITORY...')
     disp('May take a few minutes.')
     disp(['You can monitor download progress at ',WOAdir])
    try
         % Jan2021 -- TM. ftp site no longer exists.  Use websave with
-        % 'https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/oxygen/netcdf/all/1.00/'
+        % 'https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/oxygen/netcdf/all/1.00/'
         % to download all 17 files.
-        WOAurl = 'https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/o2sat/netcdf/all/1.00/';
+        WOAurl = 'https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/o2sat/netcdf/all/1.00/';
         for i = 1:17 %hard-coded for now so that error will inform of any data file removals.  Could parse html from webread to get filenames, but could be risky if html format suddenly changes.
-        	woaFname = ['woa18_all_O',num2str(i-1,'%02d'),'_01.nc'];
+        	woaFname = ['woa23_all_O',num2str(i-1,'%02d'),'_01.nc'];
             websave([WOAdir,woaFname],[WOAurl,woaFname])
-            disp([woaFname,' SUCCESSFULLY DOWNLOADED FROM https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/o2sat/netcdf/all/1.00/.'])
+            disp([woaFname,' SUCCESSFULLY DOWNLOADED FROM https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/o2sat/netcdf/all/1.00/.'])
         end
     catch
-        disp('CONNECTION TO https://www.ncei.noaa.gov/data/oceans/woa/WOA18/DATA/o2sat/netcdf/all/1.00/ FAILED.  MOVING TO NCEP DATA GRAB...')
+        disp('CONNECTION TO https://www.ncei.noaa.gov/data/oceans/woa/WOA23/DATA/o2sat/netcdf/all/1.00/ FAILED.  MOVING TO NCEP DATA GRAB...')
 %         return
     end
 else
