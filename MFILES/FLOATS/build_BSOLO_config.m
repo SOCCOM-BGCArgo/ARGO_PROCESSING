@@ -3,14 +3,26 @@
 %  01/29/24: TM, Modifications for more cal flavors!  ss4003 pending
 %  deployment...
 %
+%  05/14/24: LG, Changed "default_wls" to pull wavelengths directly from the
+%  cal files. Modified regexpi functions for NO3 to choose the .CAL file and
+%  not the SUNAXXX_Calibration pdf. 
+%
+%  05/20/24: LG, Edited "default_wls" since SBE cal files do not have whole
+%  numbers for wavelengths, so I added a table of reference wavelengths that
+%  the cal sheet is compared to. Also changed a functionality for the NO3
+%  calibration file, where if no SNA.CAL file is detected, it prompts the
+%  user to select the file from the directory. This prevents the program
+%  from pulling the calibration pdf (future fix)
 % ***********************************************************************
 % TESTING
 %mbari_id = 'ss0001';
 %mbari_id = 'ss0002';
 %mbari_id = 'ss0003';
 
-mbari_id = 'ss4004' %not processed with code  - missing O2 pdf cab get 
-%data from *.meta but not incorperated yet
+% mbari_id = 'ss4014' %not processed with code  - missing O2 pdf cab get 
+% data from *.meta but not incorperated yet
+% mbari_id = 'ss0019';
+% mbari_id = 'ss0025';
 
 
 % ***********************************************************************
@@ -270,7 +282,6 @@ if isfield(SBE,'pH')
 %     config_cell{config_ct} = pH_str;
     cal = SBE.pH;
     out{12} = sprintf(pH_str, cal.SN, cal.k0, cal.k2, flip(cal.fP));
-%     keyboard
     clear  O2Pstr Pcoef Pmeta t1 str2
 end
 
@@ -329,7 +340,8 @@ end
 disp(['Looking for OCR504 calibration data file(s): ',cal_fp]);
 tf_OCR   = ~cellfun(@isempty, regexpi(cal_fnames,'OCR504'));
 skip_OCR = 0;
-default_wls = {'380' '412' '490' 'PAR'}; % This may need to be a user input at some point
+ref_wls=[380 412 443 490 555]; %The reference wavelengths used by ARGO
+default_wls = {}; %Create empty array to populate with wavelengths from the calfile
 %ocr_str  = 'OCR504 %s CHANNEL %02.0f %s [a0 a1 im],%s,%s,%s';
 ocr_str  = 'OCR CHANNEL %02.0f %s (OCR504 %s) [a0 a1 im],%s,%s,%s';
 a0 = cell(1,4);
@@ -375,13 +387,31 @@ if skip_OCR == 0
             tline = fgetl(fid);
         end
     else %alternate format
-%         keyboard
+        
         while ischar(tline)
             if regexp(tline,'^SN','once')
                 SN = regexp(tline,'\d+','match','once');
             end
 
             if regexp(tline,'OPTIC2')
+               
+                %Set up a try statement to catch a future error if 'PAR' is
+                %in the cal file
+                try
+                %keyboard
+                wl = strsplit(tline,{' ','.'}); %Split the line with OPTIC 2 by space and period to isolate the wl from its decimal
+                wl_num = cellfun(@str2num, wl(2)); %Convert the string to a number
+                diff = abs(ref_wls-wl_num); %Find the difference between the wl and the reference wl array
+                catch ME %If there's an error
+                    if (strcmp(ME.identifier,'MATLAB:sizeDimensionsMustMatch'))
+                        msg = ['Retrieved wavelength is not a number and cannot be compared to reference wavelengths']
+                        msg2 = ['Using '+wl(1)+' instead']
+                        default_wls = [default_wls; wl(1)]; %Use the first string in tline, which can be PAR
+                        continue %Continue with the at the top of the loop
+                    end
+                end
+                iMin = find(diff==min(diff)); %Locate the minimum difference between the given and reference wavelength array
+                default_wls = [default_wls; num2str(ref_wls(iMin))]; %Populate the default wavelengths array with the correct wavelength
                 tline = fgetl(fid);
                 thecoeffs = str2num(tline);
                 a0{ct} = thecoeffs(1);
@@ -439,9 +469,14 @@ end
 % LAST STEP GRAB SUNA CAL FILE, FORMAT AND BRING TO MBARI SIDE 
 % ************************************************************************
 disp(['Looking for SUNA nitrate calibration file(s): ',cal_fp]);
-tf_NO3   = ~cellfun(@isempty, regexpi(cal_fnames,'SUNA.+CAL'));
+tf_NO3   = ~cellfun(@isempty, regexpi(cal_fnames,'SNA.+CAL'));
+
 if sum(tf_NO3)==0
-    tf_NO3   = ~cellfun(@isempty, regexpi(cal_fnames,'SNA.+CAL')); %arg...
+    %Manually choose a file if the initial query doesn't find anything
+    NO3cal_fn = uigetfile([cal_fp,'SUNA*CAL'],'Please choose SUNA cal file');
+
+    %Commented out by Logan G. on 5/14/2024 (For deprecation?)
+    %tf_NO3  = ~cellfun(@isempty, regexpi(cal_fnames,'SNA.+CAL')); %arg...
 end
 
 skip_NO3 = 0;
