@@ -446,7 +446,6 @@ for i = 1:r
     wmo        = '';
 
     tSpecial = strcmp(special_case(:,1), float_name);
-
     if sum(tSpecial) == 1
         if strcmp(special_case{tSpecial,2},'NO_WMO_')
             wmo = {[special_case{tSpecial,2}, float_name]};
@@ -476,7 +475,7 @@ for i = 1:r
             info = webread(api_call);
             wmo = {info.WMO};
         catch
-            wmo ={['NO_WMO_', mbari_id]};
+            wmo ={['NO_WMO_', float_name{i}]};
         end
     elseif regexp(float_name,'^s','once') % SIO WMO lookup
         t1  = strcmp(inst_num, sio_wmo(:,1));

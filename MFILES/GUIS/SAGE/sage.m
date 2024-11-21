@@ -87,6 +87,7 @@ function varargout = sage()
 %   reference options (https://doi.org/10.1002/lom3.10461)
 %   03/30/23 TM added ESPER MIX
 %   02/08/2024 TM added msgbox and prevention of reprocess when QC Matrix does not start at cycle 1!
+%   08/15/2024 LG added new map code for the "showmap" function that uses geoaxes 
 
 % NOTES:
 %
@@ -833,7 +834,6 @@ clear d
             try
                 WOA_NO3 = get_WOA_local(dirs.woa,DATA.track(:,[1,4,3]), [0 2000], 'NO3');
                 % NOW MATCH WOA DATA TO RAW PROFILE DATA, sample by sample
-
                 WNO3 = ones(size(handles.raw_data.data(:,1))) * NaN; % predim
                 Z = WOA_NO3.Z; % WOA depth grid
                 N = WOA_NO3.d; % WOA nitrate, µM / L

@@ -67,7 +67,7 @@ function data = parse_APEXmsg4ARGO_OCR(msg_file)
 % FOR TESTING
 % msg_file = '\\atlas\chemwebdata\floats\alternate\f9095\9095.011.msg';
 % msg_file = 'C:\temp\19191.001.msg';
-
+% msg_file = 'C:\temp\19314.005.msg';
 
 % HIGH RESOLUTION SAMPLES FOR UW / MBARI APEX FLOATS
 % The first 4-bytes of the encoded sample represents the pressure in

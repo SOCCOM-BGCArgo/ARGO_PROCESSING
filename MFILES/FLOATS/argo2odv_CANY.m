@@ -84,6 +84,9 @@ function tf_odv = argo2odv_CANY(WMO_ID, dirs, update_str, HR_flag)
 % 8/23/23    TM - Code change to allow CANYCN file creation on ALL floats, so ALL floats get zipped into each archive flavor!
 % 2/6/24 	TM - added columns for newest possible OCR channels (443nm and 555nm)
 %5/2024 	TM - added ice evasion record column to ODV processed file.
+% 11/08/2024 JP, small update to meta data lines for ODV ADJ file. Now
+%                incldes NO3 & pH specific QC/QA notes ref used and depth
+%                range
 
 
 % WMO_ID = '1902303'; % wn1201
@@ -1576,6 +1579,23 @@ if QC_check == 1
     
     % PRINT OUT FLOAT VARIABLE QC CORRECTION INFO
     fprintf(fid_adj,'//\r\n//QUALITY CONTROLLED DATA CORRECTIONS:\r\n');
+
+    if isfield(QC,'QC_info') % jp 11/06/2024
+        if isfield(QC.QC_info,'Nitrate')
+            fprintf(fid_adj,'//Nitrate DMQC on %s vs %s at %s dbar. RMSE = %s\r\n',...
+                QC.QC_info.Nitrate.Date,  QC.QC_info.Nitrate.Ref, ...
+                QC.QC_info.Nitrate.PresRange, QC.QC_info.Nitrate.RMSE);
+        end
+
+        if isfield(QC.QC_info,'pH')
+            fprintf(fid_adj,'//pH DMQC on %s vs %s at %s dbar. RMSE = %s\r\n',...
+                QC.QC_info.pH.Date,  QC.QC_info.pH.Ref, ...
+                QC.QC_info.pH.PresRange,QC.QC_info.pH.RMSE)
+            fprintf(fid_adj,'//pH pump offset correction method = %s\r\n', ...
+                QC.pH.pHpumpoffset);
+        end
+    end
+
     fprintf(fid_adj,'//Measurement\tStation\tGain\tOffset\tDrift\r\n');
     possible_fields = {'O' 'N' 'pH' 'CHL' 'BB' 'CDOM'};
     possible_hdr_names = {'Oxygen' 'Nitrate' 'pH' 'Chl' 'BB' 'CDOM'};

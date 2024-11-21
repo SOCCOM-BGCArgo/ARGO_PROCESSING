@@ -1,0 +1,172 @@
+Cycle delta threshold = 0.01
+Reference anomaly threshold = 0.0075
+pH magnitude bounds = 7.3-8.5
+
+
+5906443		cycles:	22-54
+Cycle delta threshold exceeded at cycle(s)	23	30	
+Reference anomaly threshold exceeded at cycle(s)	26	
+
+5906512		cycles:	73-75
+Reference anomaly threshold exceeded at cycle(s)	75	
+
+2903870		cycles:	1-11
+Cycle delta threshold exceeded at cycle(s)	3	4	6	
+Reference anomaly threshold exceeded at cycle(s)	1	6	
+
+5906440		cycles:	116-119
+Reference anomaly threshold exceeded at cycle(s)	119	
+
+5906439		cycles:	113-115
+Cycle delta threshold exceeded at cycle(s)	114	
+
+5906525	(pump offset float)	cycles:	55-75
+Cycle delta threshold exceeded at cycle(s)	65	
+Reference anomaly threshold exceeded at cycle(s)	69	
+
+1902501		cycles:	1-5
+Cycle delta threshold exceeded at cycle(s)	2	
+
+1902650	(pump offset float)	cycles:	8-12
+Cycle delta threshold exceeded at cycle(s)	12	
+Reference anomaly threshold exceeded at cycle(s)	12	
+
+5906204		cycles:	75-160
+Cycle delta threshold exceeded at cycle(s)	103	109	119	121	131	146	150	158	
+Reference anomaly threshold exceeded at cycle(s)	101	102	103	104	105	106	107	108	109	110	111	112	113	114	115	116	117	130	139	141	146	147	148	149	150	151	152	153	154	155	156	157	158	159	160	
+
+7901106		cycles:	92-97
+Reference anomaly threshold exceeded at cycle(s)	93	94	95	96	
+
+5906434		cycles:	114-117
+pH magnitude threshold exceeded at cycle(s)	114	
+
+5907061		cycles:	61-98
+Cycle delta threshold exceeded at cycle(s)	67	
+
+1902489		cycles:	1-5
+Cycle delta threshold exceeded at cycle(s)	3	4	
+
+5906218		cycles:	137-152
+No GPS fix (and no EsperMix) for cycle(s)	138	139	140	145	146	147	148	149	150	151	152	
+
+4903750		cycles:	11-13
+Reference anomaly threshold exceeded at cycle(s)	12	13	
+
+5906442		cycles:	83-86
+Cycle delta threshold exceeded at cycle(s)	84	
+Reference anomaly threshold exceeded at cycle(s)	85	86	
+
+5906529	(pump offset float)	cycles:	161-166
+Reference anomaly threshold exceeded at cycle(s)	164	165	166	
+
+5906340		cycles:	115-118
+Reference anomaly threshold exceeded at cycle(s)	115	116	118	
+
+5907051	(pump offset float)	cycles:	31-32
+Reference anomaly threshold exceeded at cycle(s)	32	
+
+5906245		cycles:	102-147
+No GPS fix (and no EsperMix) for cycle(s)	103	104	106	110	116	120	123	127	128	129	131	139	142	146	147	
+
+5907052		cycles:	8-11
+Reference anomaly threshold exceeded at cycle(s)	10	11	
+
+4903755		cycles:	6-8
+Reference anomaly threshold exceeded at cycle(s)	6	7	8	
+
+7901107	(pump offset float)	cycles:	9-11
+Cycle delta threshold exceeded at cycle(s)	11	
+
+5906544		cycles:	46-46
+Reference anomaly threshold exceeded at cycle(s)	46	
+
+1902494	(pump offset float)	cycles:	11-16
+Reference anomaly threshold exceeded at cycle(s)	13	14	
+
+5906502		cycles:	87-89
+Reference anomaly threshold exceeded at cycle(s)	87	88	89	
+
+5906469		cycles:	91-93
+Reference anomaly threshold exceeded at cycle(s)	91	92	93	
+
+2903453		cycles:	41-45
+Reference anomaly threshold exceeded at cycle(s)	42	43	44	45	
+
+7901108	(pump offset float)	cycles:	9-11
+Reference anomaly threshold exceeded at cycle(s)	11	
+
+5906561	(pump offset float)	cycles:	48-52
+Cycle delta threshold exceeded at cycle(s)	51	
+
+1902491		cycles:	7-11
+Cycle delta threshold exceeded at cycle(s)	11	
+
+1902374		cycles:	1-11
+Cycle delta threshold exceeded at cycle(s)	7	
+
+4903488		cycles:	39-43
+Reference anomaly threshold exceeded at cycle(s)	43	
+
+2903456		cycles:	34-38
+Reference anomaly threshold exceeded at cycle(s)	35	36	37	38	
+
+2903470		cycles:	24-27
+Reference anomaly threshold exceeded at cycle(s)	24	
+
+1902666		cycles:	1-10
+Cycle delta threshold exceeded at cycle(s)	7	
+
+1902643		cycles:	10-13
+Cycle delta threshold exceeded at cycle(s)	12	
+
+7902100		cycles:	1-6
+Reference anomaly threshold exceeded at cycle(s)	1	
+
+5906496	(pump offset float)	cycles:	43-44
+No GPS fix (and no EsperMix) for cycle(s)	44	
+
+2903471		cycles:	4-4
+Reference anomaly threshold exceeded at cycle(s)	4	
+
+4903756		cycles:	4-4
+Reference anomaly threshold exceeded at cycle(s)	4	
+
+5906227		cycles:	102-149
+No GPS fix (and no EsperMix) for cycle(s)	103	104	105	106	107	111	112	115	121	133	136	140	144	149	
+Cycle delta threshold exceeded at cycle(s)	121	
+
+5906582		cycles:	44-44
+Reference anomaly threshold exceeded at cycle(s)	44	
+
+5906226		cycles:	137-142
+No GPS fix (and no EsperMix) for cycle(s)	142	
+
+5906493	(pump offset float)	cycles:	29-39
+No GPS fix (and no EsperMix) for cycle(s)	39	
+Cycle delta threshold exceeded at cycle(s)	39	
+
+7900824		cycles:	79-79
+No data from 950-1520m, no qc performed
+
+5906293		cycles:	141-142
+No GPS fix (and no EsperMix) for cycle(s)	142	
+
+7900825		cycles:	76-76
+No data from 950-1520m, no qc performed
+
+7900827		cycles:	79-79
+No data from 950-1520m, no qc performed
+
+7900823		cycles:	77-77
+No data from 950-1520m, no qc performed
+
+5906205		cycles:	114-141
+No GPS fix (and no EsperMix) for cycle(s)	115	116	117	118	119	120	121	123	126	130	132	133	135	137	138	139	140	141	
+Cycle delta threshold exceeded at cycle(s)	118	137	139	
+
+5906565		cycles:	35-35
+Reference anomaly threshold exceeded at cycle(s)	35	
+
+7900826		cycles:	5-5
+No data from 950-1520m, no qc performed

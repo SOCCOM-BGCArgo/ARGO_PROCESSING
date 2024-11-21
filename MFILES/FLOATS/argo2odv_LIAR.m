@@ -8,7 +8,7 @@ function tf_odv = argo2odv_LIAR(WMO_ID, dirs, update_str, HR_flag)
 %
 %
 % USAGE:
-%	tf_odv = argo2odv10(WMO_ID, dirs, update_str)
+%	tf_odv = argo2odv_LIAR(WMO_ID, dirs, update_str)
 %
 % INPUTS:
 %   WMO_ID  = WMO ID, as a string
@@ -87,6 +87,9 @@ function tf_odv = argo2odv_LIAR(WMO_ID, dirs, update_str, HR_flag)
 % 02/03/2024 JP, added code so raw OCR gets propagated to ADJ ODV file
 %               similar to CHL, BBP & some general code cleanup/houskeeping
 %5/2024 	TM - added ice evasion record column to ODV processed file.
+% 11/08/2024 JP, small update to meta data lines for ODV ADJ file. Now
+%                incldes NO3 & pH specific QC/QA notes ref used and depth
+%                range
 
 % !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 % TESTING
@@ -100,10 +103,15 @@ function tf_odv = argo2odv_LIAR(WMO_ID, dirs, update_str, HR_flag)
 % WMO_ID = '5906522';
 % WMO_ID = '5906495';
 
-% WMO_ID = 'NO_WMO_un0948';
+% WMO_ID = '5906568';
 % dirs       = [];
 % update_str = 'all';
-% HR_flag    = 1;
+% HR_flag    = 0;
+
+% load('C:\temp\SV2_test.mat')
+% MBARI_ID_str = jp1;
+% dirs         = jp2;
+% update_str   = 'all';
 % !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
@@ -385,7 +393,7 @@ if sum(t_nan,1) > 0 && sum(t_nan,1)~=length(pos_fix(:,4)) %if not all nans, try 
     end
     clear diff_nan nan_start nan_end bnds bait i j t1
     
-    % NOW ASSES WHAT HAS BEEN INTERPOLATED AND WHAT HAS NOT
+    % NOW ASESS WHAT HAS BEEN INTERPOLATED AND WHAT HAS NOT
     t_nan2 = isnan(pos_fix(:,4)); % Still any nan's in LAT? NO INTERP YET
     t_nan3 = t_nan & ~t_nan2; % used to be nan's but now interpolated
     if sum(t_nan3 > 0) % Interpolated values
@@ -1875,6 +1883,23 @@ if QC_check == 1
     
     % PRINT OUT FLOAT VARIABLE QC CORRECTION INFO
     fprintf(fid_adj,'//\r\n//QUALITY CONTROLLED DATA CORRECTIONS:\r\n');
+    
+    if isfield(QC,'QC_info') % jp 11/06/2024
+        if isfield(QC.QC_info,'Nitrate')
+            fprintf(fid_adj,'//Nitrate DMQC on %s vs %s at %s dbar. RMSE = %s\r\n',...
+                QC.QC_info.Nitrate.Date,  QC.QC_info.Nitrate.Ref, ...
+                QC.QC_info.Nitrate.PresRange, QC.QC_info.Nitrate.RMSE);
+        end
+
+        if isfield(QC.QC_info,'pH')
+            fprintf(fid_adj,'//pH DMQC on %s vs %s at %s dbar. RMSE = %s\r\n',...
+                QC.QC_info.pH.Date,  QC.QC_info.pH.Ref, ...
+                QC.QC_info.pH.PresRange,QC.QC_info.pH.RMSE)
+            fprintf(fid_adj,'//pH pump offset correction method = %s\r\n', ...
+                QC.pH.pHpumpoffset);
+        end
+    end
+
     fprintf(fid_adj,'//Measurement\tStation\tGain\tOffset\tDrift\r\n');
     possible_fields = {'O' 'N' 'pH' 'CHL' 'BB' 'CDOM'};
     possible_hdr_names = {'Oxygen' 'Nitrate' 'pH' 'Chl' 'BB' 'CDOM'};

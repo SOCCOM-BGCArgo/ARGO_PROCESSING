@@ -32,7 +32,6 @@ function [tf_float,FULLreprocess] = Process_APEX_float(MBARI_ID_str, dirs, updat
 %   dirs.msg       = path to float message file directories
 %   dirs.mat       = path to *.mat profile files for ARGO NETCDF
 %   dirs.cal       = path to *.cal (nitrate) and cal####.mat (working float cal) files
-%   dirs.config    = path to config.txt files
 %   dirs.temp      = path to temporary working dir
 %   dirs.FV        = path to FloatViz files served to web
 %   dirs.QCadj     = path to QC adjustment list for all floats
@@ -195,44 +194,33 @@ function [tf_float,FULLreprocess] = Process_APEX_float(MBARI_ID_str, dirs, updat
 % ODV files. Edits are made on lines 3081 and 3101. OCR data structure no
 % longer contained headers that were used to retreive data from .msg files,
 % now it gets header indices from correct location and data can be found.
-% ************************************************************************
+%
+% 11/08/24 JP Updates to accomodate pH pump offset adjustment, new QC list
+%             file changes (SAGEv2) and SCI CAL info for pH and nitrate
+%
+% 11/11/24 TM Incorporation of optode response time correction for APEX 4330, 3830 optode DOXY data.
 
 % ************************************************************************
 % ************************************************************************
 % *** FOR TESTING ***
 
-% MBARI_ID_str = 'ua18739';
-% MBARI_ID_str = 'ua19719';
-% MBARI_ID_str = 'ua17350';
-%MBARI_ID_str = 'ua19314'; % OCR 5906446	APEX
-%MBARI_ID_str = 'ua19191'; % OCR '5906320'; % ua19191
-%MBARI_ID_str = 'ua19298'; % 2XO2
-%MBARI_ID_str = 'ua19843'; % 2XO2
-% MBARI_ID_str = 'ua12733'; % 	12733	5905131	APEX
-%
-% % % % MBARI_ID_str = 'ua20532'; % EMILY TEST FLBB
-% % % MBARI_ID_str = 'ua12363'; % EMILY TEST FLBB
-% % % % % %
-% % % update_str = 'all';
-% % % % update_str = 'update';
-% % % dirs =[];
-
-% MBARI_ID_str = 'ua22218';
+% MBARI_ID_str = 'ua19531';
 % update_str   = 'all';
 % dirs         = [];
 
+
 % ************************************************************************
 % ************************************************************************
-get_existing_QC = 1;
+get_existing_QC = 0;
 FULLreprocess = 0;  %This gets changed to '1' for every 5th cycle coming in in 'update' mode.  TM 2/12/24
 springchicken = 30;
 
 if get_existing_QC == 0
     disp('get_existing_QC = 0!! NO QC flags will be pulled from the existing file')
-    str = input('Would you like to continue processing [Y/N]','s');
-    if isempty(regexpi(str,'^Y','once'))
-        return
-    end
+    % str = input('Would you like to continue processing [Y/N]','s');
+    % if isempty(regexpi(str,'^Y','once'))
+    %     return
+    % end
 end
 
 % ************************************************************************
@@ -296,6 +284,10 @@ psal_proxy_flts = {'ua9630',24; 'ua9018', 121; 'ua9652', 88; 'ua12369', 101; 'ua
 % ROBUST APPROACH FOR PUMP-OFFSET CORRECTION IS IMPLEMENTED.
 pH_pumpoffset_980
 
+% THIS IS A LIST OF FLOATS TO APPLY OPTODE RESPONSE-TIME ADJUSTMENT TO.  WE
+% ARE STARTING IMPLEMENTATION ON DEAD FLOATS ONLY.  ALL FLOATS ON THIS LIST
+% HAVE UNDERGONE TESTING & REVIEW OF THE RESPONSE TIME CORRECTION IMPLEMENTATION.
+optode_response_time_floats
 
 % Load 'special-case' Argo exceptions for error inflation & special comment
 Define_ArgoSpecs_SPECIALCASES
@@ -305,9 +297,9 @@ yesBSAML = 0;
 % ************************************************************************
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
 if isempty(dirs)
-    user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+    user_dir = userpath; %returns 'C:\Users\jplant\Documents\MATLAB'
     % user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
-    user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
+    user_dir = [user_dir, '\ARGO_PROCESSING\DATA\'];
 
     dirs.mat       = [user_dir,'FLOATS\'];
     dirs.cal       = [user_dir,'CAL\'];
@@ -319,6 +311,14 @@ if isempty(dirs)
 
     dirs.log = [user_dir,'Processing_logs\'];
 
+    bad_sensor_list = parse_bad_sensor_list([dirs.cal,'bad_sensor_list.txt']);
+
+elseif ~isstruct(dirs)
+    disp('Check "dirs" input. Must be an empty variable or a structure')
+    return
+end
+
+if ~isfield(dirs,'BSL')
     bad_sensor_list = parse_bad_sensor_list([dirs.cal,'bad_sensor_list.txt']);
     iM   = find(strcmp('MBARI ID STR',bad_sensor_list.hdr) == 1);
     % CHECK IF SPECIFC FLOAT HAS BAD SENSOR ISSUES
@@ -336,10 +336,6 @@ if isempty(dirs)
         end
         clear tSENSOR
     end
-
-elseif ~isstruct(dirs)
-    disp('Check "dirs" input. Must be an empty variable or a structure')
-    return
 end
 
 % PARSE BAD SAMPLE LIST-----------------------------------------------
@@ -369,7 +365,6 @@ if ~isempty(bad_sample_list.list)
     clear tSENSOR
 end
 % ------------------------------------------------------------------------
-
 
 
 % ************************************************************************
@@ -515,7 +510,7 @@ end
 % ************************************************************************
 % GET QC ADJUSTMENT DATA
 % ************************************************************************
-QC = get_QC_adjustments(cal.info.WMO_ID, dirs);
+QC = get_QC_adjustments(cal.info.WMO_ID, dirs); % JP 10/07/24 same name but updated for SAGEv2
 
 % ************************************************************************
 % GET MSG, ISUS, AND DURA FILE LISTS
@@ -568,6 +563,7 @@ if cal.info.O2_flag > 1 && ~isempty(slist.list)
     slist.list = slist.list(t1,:);
 end
 clear t1
+
 % ************************************************************************
 % LOOK FOR MOST RECENT PROFILE FILE (*.mat) AND ANY MISSING CASTS
 % ONLY WANT NEW OR MISSING CASTS IN THE COPY LIST
@@ -626,6 +622,7 @@ if strcmp(update_str, 'update') && last_cast > 0
     end
 end
 clear tmp t1 t2 casts
+
 
 % ************************************************************************
 % COPY FLOAT MESSAGE FILES TO LOCAL TEMPORARY DIRECTORY
@@ -697,12 +694,6 @@ elseif strncmp(WMO,'^NO_WMO',6)
     fprintf('No WMO number assigned to %s yet\n', cal.info.name);
 end
 
-% if strncmp(WMO,'^NO_WMO',6) && cal.info.tf_bfile == 1
-%     fprintf('No WMO number assigned to %s yet\n', cal.info.name);
-% elseif strncmp(WMO,'^NO_WMO',6) && cal.info.tf_bfile == 0
-%     fprintf('WMO will never be assigned to %s\n', cal.info.name);
-% end
-
 % CHECK FOR EXISTING WMO DIR, CREATE IF NOT THERE
 if exist([dirs.mat,WMO,'\'],'dir') ~= 7
     status = mkdir([dirs.mat,WMO,'\']);
@@ -732,7 +723,7 @@ end
 % GET DIR LIST AS STRUCTURE - THIS WILL BE USED TO SEND AN EMAIL OF
 % ARRIVING NEW MSG FILES
 mdir = dir([dirs.temp,'*.msg']);
-% keyboard
+
 [rr,~] = size(mdir);
 if rr > 0
     new_msgs = cell(rr,1);
@@ -796,6 +787,8 @@ master_FLBB = 0; % some floats (i.e.7558) change mode, start 1 , always 1
 BSL = dirs.BSL;
 
 disp(['Processing ARGO float ' cal.info.name, '.........'])
+
+
 for msg_ct = 1:size(msg_list,1)
 
     clear LR HR INFO
@@ -1026,6 +1019,286 @@ for msg_ct = 1:size(msg_list,1)
     INFO.float_type = float_type;
     INFO.EOT        = d.EOT;
 
+
+    % LOAD IN FLOATVIZ FILES ONLY ONCE (but need INFO structure)
+    if msg_ct == 1
+                % GET FLOATVIZ DATA - REG AND QC & GET HR DATA TOO
+        % WILL BE USED TO EXTRACT QF DATA FLAGS LATER
+        % DATA IS BEING PULLED FROM SIROCCO
+        FVQC_flag   = 1;
+        %         mymockSirocco = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING_siroccoMock\DATA\FLOATVIZ\';
+        %         FV_data     = get_FloatViz_data([mymockSirocco,INFO.WMO_ID,'.TXT']);
+        %         FV_QCdata   = get_FloatViz_data([mymockSirocco,'QC\',INFO.WMO_ID,'QC.TXT']);
+        %         FV_HRdata   = get_FloatViz_data([mymockSirocco,'HR\',INFO.WMO_ID,'_HR.TXT']);
+        %         FV_HRQCdata = get_FloatViz_data([mymockSirocco,'HRQC\',INFO.WMO_ID,'_HRQC.TXT']);
+        FV_data     = get_FloatViz_data(INFO.WMO_ID);
+        FV_QCdata   = get_FloatViz_data([INFO.WMO_ID,'QC']);
+        FV_HRdata   = get_FloatViz_data([INFO.WMO_ID,'_HR']);
+        FV_HRQCdata = get_FloatViz_data([INFO.WMO_ID,'_HRQC']);
+
+        if isempty(FV_QCdata)
+            FV_QCdata = FV_data;
+            FV_HRQCdata = FV_HRdata;
+            FVQC_flag = 0;
+        end
+
+    QCvars(1,:)  = {'Temperature[°C]'    'TEMP'}; % NEW FLOATVIZ
+    QCvars(2,:)  = {'Salinity[pss]'      'PSAL'};
+    QCvars(3,:)  = {'Oxygen[µmol/kg]'    'DOXY'};
+    QCvars(4,:)  = {'Nitrate[µmol/kg]'   'NITRATE'};
+    QCvars(5,:)  = {'Chl_a[mg/m^3]'      'CHLA'};
+    QCvars(6,:)  = {'b_bp700[1/m]'       'BBP700'};
+    QCvars(7,:)  = {'pHinsitu[Total]'    'PH_IN_SITU_TOTAL'};
+    QCvars(8,:)  = {'b_bp532[1/m]'       'BBP532'};
+    QCvars(9,:)  = {'CDOM[ppb]'          'CDOM'};
+    QCvars(10,:) = {'DOWN_IRRAD380[W/m^2/nm]' 'DOWN_IRRADIANCE380'};
+    QCvars(11,:) = {'DOWN_IRRAD412[W/m^2/nm]' 'DOWN_IRRADIANCE412'};
+    QCvars(12,:) = {'DOWN_IRRAD490[W/m^2/nm]' 'DOWN_IRRADIANCE490'};
+    QCvars(13,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]' 'DOWNWELLING_PAR'};
+    QCvars(14,:) = {'Oxygen2[µmol/kg]'   'DOXY2'};
+    QCvars(15,:) = {'Chl_a_435[mg/m^3]'   'CHLA435'};
+    end
+
+ % Is this a psal proxy float?  Need to find out before processing HR and LR
+ % psal data.
+    Indexp = strfind(psal_proxy_flts(:,1),MBARI_ID_str);
+    Indexpsp = find(not(cellfun('isempty',Indexp)));
+% ****************************************************************
+    % NOW DEAL WITH HIGH RESOLUTION (CP) DATA
+    % ****************************************************************
+    if isempty(d.hr_d) % CHECK FOR DATA
+        disp(['No high res data in message file for ', ...
+            strtrim(msg_list(msg_ct,:))])
+        HR.PRES = [];
+        HR.PRES_ADJUSTED = [];
+        HR.PSAL = [];
+        HR.PSAL_ADJUSTED = [];
+        HR.TEMP = [];
+        HR.TEMP_ADJUSTED = [];
+        HR.NBIN_CTD = [];
+    else % if data also header variable
+        hr_d = d.hr_d; % Low resolution data
+        % GET VARIABLE INDICES - ONLY NEED TO DO THIS ONCE
+        if hr_ind_chk == 0
+            hr_ind_chk = 1;
+
+            iPP   = find(strcmp('p', d.hr_hdr) == 1); % CTD P
+            iTT   = find(strcmp('t', d.hr_hdr) == 1); % CTD T
+            iSS   = find(strcmp('s', d.hr_hdr) == 1); % CTD S
+            iBIN   = find(strcmp('nbin ctd', d.hr_hdr) == 1); % CTD S
+        end
+        HR.PRES = hr_d(:,iPP);
+        HR.PRES_ADJUSTED = HR.PRES;
+
+        %PSAL PROXY?
+        %         if regexp(MBARI_ID_str, psal_proxy_flts, 'once')
+        if ~isempty(Indexpsp) && str2num(cast_num) > psal_proxy_flts{Indexpsp,2}
+            proxydirname = ['\\atlas\Chem\ARGO_PROCESSING\DATA\ARMOR3D_PSAL_PROXY\',WMO,'\', WMO,'.', cast_num,'.mat'];
+            load(proxydirname)
+            HR.PSAL = HRproxy.PSAL;
+            HR.PSAL_PROXY = HRproxy.PSAL; %store within the internal matfiles as well.
+            HR.PSAL_ADJUSTED = HR.PSAL;
+        else
+            HR.PSAL = hr_d(:,iSS);
+            HR.PSAL_ADJUSTED = HR.PSAL;
+        end
+
+        HR.PSAL_ADJUSTED = HR.PSAL; % NO CORRECTIONS DONE FOR S OR T
+        HR.TEMP = hr_d(:,iTT);
+        HR.TEMP_ADJUSTED = HR.TEMP;
+        HR.NBIN_CTD = hr_d(:,iBIN);
+
+        HR.PSAL_QC = HR.PRES * 0 + fv.QC; % Predimmension QF's
+        HR.PSAL_ADJUSTED_QC = HR.PSAL_QC;
+        HR.TEMP_QC = HR.PSAL_QC;
+        HR.TEMP_ADJUSTED_QC = HR.PSAL_QC;
+        HR.PRES_QC = HR.PSAL_QC;
+        HR.PRES_ADJUSTED_QC = HR.PSAL_QC;
+
+        HRQF_P  = HR.PRES < RC.P(1) | HR.PRES > RC.P(2); % BAD HR S
+        t_bio  = HR.PRES ~= fv.bio;
+        HR.PRES_QC(HRQF_P)  = 4;  % BAD
+        HR.PRES_QC(~HRQF_P & HR.PRES ~= fv.bio) = 1; % GOOD
+        HR.PRES_ADJUSTED_QC(HRQF_P)  = 4;  % BAD
+        HR.PRES_ADJUSTED_QC(~HRQF_P & HR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD
+
+        [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
+        HRQF_S  = HR.PSAL < RC.S(1) | HR.PSAL > RC.S(2); % BAD HR S
+        t_bio  = HR.PSAL ~= fv.bio;
+        HR.PSAL_QC(HRQF_S)  = 4;  % BAD
+        HR.PSAL_QC(~HRQF_S & HR.PSAL ~= fv.bio) = 1; % GOOD
+        HR.PSAL_QC(t_bio) = HR.PSAL_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        HR.PSAL_ADJUSTED_QC(HRQF_S)  = 4;  % BAD
+        HR.PSAL_ADJUSTED_QC(~HRQF_S & HR.PSAL_ADJUSTED ~= fv.bio) = 1; % GOOD
+        HR.PSAL_ADJUSTED_QC(t_bio) = HR.PSAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+
+        if yesBSAML == 1 && yesBSAMLcyc==1
+            SbsIND = find(strcmp('S',tmpBSAML.list(:,ibsSENS)));
+            if ~isempty(SbsIND)
+                TMPsbs = tmpBSAML.list(SbsIND,:);
+                singleBADs = TMPsbs(:,ibsD);
+                singleBADSflags = TMPsbs(:,ibsFL);
+                rangeBADs = TMPsbs(:,ibsDB);
+                rangeBADsflags = TMPsbs(:,ibsFL);
+                if ~isempty(singleBADs{1})
+                    for i2=1:length(singleBADs)
+                        xxtmp = find(HR.PRES == singleBADs{i2});
+                        if isempty(xxtmp)
+                            disp('WARNING!! PSAL PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
+                        else
+                            if HR.PSAL ~= fv.bio
+                                HR.PSAL_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
+                            if HR.PSAL_ADJUSTED ~=fv.bio
+                                HR.PSAL_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
+                            end
+                        end
+                    end
+                    clear i2
+                end
+                for i3=1:length(rangeBADs)
+                    HR.PSAL_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2) & HR.PSAL~=fv.bio) = str2double(rangeBADsflags{i3});
+                    HR.PSAL_ADJUSTED_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2) & HR.PSAL_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
+                end
+                clear i3
+            end
+        end
+
+
+        [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
+        HRQF_T  = HR.TEMP < RC.T(1) | HR.TEMP > RC.T(2); % BAD HR T
+        t_bio   = HR.TEMP ~= fv.bio;
+        HR.TEMP_QC(HRQF_T)  = 4;  % BAD
+        HR.TEMP_QC(~HRQF_T & HR.TEMP ~= fv.bio) = 1; % GOOD
+        HR.TEMP_QC(t_bio) = HR.TEMP_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+        HR.TEMP_ADJUSTED_QC(HRQF_T)  = 4;  % BAD
+        HR.TEMP_ADJUSTED_QC(~HRQF_T & HR.TEMP_ADJUSTED ~= fv.bio) = 1; % GOOD
+        HR.TEMP_ADJUSTED_QC(t_bio) = HR.TEMP_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
+
+        % CHECK FOR ANY HIGH RESOLUTION RAW QUALITY FLAGS TO ADD
+        if ~isempty(FV_HRdata) && get_existing_QC == 1
+
+            iQF = find(strcmp(FV_HRdata.hdr,'QF') == 1); % QF indices
+            tFV         = FV_HRdata.data(:,2) == INFO.cast;
+            FV_cast     = FV_HRdata.data(tFV,:);   % get FV cast
+            FV_QF_sum   = sum(FV_cast(:,iQF),1); % sum of QF columns
+            if sum(FV_QF_sum) > 0 % ANY ODV QF FLAGS GREATER THAN ZERO?
+                indQF   = iQF(FV_QF_sum > 0); % ODV QF colums w/ non zero flags
+                for QF_ct = 1 : size(indQF,2)
+                    ind = strcmp(FV_HRdata.hdr{indQF(QF_ct)-1}, ...
+                        QCvars(:,1));
+                    % N col in floatviz but really no data
+                    if ~isfield(HR, [QCvars{ind,2},'_QC'])
+                        continue
+                    end
+
+                    % FLOAVIZ VAR MATCHES LIST, GET MATCHING QF's
+                    if sum(ind) > 0 && isfield(HR,QCvars{ind,2})
+                        ODV_QF  = [FV_cast(:,6),FV_cast(:,8), ...
+                            FV_cast(:,indQF(QF_ct))]; % P, T & QC
+                        if strcmp(QCvars{ind,2},'BBP700') == 1
+                            ODV_QF(ODV_QF(:,3) == 4,3) = 2;
+                            ODV_QF(ODV_QF(:,3) == 8,3) = 4;
+                        else
+                            ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
+                            ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                        end
+
+                        ARGO_QF = [HR.PRES, HR.TEMP, ...
+                            HR.([QCvars{ind,2},'_QC'])];
+                        ct = 0;
+                        for i = 1:size(ARGO_QF,1) % line by line just in case
+                            dP = abs(ODV_QF(:,1) - ARGO_QF(i,1)); % press
+                            dT = abs(ODV_QF(:,2) - ARGO_QF(i,2)); % temp
+                            min_dP = min(dP); % this should be 0 but def < 1m
+                            min_dT = min(dT); % this should be 0 but def < 1m
+                            if min_dP > 1 % poor match
+                                disp(['Poor HR QF match for ARGO PRES = ', ...
+                                    num2str(ARGO_QF(i,1))])
+                                continue
+                            end
+                            t1 = dP == min_dP & dT == min_dT; % there should only be one
+                            if ODV_QF(t1,3) > ARGO_QF(i,3) % ODV QF worse than ARGO
+                                ARGO_QF(i,3) = ODV_QF(t1,3); % replace argo w/ ODV
+                                ct =ct+1;
+                            end
+                        end
+                        HR.([QCvars{ind,2},'_QC']) = ARGO_QF(:,3); %update structure
+                        if ct > 0
+                            disp([num2str(ct), ' QC flags added from HR ODV file for ', ...
+                                QCvars{ind,2}, '_QC'])
+                        end
+                    end
+                end
+                clear tFV FV_cast FV_QF_sum indQF QF_ct ODV_QF ARGO_QF ct i dP t1
+                clear min_dP min_dT dT
+            end
+        end
+
+        % CHECK FOR ANY HIGH RESOLUTION ADJUSTED QUALITY FLAGS TO ADD
+        if ~isempty(FV_HRQCdata) && get_existing_QC == 1
+
+            iQF = find(strcmp(FV_HRQCdata.hdr,'QF') == 1); % QF indices
+            tFV         = FV_HRQCdata.data(:,2) == INFO.cast;
+            FV_cast     = FV_HRQCdata.data(tFV,:);   % get FV cast
+            FV_QF_sum   = sum(FV_cast(:,iQF),1); % sum of QF columns
+            if sum(FV_QF_sum) > 0 % ANY ODV QF FLAGS GREATER THAN ZERO?
+                indQF   = iQF(FV_QF_sum > 0); % ODV QF colums w/ non zero flags
+                for QF_ct = 1 : size(indQF,2)
+                    ind = strcmp(FV_HRQCdata.hdr{indQF(QF_ct)-1}, ...
+                        QCvars(:,1));
+                    % N col in floatviz but really no data
+                    if ~isfield(HR, [QCvars{ind,2},'_ADJUSTED_QC'])
+                        continue
+                    end
+
+                    % FLOAVIZ VAR MATCHES LIST, GET MATCHING QF's
+                    if sum(ind) > 0 && isfield(HR,[QCvars{ind,2},'_ADJUSTED'])
+                        ODV_QF  = [FV_cast(:,6),FV_cast(:,8), ...
+                            FV_cast(:,indQF(QF_ct))]; % P, T & QC
+                        if strcmp(QCvars{ind,2},'BBP700') == 1
+                            ODV_QF(ODV_QF(:,3) == 4,3) = 2;
+                            ODV_QF(ODV_QF(:,3) == 8,3) = 4;
+                        else
+                            ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
+                            ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
+                        end
+
+                        ARGO_QF = [HR.PRES, HR.TEMP, ...
+                            HR.([QCvars{ind,2},'_ADJUSTED_QC'])];
+                        ct = 0;
+                        for i = 1:size(ARGO_QF,1) % line by line just in case
+                            dP = abs(ODV_QF(:,1) - ARGO_QF(i,1)); % press
+                            dT = abs(ODV_QF(:,2) - ARGO_QF(i,2)); % temp
+                            min_dP = min(dP); % this should be 0 but def < 1m
+                            min_dT = min(dT); % this should be 0 but def < 1m
+                            if min_dP > 1 % poor match
+                                disp(['Poor HR QF match for ARGO PRES = ', ...
+                                    num2str(ARGO_QF(i,1))])
+                                continue
+                            end
+                            t1 = dP == min_dP & dT == min_dT; % there should only be one
+                            if ODV_QF(t1,3) > ARGO_QF(i,3) % ODV QF worse than ARGO
+                                ARGO_QF(i,3) = ODV_QF(t1,3); % replace argo w/ ODV
+                                ct =ct+1;
+                            end
+                        end
+                        HR.([QCvars{ind,2},'_ADJUSTED_QC']) = ARGO_QF(:,3); %update structure
+                        if ct > 0
+                            disp([num2str(ct), ' QC flags added from HR ODV file for ', ...
+                                QCvars{ind,2}, '_ADJUSTED_QC'])
+                        end
+                    end
+                end
+                clear tFV FV_cast FV_QF_sum indQF QF_ct ODV_QF ARGO_QF ct i dP t1
+                clear min_dP min_dT dT
+            end
+        end
+    end
+    %%%%%%%%%%%%%%%%%%%%% END OF HIGH RES %%%%%%%%%%%%%%%%%%%%%%%
+
+
+
     % ****************************************************************
     % DEAL WITH LOW RESOLUTION DATA FIRST
     % ****************************************************************
@@ -1076,25 +1349,25 @@ for msg_ct = 1:size(msg_list,1)
         % CDOM PLACEHOLDER FOR NOW....
         iCdm = find(strcmp('Cdm',   d.lr_hdr) == 1); % CDOM, NAVIS
 
-        % GET FLOATVIZ DATA - REG AND QC & GET HR DATA TOO
-        % WILL BE USED TO EXTRACT QF DATA FLAGS LATER
-        % DATA IS BEING PULLED FROM SIROCCO
-        FVQC_flag   = 1;
-        %         mymockSirocco = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING_siroccoMock\DATA\FLOATVIZ\';
-        %         FV_data     = get_FloatViz_data([mymockSirocco,INFO.WMO_ID,'.TXT']);
-        %         FV_QCdata   = get_FloatViz_data([mymockSirocco,'QC\',INFO.WMO_ID,'QC.TXT']);
-        %         FV_HRdata   = get_FloatViz_data([mymockSirocco,'HR\',INFO.WMO_ID,'_HR.TXT']);
-        %         FV_HRQCdata = get_FloatViz_data([mymockSirocco,'HRQC\',INFO.WMO_ID,'_HRQC.TXT']);
-        FV_data     = get_FloatViz_data(INFO.WMO_ID);
-        FV_QCdata   = get_FloatViz_data([INFO.WMO_ID,'QC']);
-        FV_HRdata   = get_FloatViz_data([INFO.WMO_ID,'_HR']);
-        FV_HRQCdata = get_FloatViz_data([INFO.WMO_ID,'_HRQC']);
-
-        if isempty(FV_QCdata)
-            FV_QCdata = FV_data;
-            FV_HRQCdata = FV_HRdata;
-            FVQC_flag = 0;
-        end
+% % % %         % GET FLOATVIZ DATA - REG AND QC & GET HR DATA TOO
+% % % %         % WILL BE USED TO EXTRACT QF DATA FLAGS LATER
+% % % %         % DATA IS BEING PULLED FROM SIROCCO
+% % % %         FVQC_flag   = 1;
+% % % %         %         mymockSirocco = 'C:\Users\bgcargo\Documents\MATLAB\ARGO_PROCESSING_siroccoMock\DATA\FLOATVIZ\';
+% % % %         %         FV_data     = get_FloatViz_data([mymockSirocco,INFO.WMO_ID,'.TXT']);
+% % % %         %         FV_QCdata   = get_FloatViz_data([mymockSirocco,'QC\',INFO.WMO_ID,'QC.TXT']);
+% % % %         %         FV_HRdata   = get_FloatViz_data([mymockSirocco,'HR\',INFO.WMO_ID,'_HR.TXT']);
+% % % %         %         FV_HRQCdata = get_FloatViz_data([mymockSirocco,'HRQC\',INFO.WMO_ID,'_HRQC.TXT']);
+% % % %         FV_data     = get_FloatViz_data(INFO.WMO_ID);
+% % % %         FV_QCdata   = get_FloatViz_data([INFO.WMO_ID,'QC']);
+% % % %         FV_HRdata   = get_FloatViz_data([INFO.WMO_ID,'_HR']);
+% % % %         FV_HRQCdata = get_FloatViz_data([INFO.WMO_ID,'_HRQC']);
+% % % % 
+% % % %         if isempty(FV_QCdata)
+% % % %             FV_QCdata = FV_data;
+% % % %             FV_HRQCdata = FV_HRdata;
+% % % %             FVQC_flag = 0;
+% % % %         end
     end
 
     %GET SOME ARGO CORE PARAMETERS
@@ -1109,8 +1382,8 @@ for msg_ct = 1:size(msg_list,1)
 
     % PSAL proxy??
     %     if regexp(MBARI_ID_str, psal_proxy_flts, 'once')
-    Indexp = strfind(psal_proxy_flts(:,1),MBARI_ID_str);
-    Indexpsp = find(not(cellfun('isempty',Indexp)));
+% %     Indexp = strfind(psal_proxy_flts(:,1),MBARI_ID_str);
+% %     Indexpsp = find(not(cellfun('isempty',Indexp)));
     if ~isempty(Indexpsp) && str2num(cast_num) > psal_proxy_flts{Indexpsp,2}
         INFO.PSAL_PROXY_USED = 1;
         proxydirname = ['\\atlas\Chem\ARGO_PROCESSING\DATA\ARMOR3D_PSAL_PROXY\',WMO,'\', WMO,'.', cast_num,'.mat'];
@@ -1287,37 +1560,69 @@ for msg_ct = 1:size(msg_list,1)
             LR.(O2fnadj)       = fill0 + fv.bio;
             LR.(O2fnadjQC)    = fill0 + fv.QC;
             LR.([O2fnadj,'_ERROR']) = fill0 + fv.bio;
+            LR.DOXYorig_ADJUSTED = fill0 + fv.bio;
             INFO.([O2fn,'_SCI_CAL_EQU'])  = 'not applicable';
             INFO.([O2fn,'_SCI_CAL_COEF']) = 'not applicable';
             INFO.([O2fn,'_SCI_CAL_COM'])  = 'not applicable';
             INFO.([O2fn,'_DATA_MODE'])  = 'R'; %"not applicable" is not acceptable for this field, should be 'R' (per Coriolis)
 
+            LR.(['TEMP_',O2fn])(~t_nan)    = lr_d(~t_nan,iTo);
+            LR.(['TEMP_',O2fnQC])(~t_nan) = fv.QC;
             if strcmp(cal.(O2cal).type,'SBE83')
                 myOdata = [LR.PRES(~t_nan) LR.TEMP(~t_nan) LR.PSAL(~t_nan) lr_d((~t_nan),iPhase),lr_d((~t_nan),iTo)];
                 [ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myOdata, cal.(O2cal),0);
                 LR.(O2fn)(~t_nan) = O2_uM ./ lr_den(~t_nan) .* 1000; % µmol/kg
                 LR.(['PPOX_',O2fn])(~t_nan) = ppoxdoxy; %TM PPOX_DOXY added for storage internally
+				tDOXY = abs(LR.(O2fn)) > crazy_val & ~t_nan; % Unrealistic bad value
+				LR.(O2fn)(tDOXY) = crazy_val; % SET TO crazy bad value
+				LR.(O2fnQC)(~t_nan)      = 3;
             else
                 %[S, T, P, Phase, CalPhase, [O2], O2sol, pO2]
                 O2 = calc_O2_4ARGO(LR.PSAL(~t_nan), LR.TEMP(~t_nan), ...
                     LR.PRES(~t_nan),lr_d((~t_nan),iPhase),lr_d((~t_nan),iTo), cal.(O2cal)); % O2 in µmol/L + more
                 LR.(O2fn)(~t_nan) = O2(:,6) ./ lr_den(~t_nan) .* 1000; % µmol/kg
-                LR.(['PPOX_',O2fn])(~t_nan) = O2(:,end); %TM PPOX_DOXY added for storage internally
+                LR.(['PPOX_',O2fn])(~t_nan) = O2(:,end); %TM PPOX_DOXY added for storage internally.  NOT RESPONSE-TIME CORRECTED!!!
+				tDOXY = abs(LR.(O2fn)) > crazy_val & ~t_nan; % Unrealistic bad value
+				LR.(O2fn)(tDOXY) = crazy_val; % SET TO crazy bad value
+				LR.(O2fnQC)(~t_nan)      = 3;
+                % NOW ADD RESPONSE TIME CORRECTION BLOCK ------------------
+                % USE CTD TEMP, AS CTD SAMPLES ARE USED IN BOUNDARY LAYER
+                % CHARACTERIZATION (WHICH IS USED WITH TEMPERATURE IN THE
+                % LOOKUP TABLE).
+                isOTC = find(str2double(WMO)==DOXY_response_time_floats);
+
+                if ~isempty(isOTC) 
+                    [DOXYtcor, DOXYtcor_QC, dOdz, iTIME_CTD, tau, xxbintrk] = adjust_DOXY_responsetime_bintrack(flipud(HR.NBIN_CTD),flipud(HR.PRES),flipud(LR.PRES),flipud(LR.(O2fn)),flipud(LR.(O2fnQC)),flipud(LR.TEMP),cal.O.type,1,INFO.sdn);
+                    [DOXYtcor, DOXYtcor_QC] = check_DOXY_responsetimecorr_ops_bintrack(HR,LR,INFO,DOXYtcor,DOXYtcor_QC,xxbintrk,INFO.cast);
+                    LR.DOXY_RESP_CORR.(O2fn).DOXYtcor = DOXYtcor;
+                    LR.DOXY_RESP_CORR.(O2fn).DOXYtcor_QC = DOXYtcor_QC;
+                    LR.DOXY_RESP_CORR.(O2fn).dOdz = flipud(dOdz);
+                    LR.DOXY_RESP_CORR.(O2fn).TAU = flipud(tau);
+                    LR.DOXY_RESP_CORR.(O2fn).iTIME_CTD = iTIME_CTD;
+                 %   END RESPONSE TIME CORRECTION BLOCK-----------------------
+                end
             end
-            tDOXY = abs(LR.(O2fn)) > crazy_val & ~t_nan; % Unrealistic bad value
-            LR.(O2fn)(tDOXY) = crazy_val; % SET TO crazy bad value
-            LR.(O2fnQC)(~t_nan)      = 3;
+
             % JP: QC assignment below not needed - crazy value greater than range limits
             %LR.DOXY_QC(tDOXY) = 4; % set crazy bad value QF to 4
-            LR.(['TEMP_',O2fn])(~t_nan)    = lr_d(~t_nan,iTo);
-            LR.(['TEMP_',O2fnQC])(~t_nan) = fv.QC;
+% %             LR.(['TEMP_',O2fn])(~t_nan)    = lr_d(~t_nan,iTo);
+% %             LR.(['TEMP_',O2fnQC])(~t_nan) = fv.QC;
             % Save O2sol, pO2?
             clear O2
 
             if isfield(QC,O2cal)
                 % !! ONE TIME GAIN CORRECTION ONLY !!
-                %             LR.DOXY_ADJUSTED(~t_nan)  = LR.DOXY(~t_nan) .* QC.O.steps(1,3);
-                QCD = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), LR.(O2fn)(~t_nan)];
+                %QCD = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), LR.(O2fn)(~t_nan)];
+                if ~isempty(isOTC) 
+                    LR.DOXY_RESP_CORR.(O2fn).DOXYtcor(isnan(LR.DOXY_RESP_CORR.(O2fn).DOXYtcor)) = LR.DOXY(isnan(LR.DOXY_RESP_CORR.(O2fn).DOXYtcor));
+                    QCD = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), LR.DOXY_RESP_CORR.(O2fn).DOXYtcor(~t_nan)];
+                    QCD2 = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), LR.(O2fn)(~t_nan)];
+                    LR.DOXYOrig_ADJUSTED(~t_nan) = apply_QC_corr(QCD2, INFO.sdn, QC.(O2cal));
+                    LR.DOXYOrig_ADJUSTED_QC(~t_nan) = 1; %
+                else
+                    QCD = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), LR.(O2fn)(~t_nan)];
+                end
+                %end
                 LR.(O2fnadj)(~t_nan) = apply_QC_corr(QCD, INFO.sdn, QC.(O2cal));
                 tDOXY_ADJ = abs(LR.(O2fnadj)) > crazy_val & ~t_nan; % Unrealistic bad value
                 LR.(O2fnadj)(tDOXY_ADJ) = crazy_val; % SET TO crazy bad value
@@ -1360,19 +1665,22 @@ for msg_ct = 1:size(msg_list,1)
                     '; JULD_PROF = ',num2str(juld_prof,'%9.4f'),...
                     '; JULD_INIT = ',num2str(juld_init,'%9.4f')];
 
+				if ~isempty(isOTC) %enhance sci-cal-comment for response-time adj FLOATS	
+					RTCscicomm = ' Response-time adjusted (doi.org/10.4319/lom.2014.12.617).';
+				else
+					RTCscicomm = '';
+				end
                 if isfield(cal.(O2cal),'SVUFoilCoef') && ~strcmp(cal.O.type,'SBE83')
-                    O2_cal_str = 'SVU Foil calibration coeficients were used. ';
+                    O2_cal_str = 'SVU Foil cal-coeffs used. ';
                 else
-                    O2_cal_str = 'Polynomial calibration coeficients were used. ';
+                    O2_cal_str = 'Polynomial cal-coeffs used. ';
                 end
                 if ~isempty(d.air) || ~isempty(d.srf_air)
-                    INFO.([O2fn,'_SCI_CAL_COM'])  = [O2_cal_str,'G determined from ',...
-                        'float  measurements in air. See Johnson et al.,2015,', ...
-                        'doi:10.1175/JTECH-D-15-0101.1'];
+                    INFO.([O2fn,'_SCI_CAL_COM'])  = [O2_cal_str,'G determined using ',...
+                        'IN-AIR samples (doi:10.1175/JTECH-D-15-0101.1).',RTCscicomm];
                 else
-                    INFO.([O2fn,'_SCI_CAL_COM'])   = [O2_cal_str,'G determined by surface' ...
-                        ' measurement comparison to World Ocean Atlas 2018.', ...
-                        'See Takeshita et al.2013,doi:10.1002/jgrc.20399'];
+                    INFO.([O2fn,'_SCI_CAL_COM'])   = [O2_cal_str,'G determined using WOA18 ', ...
+                        '(doi:10.1002/jgrc.20399).',RTCscicomm];
                 end
             end
 
@@ -1627,7 +1935,7 @@ for msg_ct = 1:size(msg_list,1)
             else
                 QCscreen_O = LR.(O2fnQC) == 4; % screen for BAD data already assigned.
                 [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str, ...
-                    str2double(cast_num),[LR.PRES LR.(O2fn)],'O2',dirs.cal,fv.bio,QCscreen_O);
+                    str2double(cast_num),[LR.PRES LR.(O2fn)],'O2',dirs.cal,0,fv.bio,QCscreen_O);
                 if ~isempty(spike_inds)
                     LR.(O2fnQC)(spike_inds) = quality_flags;
                     disp(['LR.',O2fn,' QUALITY FLAGS ADJUSTED FOR IDENTIFIED ', ...
@@ -1638,7 +1946,7 @@ for msg_ct = 1:size(msg_list,1)
                 QCscreen_Oadj = LR.(O2fnadjQC) == 4; % screen for BAD data already assigned.
                 [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str, ...
                     str2double(cast_num),[LR.PRES LR.(O2fnadj)],'O2',...
-                    dirs.cal,fv.bio,QCscreen_Oadj);
+                    dirs.cal,0,fv.bio,QCscreen_Oadj);
                 if ~isempty(spike_inds)
                     LR.(O2fnadjQC)(spike_inds) = quality_flags;
                     disp(['LR.',O2fnadj,'DOXY_ADJUSTED QUALITY FLAGS ADJUSTED FOR ', ...
@@ -2345,60 +2653,144 @@ for msg_ct = 1:size(msg_list,1)
 
         if isfield(cal,'pH') && isfield(QC,'pH') && ~isempty(phtot)
             QCD = [LR.PRES(~t_nan), LR.TEMP(~t_nan), LR.PSAL(~t_nan), phtot];
+
+            % ************************************************************
+            % APPLY pH PUMP OFFSET CORRECTION IF WARRENTED - REPLACE
+            % phtot IN THE QCD MATRIX WITH OFFSET CORRECTED phtot ABOVE CpAct P
+            INFO.pHPumpOffset = 0; % default offset correction value
+            INFO.pHPumpOffsetRefT = NaN;
+            if ~strcmp(QC.pH.pHpumpoffset,'none')
+                tP = QCD(:,1) <= INFO.CpActivationP; % pH pump offset upper cycle subset
+
+                % NEED TO APPLY pH TCOR TO OFFSET CORRECTION TOO SINCE WE ARE IN pH
+                % space but it is really a k0 issue
+                tf_max = QCD(:,1) == max(QCD(tP,1));
+                REF_T  = QCD(tf_max, 2);
+                TCOR   = (REF_T + 273.15) ./ (QCD(:,2) + 273.15); % Ratio in Kelvin
+
+                out = calc_pH_pump_offset([QCD(:,[1,4]), ...
+                    LR.PH_IN_SITU_TOTAL_QC(~t_nan)], INFO.CpActivationP, 4);
+                if isempty(out)
+                    fprintf(['No offset calculated for cycle %d, using ', ...
+                        'default = 0\n'], INFO.cast);
+                    pH_PO = 0;
+                elseif strcmp(QC.pH.pHpumpoffset, 'poly')
+                    pH_PO = out.data(1,1);
+                elseif strcmp(QC.pH.pHpumpoffset, 'linear')
+                    pH_PO = out.data(1,5);
+                else % mixed
+                    pH_PO = mean(out.data(1,[1,5]),2,'omitnan');
+                end
+
+                if ~isnan(pH_PO) && ~isnan(REF_T) % offset & ref T must exist
+                    QCD(tP,4) = QCD(tP,4) - TCOR(tP) .* pH_PO; % offset corr pH above cP
+                else
+                    INFO.pHPumpOffset = 0;
+                end
+                INFO.pHPumpOffset     = pH_PO;
+                INFO.pHPumpOffsetRefT = REF_T;
+
+                % Remove float from Define_ArgoSpecs_SPECIALCASES if on there
+                % Having the Reassign_ArgoSpecs_SPECIALCASES at the end 
+                % was a little tricky to overide JP 11/05/2024
+                tf_wmo = cellfun(@(x) x.WMO == str2double(INFO.WMO_ID), FLOATS);
+                tf_980 = cellfun(@(x) contains(x.add_comment{1,1},'980'), FLOATS);
+                tg     = ~(tf_wmo & tf_980);
+                FLOATS = FLOATS(tg);
+                clear tf_wmo tf_980 tg
+                
+            end
+            % ************************************************************
+
+
             LR.PH_IN_SITU_TOTAL_ADJUSTED(~t_nan) = ...
                 apply_QC_corr(QCD, INFO.sdn, QC.pH);
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~t_nan) = 1; % set=1 9/27/16 vs
-            isPOF = find(str2double(WMO)==pH_pumpoffset_980_floats);
+
+            % IF A TRUE pH PUMP OFFSET CORRECTION OCCURS BE SURE TO COMMENT
+            % OUT WMO # ON THE 980 LIST FIRST
+            %isPOF = find(str2double(WMO)==pH_pumpoffset_980_floats);
+            isPOF = pH_pumpoffset_980_floats == str2double(WMO);
             
-            %             if ~isempty(isPOF) % JP commented out 09/08/23
-            %                 try
-            %                 LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(LR.PRES>980 & ~t_nan) = 3;
-            %                 catch
-            %                     keyboard
-            %                 end
-            %             end
-            if ~isempty(isPOF) % jp 09/08/23 removed try catch test block
-                LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(LR.PRES>980 & ~t_nan) = 3;
+            if any(isPOF) && strcmp(QC.pH.pHpumpoffset,'none')
+                tPOF_QC = LR.PRES > INFO.CpActivationP & ~t_nan;
+                LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(tPOF_QC) = 3;
             end
 
             %LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~t_nan) = 0.01;
             LR.PH_IN_SITU_TOTAL_ADJUSTED(LR_inf)    = 20.1; %UNREAL #
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(LR_inf) = 4;
+
             step_tmpPH = find(QC.pH.steps(:,2)<=INFO.cast,1,'last');
+      
             juld_prof = INFO.sdn-datenum(1950,01,01); %convert to JULD
             juld_init = QC.pH.steps(step_tmpPH,1)-datenum(1950,01,01); %convert to JULD
             juld_end = QC.date - datenum(1950,01,01); %date at last DMQC, converted to JULD
             LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = 0.01 + LR.DOXY_ADJUSTED_ERROR.*0.0016;
             if juld_prof>juld_end
-                LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR + 0.03.*(juld_prof-juld_end)./365;
+                LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = ...
+                    LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR + ...
+                    0.03.*(juld_prof-juld_end)./365;
             end
             LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(t_nan) = fv.bio;
 
+            % SET META INFO
+            if INFO.pHPumpOffset == 0
+                INFO.PH_SCI_CAL_EQU  = [' PH_IN_SITU_TOTAL_ADJUSTED = ',...
+                    '[PH_IN_SITU_TOTAL - (OFFSET + DRIFT*ELAPSED_YRS)*TCOR]/GAIN; ',...
+                    'TCOR = (TREF+273.15)/(TEMP+273.15);  TREF = TEMP at ',...
+                    'median reference PRES; ELAPSED_YRS = (JULD-JULD_PIVOT)/365'];
 
-            INFO.PH_SCI_CAL_EQU  = ['PH_IN_SITU_TOTAL_ADJUSTED=', ...
-                '[PH_IN_SITU_TOTAL+[PUMP_OFFSET - [OFFSET + DRIFT(JULD-JULD_PIVOT)/365]*TCOR]]/GAIN;',...
-                'TCOR=(TREF+273.15)./(TEMP+273.15);  TREF = TEMP at 1500m.'];
-            INFO.PH_SCI_CAL_COEF = ['PUMP_OFFSET = ',num2str(QC.pH.pHpumpoffset),...
-                '; OFFSET = ',num2str(QC.pH.steps(step_tmpPH,4),'%6.4f'),...
-                '; DRIFT = ',num2str(QC.pH.steps(step_tmpPH,5),'%6.4f'),...
-                '; GAIN = ',num2str(QC.pH.steps(step_tmpPH,3),'%6.4f'),...
-                '; JULD = ',num2str(juld_prof,'%9.4f'),...
-                '; JULD_PIVOT = ',num2str(juld_init,'%9.4f')];
-            INFO.PH_SCI_CAL_COM  =['DMQC follows '...
-                'Maurer et al., 2021 (https://doi.org/10.3389/fmars.2021.683207).'];
-            if regexp(MBARI_ID_str, bad_O2_filter, 'once')
-                [LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR, INFO.PH_SCI_CAL_COM,~,~] = Reassign_ArgoSpecs_LIReqn8(MBARI_ID_str,INFO.cast,LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR,INFO.PH_SCI_CAL_COM,0,0);
+                 INFO.PH_SCI_CAL_COEF = sprintf(['OFFSET = %0.4f; ', ...
+                     'DRIFT = %0.4f; GAIN = %0.4f; JULD = %0.4f; ', ...
+                     'JULD_PIVOT = %0.4f;'], QC.pH.steps(step_tmpPH,[4,5,3]), ...
+                     juld_prof, juld_init);
+
+
+            % INFO.PH_SCI_CAL_EQU  = ['PH_IN_SITU_TOTAL_ADJUSTED=', ...
+            %     '[PH_IN_SITU_TOTAL+[PUMP_OFFSET - [OFFSET + DRIFT(JULD-JULD_PIVOT)/365]*TCOR]]/GAIN;',...
+            %     'TCOR=(TREF+273.15)./(TEMP+273.15);  TREF = TEMP at 1500m.'];
+            % INFO.PH_SCI_CAL_COEF = ['PUMP_OFFSET = ',num2str(QC.pH.pHpumpoffset),...
+            %     '; OFFSET = ',num2str(QC.pH.steps(step_tmpPH,4),'%6.4f'),...
+            %     '; DRIFT = ',num2str(QC.pH.steps(step_tmpPH,5),'%6.4f'),...
+            %     '; GAIN = ',num2str(QC.pH.steps(step_tmpPH,3),'%6.4f'),...
+            %     '; JULD = ',num2str(juld_prof,'%9.4f'),...
+            %     '; JULD_PIVOT = ',num2str(juld_init,'%9.4f')];
+
+            else
+                INFO.PH_SCI_CAL_EQU  = ['PH_IN_SITU_TOTAL_ADJUSTED = ', ...
+                    '[PH_IN_SITU_TOTAL - (OFFSET +DRIFT*ELAPSED_YRS)*TCOR1 – ', ...
+                    'TF_CPACT*PUMP_OFFSET*TCOR2]/GAIN; ', ...
+                    'TCOR=(TREF+273.15)/(TEMP+273.15); ', ...
+                    'TCOR1 TREF = TEMP at median reference PRES; ', ...
+                    'TCOR2 TREF = TEMP at CPACT_PRESS; ', ...
+                    'ELAPSED_YRS = (JULD-JULD_PIVOT)/365; ',...
+                    'TF_CPACT = 1 FOR PRES <= CPACT_PRESS, 0 FOR PRES > CPACT_PRESS'];
+
+                INFO.PH_SCI_CAL_COEF = sprintf(['OFFSET = %0.4f; ', ...
+                    'DRIFT = %0.4f; GAIN = %0.4f; JULD = %0.4f; ', ...
+                    'JULD_PIVOT = %0.4f; %s PUMP_OFFSET = %0.4f; ',...
+                    'TCOR2 TREF = %0.4f; CPACT_PRESS = %0.2f'], ...
+                    QC.pH.steps(step_tmpPH,[4,5,3]), ...
+                    juld_prof, juld_init, QC.pH.pHpumpoffset, ...
+                    INFO.pHPumpOffset,INFO.pHPumpOffsetRefT, INFO.CpActivationP);
             end
 
-            % TEMPORARY ADJUSTED pH FIX 08/02/2016
-            % FLOATVIZ pH CALCULATED WITH OLDER FUNCTION. QC STEPS
-            % DETERMINED WITH OLD pH VALUES, BUT A CONSTANT OFFSET
-            % JP pH - FV pH = 0.0167)
-            % Commented out 9/28/16 doing Qc on JP files now
-            %                 disp(['!!!! APPLYING TEMPORARY pH CORRECTION TO ADJUSTED',...
-            %                     ' VALUES (adj_pH = adj_pH - 0.0167)']);
-            %                 LR.PH_IN_SITU_TOTAL_ADJUSTED(~t_nan) = ...
-            %                     LR.PH_IN_SITU_TOTAL_ADJUSTED(~t_nan) - 0.0167;
+            if isfield(QC,'QC_info')
+                INFO.PH_SCI_CAL_COM = sprintf(['pH DMQC vs %s at %s ', ...
+                    'dbar folowing https://doi.org/10.13155/97828.'],  ...
+                    QC.QC_info.pH.Ref, QC.QC_info.pH.PresRange);
+            else
+                INFO.PH_SCI_CAL_COM  =['DMQC follows '...
+                    'https://doi.org/10.13155/97828.'];
+            end
+
+            if regexp(MBARI_ID_str, bad_O2_filter, 'once')
+                [LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR, INFO.PH_SCI_CAL_COM,~,~] = ...
+                    Reassign_ArgoSpecs_LIReqn8(MBARI_ID_str,INFO.cast, ...
+                    LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR,INFO.PH_SCI_CAL_COM,0,0);
+            end
+
 
             % FIX 9660 04/02/18 -jp
             if strcmpi(MBARI_ID_str, 'ua9660')
@@ -2545,7 +2937,7 @@ for msg_ct = 1:size(msg_list,1)
         %
         % RUN TEST ON RAW PH_IN_SITU_TOTAL
         QCscreen_phT = LR.PH_IN_SITU_TOTAL_QC == 4; % screen for BAD data already assigned.
-        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.PH_IN_SITU_TOTAL],'PH',dirs.cal,fv.bio,QCscreen_phT);
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.PH_IN_SITU_TOTAL],'PH',dirs.cal,0,fv.bio,QCscreen_phT);
 
         if ~isempty(spike_inds)
             % Could add optional code to compare qf already assigned (ie in range
@@ -2563,7 +2955,7 @@ for msg_ct = 1:size(msg_list,1)
         %
         % RUN TEST ON QC PH_IN_SITU_TOTAL_ADJUSTED
         QCscreen_phTadj = LR.PH_IN_SITU_TOTAL_ADJUSTED_QC == 4; % screen for BAD data already assigned.
-        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.PH_IN_SITU_TOTAL_ADJUSTED],'PH',dirs.cal,fv.bio,QCscreen_phTadj);
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.PH_IN_SITU_TOTAL_ADJUSTED],'PH',dirs.cal,0,fv.bio,QCscreen_phTadj);
         if ~isempty(spike_inds)
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(spike_inds) = quality_flags;
             disp(['LR.PH_IN_SITU_TOTAL_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
@@ -2574,7 +2966,6 @@ for msg_ct = 1:size(msg_list,1)
 
         clear phfree phtot QCD dura t_chk1 t_chk2 t_chk3 QCscreen_phF QCscreen_phT QCscreen_phTadj QCscreen_O QCscreenOadj spike_inds quality_flags
 
-        %if INFO.cast == 30,pause,end % TESTING
 
         %------------------------------------------------------------------
         % OK NOW MARK BAD SAMPLES AS LISTED ON THE BAD SAMPLE LIST!
@@ -2771,14 +3162,30 @@ for msg_ct = 1:size(msg_list,1)
 
                 INFO.NITRATE_SCI_CAL_EQU  = ['NITRATE_ADJUSTED=', ...
                     '[NITRATE-[OFFSET + DRIFT(JULD-JULD_PIVOT)/365]]/GAIN'];
-                INFO.NITRATE_SCI_CAL_COEF = ['OFFSET = ', ...
-                    num2str(QC.N.steps(step_tmpN,4),'%6.4f'),...
-                    '; DRIFT = ',num2str(QC.N.steps(step_tmpN,5),'%6.4f'),...
-                    '; GAIN = ',num2str(QC.N.steps(step_tmpN,3),'%6.4f'),...
-                    '; JULD = ',num2str(juld_prof,'%9.4f'),...
-                    '; JULD_PIVOT = ',num2str(juld_init,'%9.4f')];
-                INFO.NITRATE_SCI_CAL_COM  =['DMQC follows '...
-                'Maurer et al., 2021 (https://doi.org/10.3389/fmars.2021.683207).'];
+
+                % INFO.NITRATE_SCI_CAL_COEF = ['OFFSET = ', ...
+                %     num2str(QC.N.steps(step_tmpN,4),'%6.4f'),...
+                %     '; DRIFT = ',num2str(QC.N.steps(step_tmpN,5),'%6.4f'),...
+                %     '; GAIN = ',num2str(QC.N.steps(step_tmpN,3),'%6.4f'),...
+                %     '; JULD = ',num2str(juld_prof,'%9.4f'),...
+                %     '; JULD_PIVOT = ',num2str(juld_init,'%9.4f')];
+
+                 INFO.NITRATE_SCI_CAL_COEFF = sprintf(['OFFSET = %0.4f; ', ...
+                     'DRIFT = %0.4f; GAIN = %0.4f; JULD = %0.4f; ', ...
+                     'JULD_PIVOT = %0.4f;'], QC.N.steps(step_tmpN,[4,5,3]), ...
+                     juld_prof, juld_init);
+
+
+                if isfield(QC,'QC_info')
+                    INFO.NITRATE_SCI_CAL_COM = sprintf(['Nitrate DMQC vs %s at %s ', ...
+                        'dbar folowing Maurer et al., 2021 ', ...
+                        '(https://doi.org/10.3389/fmars.2021.683207)'], ...
+                        QC.QC_info.Nitrate.Ref, QC.QC_info.Nitrate.PresRange);
+                else
+                    INFO.NITRATE_SCI_CAL_COM  =['DMQC follows '...
+                        'Maurer et al., 2021 (https://doi.org/10.3389/fmars.2021.683207).'];
+                end
+
                 if regexp(MBARI_ID_str, bad_O2_filter, 'once')
                     [~, ~, LR.NITRATE_ADJUSTED_ERROR, INFO.NITRATE_SCI_CAL_COM] = Reassign_ArgoSpecs_LIReqn8(MBARI_ID_str,INFO.cast,0,0,LR.NITRATE_ADJUSTED_ERROR,INFO.NITRATE_SCI_CAL_COM);
                 end
@@ -2849,7 +3256,7 @@ for msg_ct = 1:size(msg_list,1)
         %
         % RUN TEST ON RAW NITRATE
         QCscreen_N = LR.NITRATE_QC == 4; % screen for BAD data already assigned.
-        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.NITRATE],'NO3',dirs.cal,fv.bio,QCscreen_N);
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.NITRATE],'NO3',dirs.cal,0,fv.bio,QCscreen_N);
         if ~isempty(spike_inds)
             LR.NITRATE_QC(spike_inds) = quality_flags;
             disp(['LR.NITRATE QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
@@ -2859,7 +3266,7 @@ for msg_ct = 1:size(msg_list,1)
         %
         % RUN TEST ON QC NITRATE_ADJUSTED
         QCscreen_Nadj = LR.NITRATE_ADJUSTED_QC == 4; % screen for BAD data already assigned.
-        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.NITRATE_ADJUSTED],'NO3',dirs.cal,fv.bio,QCscreen_Nadj);
+        [spike_inds, quality_flags] = BGC_spiketest(MBARI_ID_str,str2double(cast_num),[LR.PRES LR.NITRATE_ADJUSTED],'NO3',dirs.cal,0,fv.bio,QCscreen_Nadj);
         if ~isempty(spike_inds)
             LR.NITRATE_ADJUSTED_QC(spike_inds) = quality_flags;
             disp(['LR.NITRATE_ADJUSTED QUALITY FLAGS ADJUSTED FOR IDENTIFIED SPIKES, PROFILE ',cast_num,' FLOAT ',MBARI_ID_str,'.'])
@@ -2913,21 +3320,21 @@ for msg_ct = 1:size(msg_list,1)
     % ********************************************************************
     % BUILD LIST OF ODV VARIABLES MATCHING ARGO VARIABLES
 
-    QCvars(1,:)  = {'Temperature[°C]'    'TEMP'}; % NEW FLOATVIZ
-    QCvars(2,:)  = {'Salinity[pss]'      'PSAL'};
-    QCvars(3,:)  = {'Oxygen[µmol/kg]'    'DOXY'};
-    QCvars(4,:)  = {'Nitrate[µmol/kg]'   'NITRATE'};
-    QCvars(5,:)  = {'Chl_a[mg/m^3]'      'CHLA'};
-    QCvars(6,:)  = {'b_bp700[1/m]'       'BBP700'};
-    QCvars(7,:)  = {'pHinsitu[Total]'    'PH_IN_SITU_TOTAL'};
-    QCvars(8,:)  = {'b_bp532[1/m]'       'BBP532'};
-    QCvars(9,:)  = {'CDOM[ppb]'          'CDOM'};
-    QCvars(10,:) = {'DOWN_IRRAD380[W/m^2/nm]' 'DOWN_IRRADIANCE380'};
-    QCvars(11,:) = {'DOWN_IRRAD412[W/m^2/nm]' 'DOWN_IRRADIANCE412'};
-    QCvars(12,:) = {'DOWN_IRRAD490[W/m^2/nm]' 'DOWN_IRRADIANCE490'};
-    QCvars(13,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]' 'DOWNWELLING_PAR'};
-    QCvars(14,:) = {'Oxygen2[µmol/kg]'   'DOXY2'};
-    QCvars(15,:) = {'Chl_a_435[mg/m^3]'   'CHLA435'};
+% % % %     QCvars(1,:)  = {'Temperature[°C]'    'TEMP'}; % NEW FLOATVIZ
+% % % %     QCvars(2,:)  = {'Salinity[pss]'      'PSAL'};
+% % % %     QCvars(3,:)  = {'Oxygen[µmol/kg]'    'DOXY'};
+% % % %     QCvars(4,:)  = {'Nitrate[µmol/kg]'   'NITRATE'};
+% % % %     QCvars(5,:)  = {'Chl_a[mg/m^3]'      'CHLA'};
+% % % %     QCvars(6,:)  = {'b_bp700[1/m]'       'BBP700'};
+% % % %     QCvars(7,:)  = {'pHinsitu[Total]'    'PH_IN_SITU_TOTAL'};
+% % % %     QCvars(8,:)  = {'b_bp532[1/m]'       'BBP532'};
+% % % %     QCvars(9,:)  = {'CDOM[ppb]'          'CDOM'};
+% % % %     QCvars(10,:) = {'DOWN_IRRAD380[W/m^2/nm]' 'DOWN_IRRADIANCE380'};
+% % % %     QCvars(11,:) = {'DOWN_IRRAD412[W/m^2/nm]' 'DOWN_IRRADIANCE412'};
+% % % %     QCvars(12,:) = {'DOWN_IRRAD490[W/m^2/nm]' 'DOWN_IRRADIANCE490'};
+% % % %     QCvars(13,:) = {'DOWNWELL_PAR[µmol Quanta/m^2/sec]' 'DOWNWELLING_PAR'};
+% % % %     QCvars(14,:) = {'Oxygen2[µmol/kg]'   'DOXY2'};
+% % % %     QCvars(15,:) = {'Chl_a_435[mg/m^3]'   'CHLA435'};
 
 
     % DO UNADJUSTED QF's FIRST
@@ -2990,7 +3397,7 @@ for msg_ct = 1:size(msg_list,1)
     end
 
     % NOW DO ADJUSTED DATA QF's
-    if ~isempty(FV_QCdata) && FVQC_flag == 1
+    if ~isempty(FV_QCdata) && FVQC_flag == 1 && get_existing_QC == 1
         ifvT    = find(strcmp('Temperature[°C]',FV_QCdata.hdr)   == 1);
         ifvP    = find(strcmp('Pressure[dbar]',FV_QCdata.hdr)   == 1);
         ifvSTN    = find(strcmp('Station',FV_QCdata.hdr)   == 1);
@@ -3102,7 +3509,7 @@ for msg_ct = 1:size(msg_list,1)
                 % from header (SEE ABOVE HEADER COMMENT ON L3081)
                 iCH = find(strcmp(['ocr',wl_str], OCRhdr) == 1);
             else
-                iCH    = find(strcmp(['Ocr[',num2str(ch_ct-1),']'], OCRhdr) == 1);
+                iCH = find(strcmp(['Ocr[',num2str(ch_ct-1),']'], OCRhdr) == 1);
             end
             t_nan  = isnan(OCRdata(:,iCH));
             a0     = cal.OCR.(ocr_cal_flds{ch_ct}).a0; % get cal ceofs
@@ -3167,246 +3574,6 @@ for msg_ct = 1:size(msg_list,1)
         %end
     end
 
-
-
-    % ****************************************************************
-    % NOW DEAL WITH HIGH RESOLUTION (CP) DATA
-    % ****************************************************************
-    if isempty(d.hr_d) % CHECK FOR DATA
-        disp(['No high res data in message file for ', ...
-            strtrim(msg_list(msg_ct,:))])
-        HR.PRES = [];
-        HR.PRES_ADJUSTED = [];
-        HR.PSAL = [];
-        HR.PSAL_ADJUSTED = [];
-        HR.TEMP = [];
-        HR.TEMP_ADJUSTED = [];
-        HR.NBIN_CTD = [];
-    else % if data also header variable
-        hr_d = d.hr_d; % Low resolution data
-        % GET VARIABLE INDICES - ONLY NEED TO DO THIS ONCE
-        if hr_ind_chk == 0
-            hr_ind_chk = 1;
-
-            iPP   = find(strcmp('p', d.hr_hdr) == 1); % CTD P
-            iTT   = find(strcmp('t', d.hr_hdr) == 1); % CTD T
-            iSS   = find(strcmp('s', d.hr_hdr) == 1); % CTD S
-            iBIN   = find(strcmp('nbin ctd', d.hr_hdr) == 1); % CTD S
-        end
-        HR.PRES = hr_d(:,iPP);
-        HR.PRES_ADJUSTED = HR.PRES;
-
-        %PSAL PROXY?
-        %         if regexp(MBARI_ID_str, psal_proxy_flts, 'once')
-        if ~isempty(Indexpsp) && str2num(cast_num) > psal_proxy_flts{Indexpsp,2}
-            proxydirname = ['\\atlas\Chem\ARGO_PROCESSING\DATA\ARMOR3D_PSAL_PROXY\',WMO,'\', WMO,'.', cast_num,'.mat'];
-            load(proxydirname)
-            HR.PSAL = HRproxy.PSAL;
-            HR.PSAL_PROXY = HRproxy.PSAL; %store within the internal matfiles as well.
-            HR.PSAL_ADJUSTED = HR.PSAL;
-        else
-            HR.PSAL = hr_d(:,iSS);
-            HR.PSAL_ADJUSTED = HR.PSAL;
-        end
-
-        HR.PSAL_ADJUSTED = HR.PSAL; % NO CORRECTIONS DONE FOR S OR T
-        HR.TEMP = hr_d(:,iTT);
-        HR.TEMP_ADJUSTED = HR.TEMP;
-        HR.NBIN_CTD = hr_d(:,iBIN);
-
-        HR.PSAL_QC = HR.PRES * 0 + fv.QC; % Predimmension QF's
-        HR.PSAL_ADJUSTED_QC = HR.PSAL_QC;
-        HR.TEMP_QC = HR.PSAL_QC;
-        HR.TEMP_ADJUSTED_QC = HR.PSAL_QC;
-        HR.PRES_QC = HR.PSAL_QC;
-        HR.PRES_ADJUSTED_QC = HR.PSAL_QC;
-
-        HRQF_P  = HR.PRES < RC.P(1) | HR.PRES > RC.P(2); % BAD HR S
-        t_bio  = HR.PRES ~= fv.bio;
-        HR.PRES_QC(HRQF_P)  = 4;  % BAD
-        HR.PRES_QC(~HRQF_P & HR.PRES ~= fv.bio) = 1; % GOOD
-        HR.PRES_ADJUSTED_QC(HRQF_P)  = 4;  % BAD
-        HR.PRES_ADJUSTED_QC(~HRQF_P & HR.PRES_ADJUSTED ~= fv.bio) = 1; % GOOD
-
-        [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'S');
-        HRQF_S  = HR.PSAL < RC.S(1) | HR.PSAL > RC.S(2); % BAD HR S
-        t_bio  = HR.PSAL ~= fv.bio;
-        HR.PSAL_QC(HRQF_S)  = 4;  % BAD
-        HR.PSAL_QC(~HRQF_S & HR.PSAL ~= fv.bio) = 1; % GOOD
-        HR.PSAL_QC(t_bio) = HR.PSAL_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-        HR.PSAL_ADJUSTED_QC(HRQF_S)  = 4;  % BAD
-        HR.PSAL_ADJUSTED_QC(~HRQF_S & HR.PSAL_ADJUSTED ~= fv.bio) = 1; % GOOD
-        HR.PSAL_ADJUSTED_QC(t_bio) = HR.PSAL_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-
-        if yesBSAML == 1 && yesBSAMLcyc==1
-            SbsIND = find(strcmp('S',tmpBSAML.list(:,ibsSENS)));
-            if ~isempty(SbsIND)
-                TMPsbs = tmpBSAML.list(SbsIND,:);
-                singleBADs = TMPsbs(:,ibsD);
-                singleBADSflags = TMPsbs(:,ibsFL);
-                rangeBADs = TMPsbs(:,ibsDB);
-                rangeBADsflags = TMPsbs(:,ibsFL);
-                if ~isempty(singleBADs{1})
-                    for i2=1:length(singleBADs)
-                        xxtmp = find(HR.PRES == singleBADs{i2});
-                        if isempty(xxtmp)
-                            disp('WARNING!! PSAL PRESSURES INDICATED AS BAD ON BAD SAMPLE LIST DO NOT EXIST IN FILE.  NO FLAGGING CHANGED.')
-                        else
-                            if HR.PSAL ~= fv.bio
-                                HR.PSAL_QC(xxtmp) = str2double(singleBADSflags{i2});
-                            end
-                            if HR.PSAL_ADJUSTED ~=fv.bio
-                                HR.PSAL_ADJUSTED_QC(xxtmp) = str2double(singleBADSflags{i2});
-                            end
-                        end
-                    end
-                    clear i2
-                end
-                for i3=1:length(rangeBADs)
-                    HR.PSAL_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2) & HR.PSAL~=fv.bio) = str2double(rangeBADsflags{i3});
-                    HR.PSAL_ADJUSTED_QC(HR.PRES>=rangeBADs{i3}(1) & HR.PRES<=rangeBADs{i3}(2) & HR.PSAL_ADJUSTED~=fv.bio) = str2double(rangeBADsflags{i3});
-                end
-                clear i3
-            end
-        end
-
-
-        [BSLflag, theflag] = isbadsensor(BSL, MBARI_ID_str, INFO.cast, 'T');
-        HRQF_T  = HR.TEMP < RC.T(1) | HR.TEMP > RC.T(2); % BAD HR T
-        t_bio   = HR.TEMP ~= fv.bio;
-        HR.TEMP_QC(HRQF_T)  = 4;  % BAD
-        HR.TEMP_QC(~HRQF_T & HR.TEMP ~= fv.bio) = 1; % GOOD
-        HR.TEMP_QC(t_bio) = HR.TEMP_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-        HR.TEMP_ADJUSTED_QC(HRQF_T)  = 4;  % BAD
-        HR.TEMP_ADJUSTED_QC(~HRQF_T & HR.TEMP_ADJUSTED ~= fv.bio) = 1; % GOOD
-        HR.TEMP_ADJUSTED_QC(t_bio) = HR.TEMP_ADJUSTED_QC(t_bio) * ~BSLflag + BSLflag*theflag;
-
-        % CHECK FOR ANY HIGH RESOLUTION RAW QUALITY FLAGS TO ADD
-        if ~isempty(FV_HRdata) && get_existing_QC == 1
-            ifvT    = find(strcmp('Temperature[°C]',FV_HRdata.hdr)   == 1);
-            ifvP    = find(strcmp('Pressure[dbar]',FV_HRdata.hdr)   == 1);
-            ifvSTN    = find(strcmp('Station',FV_HRdata.hdr)   == 1);
-            iQF = find(strcmp(FV_HRdata.hdr,'QF') == 1); % QF indices
-            tFV         = FV_HRdata.data(:,ifvSTN) == INFO.cast;
-            FV_cast     = FV_HRdata.data(tFV,:);   % get FV cast
-            FV_QF_sum   = sum(FV_cast(:,iQF),1); % sum of QF columns
-            if sum(FV_QF_sum) > 0 % ANY ODV QF FLAGS GREATER THAN ZERO?
-                indQF   = iQF(FV_QF_sum > 0); % ODV QF colums w/ non zero flags
-                for QF_ct = 1 : size(indQF,2)
-                    ind = strcmp(FV_HRdata.hdr{indQF(QF_ct)-1}, ...
-                        QCvars(:,1));
-                    % N col in floatviz but really no data
-                    if ~isfield(HR, [QCvars{ind,2},'_QC'])
-                        continue
-                    end
-
-                    % FLOAVIZ VAR MATCHES LIST, GET MATCHING QF's
-                    if sum(ind) > 0 && isfield(HR,QCvars{ind,2})
-                        ODV_QF  = [FV_cast(:,ifvP),FV_cast(:,ifvT), ...
-                            FV_cast(:,indQF(QF_ct))]; % P, T & QC
-                        if strcmp(QCvars{ind,2},'BBP700') == 1
-                            ODV_QF(ODV_QF(:,3) == 4,3) = 2;
-                            ODV_QF(ODV_QF(:,3) == 8,3) = 4;
-                        else
-                            ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
-                            ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
-                        end
-
-                        ARGO_QF = [HR.PRES, HR.TEMP, ...
-                            HR.([QCvars{ind,2},'_QC'])];
-                        ct = 0;
-                        for i = 1:size(ARGO_QF,1) % line by line just in case
-                            dP = abs(ODV_QF(:,1) - ARGO_QF(i,1)); % press
-                            dT = abs(ODV_QF(:,2) - ARGO_QF(i,2)); % temp
-                            min_dP = min(dP); % this should be 0 but def < 1m
-                            min_dT = min(dT); % this should be 0 but def < 1m
-                            if min_dP > 1 % poor match
-                                disp(['Poor HR QF match for ARGO PRES = ', ...
-                                    num2str(ARGO_QF(i,1))])
-                                continue
-                            end
-                            t1 = dP == min_dP & dT == min_dT; % there should only be one
-                            if ODV_QF(t1,3) > ARGO_QF(i,3) % ODV QF worse than ARGO
-                                ARGO_QF(i,3) = ODV_QF(t1,3); % replace argo w/ ODV
-                                ct =ct+1;
-                            end
-                        end
-                        HR.([QCvars{ind,2},'_QC']) = ARGO_QF(:,3); %update structure
-                        if ct > 0
-                            disp([num2str(ct), ' QC flags added from HR ODV file for ', ...
-                                QCvars{ind,2}, '_QC'])
-                        end
-                    end
-                end
-                clear ifvT ifvP ifvSTN tFV FV_cast FV_QF_sum indQF QF_ct ODV_QF ARGO_QF ct i dP t1
-                clear min_dP min_dT dT
-            end
-        end
-
-        % CHECK FOR ANY HIGH RESOLUTION ADJUSTED QUALITY FLAGS TO ADD
-        if ~isempty(FV_HRQCdata) && get_existing_QC == 1
-            ifvT    = find(strcmp('Temperature[°C]',FV_HRQCdata.hdr)   == 1);
-            ifvP    = find(strcmp('Pressure[dbar]',FV_HRQCdata.hdr)   == 1);
-            ifvSTN    = find(strcmp('Station',FV_HRQCdata.hdr)   == 1);
-
-            iQF = find(strcmp(FV_HRQCdata.hdr,'QF') == 1); % QF indices
-            tFV         = FV_HRQCdata.data(:,ifvSTN) == INFO.cast;
-            FV_cast     = FV_HRQCdata.data(tFV,:);   % get FV cast
-            FV_QF_sum   = sum(FV_cast(:,iQF),1); % sum of QF columns
-            if sum(FV_QF_sum) > 0 % ANY ODV QF FLAGS GREATER THAN ZERO?
-                indQF   = iQF(FV_QF_sum > 0); % ODV QF colums w/ non zero flags
-                for QF_ct = 1 : size(indQF,2)
-                    ind = strcmp(FV_HRQCdata.hdr{indQF(QF_ct)-1}, ...
-                        QCvars(:,1));
-                    % N col in floatviz but really no data
-                    if ~isfield(HR, [QCvars{ind,2},'_ADJUSTED_QC'])
-                        continue
-                    end
-
-                    % FLOAVIZ VAR MATCHES LIST, GET MATCHING QF's
-                    if sum(ind) > 0 && isfield(HR,[QCvars{ind,2},'_ADJUSTED'])
-                        ODV_QF  = [FV_cast(:,ifvP),FV_cast(:,ifvT), ...
-                            FV_cast(:,indQF(QF_ct))]; % P, T & QC
-                        if strcmp(QCvars{ind,2},'BBP700') == 1
-                            ODV_QF(ODV_QF(:,3) == 4,3) = 2;
-                            ODV_QF(ODV_QF(:,3) == 8,3) = 4;
-                        else
-                            ODV_QF(ODV_QF(:,3) == 4,3) = 3; % CONVERT TO ARGO VALUES
-                            ODV_QF(ODV_QF(:,3) == 8,3) = 4; % CONVERT TO ARGO VALUES
-                        end
-
-                        ARGO_QF = [HR.PRES, HR.TEMP, ...
-                            HR.([QCvars{ind,2},'_ADJUSTED_QC'])];
-                        ct = 0;
-                        for i = 1:size(ARGO_QF,1) % line by line just in case
-                            dP = abs(ODV_QF(:,1) - ARGO_QF(i,1)); % press
-                            dT = abs(ODV_QF(:,2) - ARGO_QF(i,2)); % temp
-                            min_dP = min(dP); % this should be 0 but def < 1m
-                            min_dT = min(dT); % this should be 0 but def < 1m
-                            if min_dP > 1 % poor match
-                                disp(['Poor HR QF match for ARGO PRES = ', ...
-                                    num2str(ARGO_QF(i,1))])
-                                continue
-                            end
-                            t1 = dP == min_dP & dT == min_dT; % there should only be one
-                            if ODV_QF(t1,3) > ARGO_QF(i,3) % ODV QF worse than ARGO
-                                ARGO_QF(i,3) = ODV_QF(t1,3); % replace argo w/ ODV
-                                ct =ct+1;
-                            end
-                        end
-                        HR.([QCvars{ind,2},'_ADJUSTED_QC']) = ARGO_QF(:,3); %update structure
-                        if ct > 0
-                            disp([num2str(ct), ' QC flags added from HR ODV file for ', ...
-                                QCvars{ind,2}, '_ADJUSTED_QC'])
-                        end
-                    end
-                end
-                clear ifvP ifvT ifvSTN tFV FV_cast FV_QF_sum indQF QF_ct ODV_QF ARGO_QF ct i dP t1
-                clear min_dP min_dT dT
-            end
-        end
-    end
-    %%%%%%%%%%%%%%%%%%%%% END OF HIGH RES %%%%%%%%%%%%%%%%%%%%%%%
 
     % ****************************************************************
     %    Emily's Park Depth Cave Baby :) <3

@@ -95,9 +95,9 @@ function tf_float = Process_SOLO_float(MBARI_ID_str, dirs, update_str)
 % update_str = 'all';
 % dirs =[];
 %
-% MBARI_ID_str = 'ss0001';
-% dirs = [];
-% update_str = 'all';
+MBARI_ID_str = 'ss0001';
+dirs = [];
+update_str = 'all';
 % ************************************************************************
 % ************************************************************************
 
@@ -114,7 +114,9 @@ tf_float.bad_messages = {};
 % exception_float = '';
 
 % pH SENSOR THAT HAS BEEN TURNED OFF (DUE TO IE FAILURE):
-bad_ALK_filter = 'ss0001|ss0004';
+bad_ALK_filter = ['ss0001', 'ss0004'];
+
+% 'ss0001|ss0004'
 
 
 % FAILED OPTODE, BUT PH AND NO3 QC IS NOT YET AFFECTED: 19142 (MAY BE ADDED
@@ -503,11 +505,14 @@ if str2num(WMO) == 1902370
     mm = regexp(M,'\d+(?=\.phy)','once','match');
     x2 = str2num(cell2mat(mm));
     s_ind = find(x2>=6 & x2<=12);
-    msg_list(s_ind,:) = []; %remove from processing loop
-    tf_float.new_messages(s_ind)=[]; %remove from email notificaiton list
+%     msg_list(s_ind,:) = []; %remove from processing loop
+%     tf_float.new_messages(s_ind)=[]; %remove from email notificaiton list
+    s2_ind = find(x2>=31 & x2<=46);
+    fullinds = [s_ind;s2_ind];
+    msg_list(fullinds,:) = []; %remove from processing loop
+    tf_float.new_messages(fullinds)=[]; %remove from email notificaiton list
 end
 %------------------------------------END Tanya temp
-
 for msg_ct = 1:size(msg_list,1)
     clear LR HR INFO
     msg_file = strtrim(msg_list(msg_ct,:));
@@ -549,8 +554,9 @@ for msg_ct = 1:size(msg_list,1)
     %Process_APEX_float.m)
     Loop_CHK = 0;
     for isf = 1:length(sensor_files)
-
-        if strcmp(sensor_files{isf,2},'alk') == 1 && ~isempty(regexp(MBARI_ID_str, bad_ALK_filter,'once'))
+        
+        %If there is an 'alk' file and the current MBARI_ID_str is on the 'bad_ALK_filter' list, skip the float
+        if strcmp(sensor_files{isf,2},'alk') == 1 && contains(MBARI_ID_str,bad_ALK_filter)
             continue
         end
         if (exist([dirs.temp, sensor_files{isf,1}],'file')==0 && isfield(cal,sensor_files{isf,3}) && ...
@@ -606,7 +612,6 @@ for msg_ct = 1:size(msg_list,1)
             else
                 % If missing spectra...wait.  TM. 11/6/23 solo 002.103;
                 % 002.111
-                %                 keyboard
                 tmpN = Dno3.data;
                 xtmpN = find(isnan(tmpN));
                 if ~isempty(xtmpN)
@@ -646,7 +651,8 @@ for msg_ct = 1:size(msg_list,1)
             end
         end
     end
-    if Loop_CHK == 1 &&  isempty(regexp(MBARI_ID_str, bad_ALK_filter,'once'))% some file type is empty!  skip this cycle, so need to break out of msg file loop
+
+    if Loop_CHK == 1 && contains(MBARI_ID_str,bad_ALK_filter)% some file type is empty!  skip this cycle, so need to break out of msg file loop
         disp(['SKIPPING CYCLE PROCESSING FOR ',msg_file,' DUE TO EMPTY DATA ON ONE OR MORE PERSSURE AXES!'])
         Indext1 = strfind(tf_float.new_messages,msg_file);
         t1 = find(not(cellfun('isempty',Indext1)));
@@ -886,7 +892,6 @@ for msg_ct = 1:size(msg_list,1)
     % *********************************************************************
     % START WITH HR CTD DATA;  DEFINE ARGO PARAMETERS----------------------
     % *********************************************************************
-
     if isempty(phy_d) % CHECK FOR DATA
         disp(['No ctd data in message file for ', ...
             strtrim(msg_list(msg_ct,:))])
@@ -1194,6 +1199,9 @@ for msg_ct = 1:size(msg_list,1)
     if isfield(cal,'O')
         BGCIND = find(not(cellfun('isempty',strfind(FLTsensors,'DOX'))))-CTD_Nax; %#ok<STRCL1>
         eval(['DOXarray = BGC0',num2str(BGCIND),';']); %to reduce the number of eval calls, rename to temporary structure until all desired fields are populated.
+        if isempty(DOXarray.PRES)
+            continue
+        end
         fill0  = ones(size(DOXarray.PRES))* 0;
         % CALCULATE POTENTIAL DENSITY (STILL NEED TO UPDATE TO TEOS 10 !)
         potT   = theta(DOXarray.PRES, DOXarray.TEMPi, DOXarray.PSALi,0); % potential temp, p=0

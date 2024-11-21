@@ -140,26 +140,36 @@ function [tf_float,FULLreprocess] = Process_NAVIS_float(MBARI_ID_str, dirs, upda
 % 5/14/24, TM, added CHLA_FLUORESCENCE variable (per Argo documentation) to LR output
 % 6/10/24 TM, fixed some old hard-wired indices that were mucking up the
 %           sirocco flag grab (post addition of the ice column)!
+% 11/08/24 JP Updates to accomodate pH pump offset adjustment, new QC list
+%             file changes (SAGEv2) and SCI CAL info for pH and nitrate
 % ************************************************************************
 
 % FOR TESTING
-% MBARI_ID_str = 'un1113';
-% MBARI_ID_str = 'un0037';
-% MBARI_ID_str = 'un0565';
-% MBARI_ID_str = 'un0889'; % has a msg without pk
-% % MBARI_ID_str = 'un0062'; % has a msg without pk
-% % MBARI_ID_str = 'un1516'; % has a msg without pk\
 
-% MBARI_ID_str = 'un0063'; % Navis Nautilus with OCR & *.cp files
+
+%MBARI_ID_str = 'un0063'; % Navis Nautilus with OCR & *.cp files
+% MBARI_ID_str = 'wn1349'; % Navis Nautilus with OCR & *.cp files
 % update_str   = 'all';
-% dirs =[];
+% dirs = [];
+% ISDEAD = 0;
 
 % ************************************************************************
 % SET FORMATS, DEFAULT DIRS, PREDIMENSION STRUCTURE, BOOKKEEPING
 % ************************************************************************
 fclose all; % CLOSE ANY OPEN FILES
-FULLreprocess = 0;  %This gets changed to '1' for every 5th cycle coming in in 'update' mode.  TM 2/12/24
-springchicken = 30;
+get_existing_QC = 0;
+FULLreprocess   = 0;  %This gets changed to '1' for every 5th cycle coming in in 'update' mode.  TM 2/12/24
+springchicken   = 30;
+
+if get_existing_QC == 0
+    disp('get_existing_QC = 0!! NO QC flags will be pulled from the existing file')
+    % str = input('Would you like to continue processing [Y/N]','s');
+    % if isempty(regexpi(str,'^Y','once'))
+    %     return
+    % end
+end
+
+
 tf_float.status       = 0; % Flag for float processing success 0 = no good
 tf_float.new_messages = {};
 tf_float.bad_messages = {};
@@ -204,9 +214,13 @@ Define_ArgoSpecs_SPECIALCASES
 % ************************************************************************
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
 if isempty(dirs)
-    user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
-    %user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
-    user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
+    user_dir = userpath; %i.e returns 'C:\Users\jplant\Documents\MATLAB'
+    user_dir = [user_dir, '\ARGO_PROCESSING\DATA\'];
+
+    % user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+    % %user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
+    % user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
+    
 
     dirs.mat       = [user_dir,'FLOATS\'];
     dirs.cal       = [user_dir,'CAL\'];
@@ -382,7 +396,8 @@ clear dirs.config dirs.cal s1
 % ************************************************************************
 % GET QC ADJUSTMENT DATA
 % ************************************************************************
-QC = get_QC_adjustments(cal.info.WMO_ID, dirs);
+QC = get_QC_adjustments(cal.info.WMO_ID, dirs); % JP 10/07/24 same name but updated for SAGEv2
+
 
 % ************************************************************************
 % GET MSG AND ISUS FILE LISTS
@@ -2364,13 +2379,6 @@ for msg_ct = 1:size(msg_list,1)
             end
         end
 
-        %         if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP2')==1)%pH temp removed from these floats; use ctd temp
-        %             LR.TEMP_PH(~lr_nan) = lr_d(~lr_nan,iT);
-        %         else
-        %             LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT); % I param
-        %         end
-        % %         LR.TEMP_PH(~lr_nan)    = lr_d(~lr_nan,iphT);
-
         [lr_phfree, lr_phtot] = phcalc(LR.VRS_PH(~lr_nan), ...
             LR.PRES(~lr_nan), lr_wrk_temp(~lr_nan), LR.PSAL(~lr_nan), ...
             cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
@@ -2428,15 +2436,6 @@ for msg_ct = 1:size(msg_list,1)
                 hr_wrk_temp         = HR.TEMP_PH;
             end
 
-
-            %             if (strcmp(MBARI_ID_str,'0949STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP')==1) || (strcmp(MBARI_ID_str,'0948STNP2')==1)%pH temp removed from these floats; use ctd temp
-            %                 HR.TEMP_PH(~hr_nan) = hr_d(~hr_nan,iT);
-            %             else
-            %                 HR.TEMP_PH(~hr_nan)    = hr_d(~hr_nan,iphT); % I param
-            %             end
-
-
-
             [hr_phfree,hr_phtot] = phcalc(HR.VRS_PH(~hr_nan), ...
                 HR.PRES(~hr_nan), hr_wrk_temp(~hr_nan), ...
                 HR.PSAL(~hr_nan), cal.pH.k0, cal.pH.k2, cal.pH.pcoefs);
@@ -2479,12 +2478,93 @@ for msg_ct = 1:size(msg_list,1)
             HR.PH_IN_SITU_TOTAL_QC(HR_inf) = 4;
         end
 
+
         if isfield(QC,'pH')
+            % NEED TO DETERMINE pH PUMP OFFSET FROM MERGED LR/HR pH data
+            % first. For most NAVIS, LR(cp) pH only goes to 1000 dbar but it
+            % appears that the newer navis with the seperate *.cp files do
+            % full profile spot sampling 
+            INFO.pHPumpOffset     = 0; % default offset correction value
+            INFO.pHPumpOffsetRefT = NaN;
+            if ~strcmp(QC.pH.pHpumpoffset,'none')
+                merge_tmp = [];
+                merge_tmp = [merge_tmp; LR.PRES(~lr_nan), ...
+                    LR.PH_IN_SITU_TOTAL(~lr_nan), ...
+                    LR.PH_IN_SITU_TOTAL_QC(~lr_nan), LR.TEMP(~lr_nan)];
+                if r_hr > 0
+                    merge_tmp = [merge_tmp; LR.PRES(~hr_nan), ...
+                        HR.PH_IN_SITU_TOTAL(~hr_nan), ...
+                        HR.PH_IN_SITU_TOTAL_QC(~hr_nan),LR.TEMP(~hr_nan)];
+                end
+                [~,ia,~]  = unique(merge_tmp(:,1));
+                merge_tmp = merge_tmp(ia,:); % sorted & merged
+                out = calc_pH_pump_offset(merge_tmp(:,1:3), INFO.CpActivationP, 4);
+                if isempty(out)
+                    fprintf(['No offset calculated for cycle %d, using ', ...
+                        'default = 0\n'], INFO.cast);
+                    pH_PO = 0;
+                elseif strcmp(QC.pH.pHpumpoffset, 'poly')
+                    pH_PO = out.data(1,1);
+                elseif strcmp(QC.pH.pHpumpoffset, 'linear')
+                    pH_PO = out.data(1,5);
+                else % mixed
+                    pH_PO = mean(out.data(1,[1,5]),2,'omitnan');
+                end
+                INFO.pHPumpOffset = pH_PO;
+
+                % GET REF T
+                % NEED TO APPLY pH TCOR TO OFFSET CORRECTION TOO SINCE WE ARE IN pH
+                % space but it is really a k0 issue
+                tP     = merge_tmp(:,1) <= INFO.CpActivationP; % pH pump offset upper cycle subset
+                tf_max = merge_tmp(:,1) == max(merge_tmp(tP,1));
+                REF_T  = merge_tmp(tf_max, 4);
+                INFO.pHPumpOffsetRefT = REF_T;
+
+                % Remove float from Define_ArgoSpecs_SPECIALCASES if on there
+                % Having the Reassign_ArgoSpecs_SPECIALCASES at the end
+                % was a little tricky to overide JP 11/05/2024
+                tf_wmo = cellfun(@(x) x.WMO == str2double(INFO.WMO_ID), FLOATS);
+                tf_980 = cellfun(@(x) contains(x.add_comment{1,1},'980'), FLOATS);
+                tg     = ~(tf_wmo & tf_980);
+                FLOATS = FLOATS(tg);
+                clear tf_wmo tf_980 tg
+
+                clear  merge_tmp pH_PO ia out tP tf_max
+            end
+
             QCD = [LR.PRES(~lr_nan), lr_wrk_temp(~lr_nan), ...
                 LR.PSAL(~lr_nan), LR.PH_IN_SITU_TOTAL(~lr_nan)];
+
+            % ************************************************************
+            % APPLY pH PUMP OFFSET CORRECTION TO LR DATA IF WARRENTED - REPLACE
+            % phtot IN THE QCD MATRIX WITH OFFSET CORRECTED phtot ABOVE CpAct P
+            % for older Navis (non *.cp file floats) no valid LR data to
+            % correct
+            tP = QCD(:,1) <= INFO.CpActivationP; % pH pump offset upper cycle subset
+            if ~strcmp(QC.pH.pHpumpoffset,'none') && any(tP)
+                TCOR   = (REF_T + 273.15) ./ (QCD(:,2) + 273.15); % Ratio in Kelvin
+                if ~isnan(INFO.pHPumpOffset) && ~isnan(INFO.pHPumpOffsetRefT)% offset
+                    QCD(tP,4) = QCD(tP,4) - TCOR(tP) .* INFO.pHPumpOffset; % offset corr pH above cP
+                else
+                    INFO.pHPumpOffset = 0;
+                end
+            end
+            % ************************************************************
+
             LR.PH_IN_SITU_TOTAL_ADJUSTED(~lr_nan) = ...
                 apply_QC_corr(QCD, d.sdn, QC.pH);
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~lr_nan)  = 1;
+
+            % IF A TRUE pH PUMP OFFSET CORRECTION OCCURS BE SURE TO COMMENT
+            % OUT/ REMOVE WMO # ON THE 980 LIST FIRST
+            %isPOF = find(str2double(WMO)==pH_pumpoffset_980_floats);
+            isPOF = pH_pumpoffset_980_floats == str2double(WMO);
+
+            if any(isPOF) && strcmp(QC.pH.pHpumpoffset,'none')
+                tPOF_QC = LR.PRES > INFO.CpActivationP & ~lr_nan;
+                LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(tPOF_QC) = 3;
+            end
+
             LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(LRQF_S | LRQF_T | LRQF_P)  = 4;
             %LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~lr_nan) = 0.02;
 
@@ -2493,30 +2573,69 @@ for msg_ct = 1:size(msg_list,1)
 
             step_tmpPH = find(QC.pH.steps(:,2)<=INFO.cast,1,'last');
 
-
-
-
             juld_prof = INFO.sdn-datenum(1950,01,01); %convert to JULD
             juld_init = QC.pH.steps(step_tmpPH,1)-datenum(1950,01,01); %convert to JULD
             juld_end = QC.date - datenum(1950,01,01); %date at last DMQC, converted to JULD
             LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = 0.01 + LR.DOXY_ADJUSTED_ERROR.*0.0016;
             if juld_prof>juld_end
-                LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR + 0.03.*(juld_prof-juld_end)./365;
+                LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR = ...
+                    LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR + ...
+                    0.03.*(juld_prof-juld_end)./365;
             end
             LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(lr_nan) = fv.bio;
 
+            % SET META INFO
+            if INFO.pHPumpOffset ==  0
+                INFO.PH_SCI_CAL_EQU  = [' PH_IN_SITU_TOTAL_ADJUSTED = ',...
+                    '[PH_IN_SITU_TOTAL - (OFFSET + DRIFT*ELAPSED_YRS)*TCOR]/GAIN; ',...
+                    'TCOR = (TREF+273.15)/(TEMP+273.15);  TREF = TEMP at ',...
+                    'median reference PRES; ELAPSED_YRS = (JULD-JULD_PIVOT)/365'];
 
-            INFO.PH_SCI_CAL_EQU  = ['PH_IN_SITU_TOTAL_ADJUSTED=', ...
-                '[PH_IN_SITU_TOTAL+[PUMP_OFFSET - [OFFSET + DRIFT(JULD-JULD_PIVOT)/365]*TCOR]]/GAIN;',...
-                'TCOR=(TREF+273.15)./(TEMP+273.15);  TREF = TEMP at 1500m.'];
-            INFO.PH_SCI_CAL_COEF = ['PUMP_OFFSET = ',num2str(QC.pH.pHpumpoffset),...
-                '; OFFSET = ',num2str(QC.pH.steps(step_tmpPH,4),'%6.4f'),...
-                '; DRIFT = ',num2str(QC.pH.steps(step_tmpPH,5),'%6.4f'),...
-                '; GAIN = ',num2str(QC.pH.steps(step_tmpPH,3),'%6.4f'),...
-                '; JULD = ',num2str(juld_prof,'%9.4f'),...
-                '; JULD_PIVOT = ',num2str(juld_init,'%9.4f')];
-            INFO.PH_SCI_CAL_COM  =['DMQC follows '...
-                'Maurer et al., 2021 (https://doi.org/10.3389/fmars.2021.683207).'];
+                INFO.PH_SCI_CAL_COEF = sprintf(['OFFSET = %0.4f; ', ...
+                    'DRIFT = %0.4f; GAIN = %0.4f; JULD = %0.4f; ', ...
+                    'JULD_PIVOT = %0.4f;'], QC.pH.steps(step_tmpPH,[4,5,3]), ...
+                    juld_prof, juld_init);
+            else
+                INFO.PH_SCI_CAL_EQU  = ['PH_IN_SITU_TOTAL_ADJUSTED = ', ...
+                    '[PH_IN_SITU_TOTAL - (OFFSET +DRIFT*ELAPSED_YRS)*TCOR1 – ', ...
+                    'TF_CPACT*PUMP_OFFSET*TCOR2]/GAIN; ', ...
+                    'TCOR=(TREF+273.15)/(TEMP+273.15); ', ...
+                    'TCOR1 TREF = TEMP at median reference PRES; ', ...
+                    'TCOR2 TREF = TEMP at CPACT_PRESS; ', ...
+                    'ELAPSED_YRS = (JULD-JULD_PIVOT)/365; ',...
+                    'TF_CPACT = 1 FOR PRES <= CPACT_PRESS, 0 FOR PRES > CPACT_PRESS'];
+
+                INFO.PH_SCI_CAL_COEF = sprintf(['OFFSET = %0.4f; ', ...
+                    'DRIFT = %0.4f; GAIN = %0.4f; JULD = %0.4f; ', ...
+                    'JULD_PIVOT = %0.4f; %s PUMP_OFFSET = %0.4f; ',...
+                    'TCOR2 TREF = %0.4f; CPACT_PRESS = %0.2f'], ...
+                    QC.pH.steps(step_tmpPH,[4,5,3]), ...
+                    juld_prof, juld_init, QC.pH.pHpumpoffset, ...
+                    INFO.pHPumpOffset,INFO.pHPumpOffsetRefT, INFO.CpActivationP);
+            end
+
+            if isfield(QC,'QC_info')
+                INFO.PH_SCI_CAL_COM = sprintf(['pH DMQC vs %s at %s ', ...
+                    'dbar folowing https://doi.org/10.13155/97828.'],  ...
+                    QC.QC_info.pH.Ref, QC.QC_info.pH.PresRange);
+            else
+                INFO.PH_SCI_CAL_COM  =['DMQC follows '...
+                    'https://doi.org/10.13155/97828.'];
+            end
+
+
+            % INFO.PH_SCI_CAL_EQU  = ['PH_IN_SITU_TOTAL_ADJUSTED=', ...
+            %     '[PH_IN_SITU_TOTAL+[PUMP_OFFSET - [OFFSET + DRIFT(JULD-JULD_PIVOT)/365]*TCOR]]/GAIN;',...
+            %     'TCOR=(TREF+273.15)./(TEMP+273.15);  TREF = TEMP at 1500m.'];
+            % INFO.PH_SCI_CAL_COEF = ['PUMP_OFFSET = ',num2str(QC.pH.pHpumpoffset),...
+            %     '; OFFSET = ',num2str(QC.pH.steps(step_tmpPH,4),'%6.4f'),...
+            %     '; DRIFT = ',num2str(QC.pH.steps(step_tmpPH,5),'%6.4f'),...
+            %     '; GAIN = ',num2str(QC.pH.steps(step_tmpPH,3),'%6.4f'),...
+            %     '; JULD = ',num2str(juld_prof,'%9.4f'),...
+            %     '; JULD_PIVOT = ',num2str(juld_init,'%9.4f')];
+            % INFO.PH_SCI_CAL_COM  =['DMQC follows '...
+            %     'Maurer et al., 2021 (https://doi.org/10.3389/fmars.2021.683207).'];
+
             if regexp(MBARI_ID_str, bad_O2_filter, 'once')
                 [LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR, INFO.PH_SCI_CAL_COMtmp,~,~] = Reassign_ArgoSpecs_LIReqn8(MBARI_ID_str,INFO.cast,LR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR,INFO.PH_SCI_CAL_COM,0,0);
             end
@@ -2534,10 +2653,32 @@ for msg_ct = 1:size(msg_list,1)
             if r_hr > 0
                 QCD = [HR.PRES(~hr_nan), hr_wrk_temp(~hr_nan), ...
                     HR.PSAL(~hr_nan), HR.PH_IN_SITU_TOTAL(~hr_nan)];
+
+                % ************************************************************
+                % APPLY pH PUMP OFFSET CORRECTION TO HR DATA IF WARRENTED - REPLACE
+                % phtot IN THE QCD MATRIX WITH OFFSET CORRECTED phtot ABOVE CpAct P
+                tP = QCD(:,1) <= INFO.CpActivationP; % pH pump offset upper cycle subset
+                if ~strcmp(QC.pH.pHpumpoffset,'none') && any(tP)
+                    TCOR   = (REF_T + 273.15) ./ (QCD(:,2) + 273.15); % Ratio in Kelvin
+                    if ~isnan(INFO.pHPumpOffset) && ~isnan(INFO.pHPumpOffsetRefT)% offset
+                        QCD(tP,4) = QCD(tP,4) - TCOR(tP) .* INFO.pHPumpOffset; % offset corr pH above cP
+                    else
+                        INFO.pHPumpOffset = 0;
+                    end
+                end
+
                 HR.PH_IN_SITU_TOTAL_ADJUSTED(~hr_nan) = ...
                     apply_QC_corr(QCD, d.sdn, QC.pH);
 
                 HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(~hr_nan)    = 1;
+
+                % IF A TRUE pH PUMP OFFSET CORRECTION OCCURS BE SURE TO COMMENT
+                % OUT/ REMOVE WMO # ON THE 980 LIST FIRST
+                if any(isPOF) && strcmp(QC.pH.pHpumpoffset,'none')
+                    tPOF_QC = HR.PRES > INFO.CpActivationP & ~hr_nan;
+                    LR.PH_IN_SITU_TOTAL_ADJUSTED_QC(tPOF_QC) = 3;
+                end
+
                 HR.PH_IN_SITU_TOTAL_ADJUSTED_QC(HRQF_S | HRQF_T | HRQF_P)  = 4;
                 %HR.PH_IN_SITU_TOTAL_ADJUSTED_ERROR(~hr_nan) = 0.02;
 
@@ -3180,7 +3321,7 @@ for msg_ct = 1:size(msg_list,1)
     QCvars(9,:) = {'CDOM[ppb]'          'CDOM'};
 
     % DO UNADJUSTED QF's FIRST
-    if ~isempty(FV_data)
+    if ~isempty(FV_data) && get_existing_QC == 1
         ifvT    = find(strcmp('Temperature[°C]',FV_data.hdr)   == 1);
         ifvP    = find(strcmp('Pressure[dbar]',FV_data.hdr)   == 1);
         ifvSTN    = find(strcmp('Station',FV_data.hdr)   == 1);
@@ -3266,7 +3407,7 @@ for msg_ct = 1:size(msg_list,1)
     end
 
     % NOW DO ADJUSTED DATA QF's
-    if ~isempty(FV_QCdata) && FVQC_flag == 1
+    if ~isempty(FV_QCdata) && FVQC_flag == 1 && get_existing_QC == 1
         ifvT    = find(strcmp('Temperature[°C]',FV_QCdata.hdr)   == 1);
         ifvP    = find(strcmp('Pressure[dbar]',FV_QCdata.hdr)   == 1);
         ifvSTN    = find(strcmp('Station',FV_QCdata.hdr)   == 1);

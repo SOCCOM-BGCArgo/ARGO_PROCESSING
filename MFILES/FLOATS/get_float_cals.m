@@ -105,8 +105,9 @@ function cal = get_float_cals(MBARI_ID_str, dirs)
 % MBARI_ID_str = 'ua9630'; % 
 %MBARI_ID_str = 'un0062'; % 
 % MBARI_ID_str = 'un0061'; % 
-% MBARI_ID_str = 'ua21286'; % 
-% dirs =[];
+MBARI_ID_str = 'ss0019'; % SOLO float with FLBBFLRT2K
+% MBARI_ID_str = 'ss0025'; % SOLO float with FLBBFLRT2K
+dirs =[];
 
 
 % ************************************************************************
@@ -382,10 +383,15 @@ end
 % ************************************************************************
 frewind(fid)
 tline = ' ';% initialize some variables
+
 while ischar(tline)
+
+    %Test at the beginning of the while loop to see if this is an FL2BB sensor
+    isFL2BB = contains(tline,'FLBBFLRT2K');
+
     % **************************************
     % FLBB / FLBBFL BLOCK
-    if regexp(tline,'FLBBFL','once') % FLBBFL CHL435 SN
+    if regexp(tline,'FLBBFL','once') & ~isFL2BB % FLBBFL CHL435 SN
         CHL435.type = regexp(tline,'FLBB\w+','match','once');
         CHL435.SN   = regexp(tline,'\d+$','match','once');
         CHL.type    = CHL435.type;
@@ -394,32 +400,30 @@ while ischar(tline)
             CHL435.type,' ',CHL435.SN,')'])
         info.chl435_flag   = 1;
         info.chl_flag   = 1;
-    elseif regexp(tline,'FLBB','once') % FLBB SN
+    elseif regexp(tline,'FLBB','once') & ~isFL2BB % FLBB SN
         CHL.type = regexp(tline,'FLBB\w+','match','once');
         CHL.SN   = regexp(tline,'\d+$','match','once');
         disp(['FLBB Bio-optics detected (',CHL.type,' ',CHL.SN,')'])
         info.chl_flag   = 1;
 
-    elseif regexp(tline,'^\d+.+ChlDC','once') % FLBB CHL DC
+    elseif regexp(tline,'^\d+.+ChlDC','once') & ~isFL2BB % FLBB CHL DC
         CHL.ChlDC = sscanf(tline,'%f',1);
-    elseif regexp(tline,'^\d+.+ChlScale','once') % FLBB CHL DC
+    elseif regexp(tline,'^\d+.+ChlScale','once') & ~isFL2BB % FLBB CHL DC
         CHL.ChlScale = sscanf(tline,'%f',1);
 
-    elseif regexp(tline,'^\d+.+Chl435DC','once') % FLBB CHL DC
+    elseif regexp(tline,'^\d+.+Chl435DC','once') & ~isFL2BB % FLBB CHL DC
         CHL435.ChlDC = sscanf(tline,'%f',1);
-    elseif regexp(tline,'^\d+.+Chl435Scale','once') % FLBB CHL DC
+    elseif regexp(tline,'^\d+.+Chl435Scale','once') & ~isFL2BB % FLBB CHL DC
         CHL435.ChlScale = sscanf(tline,'%f',1);
 
-    elseif regexp(tline,'^\d+.+BetabDC','once') % FLBB BBP DC
+    elseif regexp(tline,'^\d+.+BetabDC','once')|regexp(tline,'^\d+.+Betab700DC','once') & ~isFL2BB % FLBB BBP DC
         BB.type    = CHL.type;
         BB.SN      = CHL.SN;
         BB.BetabDC = sscanf(tline,'%f',1);
-    elseif regexp(tline,'^\d+.+BetabScale','once') % FLBB CHL DC
+    elseif regexp(tline,'^\d+.+BetabScale','once')|regexp(tline,'^\d+.+Betab700DC','once') & ~isFL2BB % FLBB CHL DC
         BB.BetabScale = sscanf(tline,'%f',1);
-
-
-        % **************************************
-        % MCOMS BLOCK
+    % **************************************
+    % MCOMS BLOCK
     elseif regexp(tline,'^MCOM.+Chl','once') % MCOMS  CHL
         tmp          = regexp(tline,',','split');
         CHL.type     = regexp(tmp{1,1},'(?<=\()\w+','once','match');
@@ -441,8 +445,33 @@ while ischar(tline)
         CDOM.SN         = regexp(tmp{1,1},'\d+(?=\))','once','match');
         CDOM.CDOMDC    = str2double(tmp{1,2});
         CDOM.CDOMScale = str2double(tmp{1,3});
-        
-        % ECO TRIPLET BLOCK
+
+    % **************************************
+    % ECO TRIPLET BLOCK (TO BECOME THE FL2BB BLOCK?)
+    elseif contains(tline,'FLBBFLRT2K Chl fluorescence')
+        tmp          = regexp(tline,',','split');
+        CHL.type     = regexp(tmp{1,1},'(?<=\()\w+','once','match');
+        CHL.SN       = regexp(tmp{1,1},'\d+(?=\))','once','match');
+        CHL.ChlDC    = str2double(tmp{1,2});
+        CHL.ChlScale = str2double(tmp{1,3});
+        disp(['O Bio-optics detected (',CHL.type,' ',CHL.SN,')'])
+        info.chl_flag   = 1;
+    elseif contains(tline,'FLBBFLRT2K Backscatter700')
+        tmp           = regexp(tline,',','split');
+        BB.type       = regexp(tmp{1,1},'(?<=\()\w+','once','match');
+        BB.SN         = regexp(tmp{1,1},'\d+(?=\))','once','match');
+        BB.BetabDC    = str2double(tmp{1,2});
+        BB.BetabScale = str2double(tmp{1,3});
+    elseif contains(tline,'FLBBFLRT2K Chl435 fluorescence')
+        tmp             = regexp(tline,',','split');
+        CHL435.type       = regexp(tmp{1,1},'(?<=\()\w+','once','match');
+        CHL435.SN         = regexp(tmp{1,1},'\d+(?=\))','once','match');
+        CHL435.ChlDC    = str2double(tmp{1,2});
+        CHL435.ChlScale = str2double(tmp{1,3}); 
+        info.chl435_flag   = 1;
+        info.chl_flag   = 1;
+    % **************************************
+    %OLD ECO TRIPLET BLOCK
     elseif regexp(tline,'^ECO.+Chl','once') % MCOMS  CHL
         tmp          = regexp(tline,',','split');
         CHL.type     = regexp(tmp{1,1},'(?<=\()\w+','once','match');
@@ -481,7 +510,6 @@ else    % ADD CALIBRATION DATA TO STRUCTURE
 end
 
 clear tmp tline t1 BB CHL CDOM
-
 % ************************************************************************
 % PARSE Config FILE TO CHECK FOR pH COEFFICIENTS
 % ************************************************************************

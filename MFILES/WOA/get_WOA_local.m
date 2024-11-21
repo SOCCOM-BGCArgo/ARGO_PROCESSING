@@ -86,7 +86,6 @@ WOA_info(8,:) = {'AOU'        , 'A', NUT_path, 'all', 'AOU'};
 
 month_label = {'Jan' 'Feb' 'Mar' 'Apr' 'May' 'Jun' 'Jul' 'Aug' 'Sep' ...
                'Oct' 'Nov' 'Dec'};
-
 % ***********************************************************************
 % CHECK INPUTS
 % ***********************************************************************
@@ -94,7 +93,6 @@ s1 = ['ocean_var must be a character string from this list: ', ...
       'T S O2 O2sat NO3 Si PO4 AOU'];  
 s2 = 'Check track input: must have 3 rows or columns [SDN Lat Lon]';
 s3 = ' Check depth range input: should be [min_depth max_depth]';
-
 % if nargin ~= 3
 %     disp(['Check inputs (3 required): track matrix, depth bounds', ...
 %           ' and variable string']);
@@ -157,13 +155,21 @@ fn_str     = regexprep(fn_str,'V',WOA_info{var_ind,2}); % build name: add var
 fn_str     = regexprep(fn_str,'XXX',WOA_info{var_ind,4});% add data set
 var_name  = [WOA_info{var_ind,2},'_an']; % variable to extract
 
-
 annual_flag = 0;
 for i = 1:12 % STEP THROUGH MONTHLY CLIMATOLOGIES
+
     fname = regexprep(fn_str,'NN',num2str(i,'%02.0f')); % add month
-    [data_path,fname]
-    ds    = ncdataset([data_path,fname]); % Create netCDF object   
-    
+
+    %Some variables in the WOA 2023 dataset are missing months
+    %This test checks if the current month exists in the data
+    if any(exist([data_path,fname]))
+        [data_path,fname]
+        ds    = ncdataset([data_path,fname]); % Create netCDF object
+    %If it doesn't skip the iteration in the loop
+    else
+        continue;
+    end
+
     % GET EXTRACTION INDICES
     if i == 1 %
         z    = double(ds.data('depth'));
