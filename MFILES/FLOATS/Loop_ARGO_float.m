@@ -571,9 +571,9 @@ if strcmp(update_str, 'update') && ~isempty(new_msgs)
     new_msgs = [new_msgs; b1; b2; b3; btmp];
 
     %test_email_list ={'lgrady@mbari.org'};
-    % disp('sending mail now')
+    disp('sending mail now')
 	%keyboard
-    % sendmail(email_list,'ARGOSY: NEW BGC ARGO MESSAGES PROCESSED', new_msgs)
+    sendmail(email_list,'ARGOSY: NEW BGC ARGO MESSAGES PROCESSED', new_msgs)
 end
 
 % bad messages
@@ -596,11 +596,11 @@ end_email_time = now;
 % ************************************************************************
 % LAST STEP - COPY FILES TO THE NETWORK
 % ************************************************************************
-% disp(' ');
-% disp('COPYING FILES TO THE NETWORK........');
-% str = [ dirs.bat,'copyARGO2network_xcopy.bat'];
-% disp(str)
-% status = system(str); % Comment this line out if you don't want to copy to Chem!
+disp(' ');
+disp('COPYING FILES TO THE NETWORK........');
+str = [ dirs.bat,'copyARGO2network_xcopy.bat'];
+disp(str)
+status = system(str); % Comment this line out if you don't want to copy to Chem!
 
 end_copy_time = now;
 

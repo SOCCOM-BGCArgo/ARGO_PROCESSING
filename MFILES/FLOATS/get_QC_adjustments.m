@@ -16,8 +16,15 @@ function QC = get_QC_adjustments(WMO, dirs)
 %                fields at a minimum or be empty. If dirs is empty default
 %                paths will be used.
 %
+%   dirs.msg       = path to float message file directories
 %   dirs.mat       = path to *.mat profile files for ARGO NETCDF
+%   dirs.cal       = path to *.cal (nitrate) and cal####.mat (working float cal) files
+%   dirs.config    = path to config.txt files
+%   dirs.NO3config = path to ####.cal nitrate calibration files
+%   dirs.temp      = path to temporary working dir
+%   dirs.FV        = path to FloatViz files served to web
 %   dirs.QCadj      = path to QC adjustment list for all floats
+%   dirs.FVlocal   = path to Floatviz file made by matlab go here
 %
 % OUTPUTS:
 %    QC = a structure with correction coefficients for each QC'ed variable
@@ -32,166 +39,159 @@ function QC = get_QC_adjustments(WMO, dirs)
 %   02/01/2017 - added code ~line 84 to return QC = [] if no QC adjustment
 %       for float
 %   08/02/2017 - modified code to now use float-specific FloatQCList files, located in DATA\CAL\QC_LISTS\
-%   02/5/2018 - Added code for including date of last QC in output structure.
+% 02/5/2018 - Added code for including date of last QC in output structure.
 %	This is used to assist in identifying whether a cycle is real-time or delayed mode, for BRtransfer purposes.
 %
 %   03/08/2021 TM Modifications to bring in line with the new MBARI master
-%                 float list and switch to WMO for processed file names.
-%
-%  10/04/2024 JP changes made to accept changes to QCList files from
-%                sageV2. Also some code clean up including eliminating the
-%                need for the "get_QCstep_dates" function
-
-% TESTING
-% WMO = '4903591'
-% WMO = '5906568'
-% WMO = '5905102'; % ua12779 jp qclist has pH lines, VM qclist does not
-% dirs = [];
-
+%        float list and switch to WMO for processed file names.
 % ************************************************************************
 % SET PATHS AND FILE NAMES
 % ************************************************************************
-QC_list_file = sprintf('%s_FloatQCList.txt',WMO);
-%QC_list_file = sprintf('%s_FloatQCList_JP.txt',WMO); % TESTING
-QC           = []; % default output
-
+QC_adj_file    = [WMO,'_FloatQCList.txt'];
 
 % **** DEFAULT STRUCTURE FOR DIRECTORY PATHS ****
-% need directory paths to point to QC list files & to * .mat files
 if isempty(dirs)
-    % i.e. userpath = 'C:\Users\jplant\Documents\MATLAB'
-    user_dir    = fullfile(userpath,'ARGO_PROCESSING\DATA');    
-    dirs.mat    = fullfile(user_dir,'FLOATS');
-    dirs.QCadj = fullfile(user_dir,'CAL\QC_LISTS');
-    %dirs.QCadj = fullfile('C:\temp\TEST\VM\QC_LISTS\'); %Testing
+    user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
+    user_dir = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\'];
+    
+    dirs.mat       = [user_dir,'FLOATS\'];
+    dirs.cal       = [user_dir,'CAL\'];
+    dirs.NO3config = [user_dir,'CAL\'];
+    dirs.FVlocal   = [user_dir,'FLOATVIZ\'];
+    dirs.FV        = [user_dir,'FLOATVIZ\'];
+    %dirs.FV        = '\\sirocco\wwwroot\lobo\Data\FloatVizData\';
+    
+    %dirs.QCadj     = '\\atlas\chem\ARGO_PROCESSING\DATA\CAL\';
+    dirs.QCadj     = [user_dir,'CAL\QC_LISTS\'];
+    dirs.temp      = 'C:\temp\';
+    dirs.msg       = '\\atlas\ChemWebData\floats\';
+    dirs.config    = '\\atlas\Chem\ISUS\Argo\';
+    dirs.log = [user_dir,'Processing_logs\'];
 elseif ~isstruct(dirs)
     disp('Check "dirs" input. Must be an empty variable or a structure')
     return
 end
 
-if ~isfield(dirs,'QCadj') && isfield(dirs, 'QClists')
-    dirs.QCadj = dirs.QClists; % backwards compaitibility
-end
-
 % ************************************************************************
 % GET QC ADJUSTMENTS FROM MASTER QC LIST
 % ************************************************************************
-qc_path = fullfile(dirs.QCadj, QC_list_file);
-if ~isfile(qc_path)
-    fprintf(['QC LIST FILE NOT FOUND : %s\n', ...
-      'QC structure remains empty.'],  qc_path);
-    return
-end
-
-% ************************************************************************
-% READ QC LINES INTO A CELL ARRAY & SUBSET TO RECENT, GET QC DATE TOO
-fid     = fopen(qc_path);
-qc_cell = cell(300,1);
-tline   = '';
-ct      = 0;
-
-while ischar(tline)
-    if regexpi(tline,'PREVIOUS','once') % Done with parsing current QC
-        break
-    elseif ~isempty(regexp(tline,['^',WMO],'once')) % should be first line
-        dstr = regexp(tline,'\d{2}/\d{2}/\d{2} \d{2}:\d{2}','match','once'); %old
-        if ~isempty(dstr)
-            QC.date = datenum(dstr, 'mm/dd/yy HH:MM');
+if exist([dirs.QCadj,QC_adj_file],'file')
+    fid = fopen([dirs.QCadj,QC_adj_file]);
+    
+    % FIND SECTION FOR SPECIFIC FLOAT IF IT EXISTS
+    tline = ''; % prime engine
+    while ischar(tline) && isempty(regexpi(tline,WMO,'once'))
+        tline = fgetl(fid);
+        tmp = textscan(tline,'%s%s%s');
+        xx = [char(tmp{2}) ' ' char(tmp{3})];
+        if strcmpi(char(tmp{1}),WMO)==1 && ~isempty(str2num(xx)) % no time of last QC entered
+            thetimestamp = datenum(xx,'mm/dd/yy HH:MM');
+            QC.date = thetimestamp;
         else
             QC.date = datenum(1900,01,01); % unrealistically old date
-            fprintf('QC date stamp was not resolved for QC list file: %s\n',...
-                QC_list_file)
-        end
-    else
-        ct = ct+1;
-        qc_cell{ct} = tline;
-    end
-    tline = fgetl(fid);
-end
-qc_cell = qc_cell(1:ct);
-fclose(fid);
-
-% ************************************************************************
-% NOW BUILD CORRECTION STRUCTURES
-params = {'Oxygen' 'Nitrate' 'pH';  % QC list file line ID
-          'O'      'N'       'pH'}; % Fields for Process_APEX_float 
-
-for ct = 1:size(params,2) % PREDIM BASED ON AVAILIBILITY
-    if any(contains(qc_cell,params{1,ct}))
-        QC.(params{2,ct}).steps = [];
-        QC.(params{2,ct}).type = params{1,ct};
-    end
-end
-
-% ADD QC CORRECTION MATRICES
-for ct = 1: size(qc_cell,1)
-    tmp = regexp(qc_cell{ct},',','split');
-
-    if strcmp(tmp{1},'Oxygen')
-        QC.O.steps  =[QC.O.steps; str2double(tmp(2:end))];
-
-    elseif strcmp(tmp{1},'Nitrate') % cycle gain offset, drift
-        QC.N.steps  =[QC.N.steps; str2double(tmp(2:end))];
-
-    elseif regexp(qc_cell{ct},'pH.+offset','once') % string defining correction type
-        QC.pH.pHpumpoffset = ...
-            regexp(qc_cell{ct},'linear|poly|mixed','once','match');
-        if isempty(QC.pH.pHpumpoffset)
-            QC.pH.pHpumpoffset = 'none';
-        end
-
-    elseif strcmp(tmp{1},'pH')  % cycle, offset, drift  or  cycle gain offset, drift
-        QC.pH.steps =[QC.pH.steps; str2double(tmp(2:end))];
-
-    % Add QC_info if it exists. Down the line might be helpful for argo
-    % sci meta info
-    elseif strcmp(tmp{1},'QC parameter')
-        info = tmp(3:end);
-        QC.QC_info.(tmp{2}) = cell2struct( info(2:2:length(info)), ...
-            info(1:2:length(info)-1) ,2);
-    end
-end
-
-% Last step Backwards compatibility for older  pH QC lines (n x 3 with no gain col)
-if isfield(QC,'pH') && size(QC.pH.steps,2) == 3 % old style. no gain col so add one
-    QC.pH.steps = [QC.pH.steps(:,1), ones(size(QC.pH.steps(:,1))), ...
-        QC.pH.steps(:,2:3)];
-end
-
-% ************************************************************************
-% NOW GET PROFILE TIMES FOR EACH QC STEP AND ADD TO QC DATA. 
-% TIME IS NEEDED FOR DRIFT CORRECTION TO DATA [sdn cycle gain offset drift]
-% Use to use msg file, but if cycle exists in list file a mat file must
-% exist so use it! Play some games with the path to the mat files depending
-% on who is calling the function. If not running on the VM, default to chem
-% otherwise use local source for mat files.
-% DATES COULD BE SUPPLIED FROM SAGEv2 AT SOME POINT TO SIMPLIFY....
-
-if contains(userpath,'bgcargovm')
-    dirs.mat = dirs.mat; % No change
-elseif isfolder('\\atlas\chem\ARGO_PROCESSING\DATA\FLOATS')
-    dirs.mat = '\\atlas\chem\ARGO_PROCESSING\DATA\FLOATS';
-end
-
-for ct = 1:size(params,2)
-    if ~isfield(QC, params{2,ct}) % no field so move on!
-        continue
-    end
-    cgod = QC.(params{2,ct}).steps; %correction matrix
-    cgod = [NaN(size(cgod(:,1))), cgod]; % add initial NaN col for time stamps
-    fd   = fullfile(dirs.mat, WMO); % matfile dir
-
-    for node_ct = 1:size(cgod,1) % step through node cycles
-        fn = sprintf('%s.%03.0f.mat', WMO, cgod(node_ct,2));
-        load(fullfile(fd,fn),'INFO') % load INFO structure from mat file
-        if isfield(INFO, 'sdn')
-            cgod(node_ct,1) = INFO.sdn; % profile termination time extracted
-        else
-            fprintf(['Cycle profile termination timed was not extracted', ...
-                'from  %s\n'],fullfile(fd,fn));
+            break
         end
     end
-    QC.(params{2,ct}).steps = cgod; % update data in QC structure
+    
+    if ~ischar(tline) % -1 (end of file reached - no QC for float
+        disp(['No QC adjustments for float: ',WMO])
+        QC = [];
+        return
+        
+    else % A match!
+        file_pt = ftell(fid); % start of QC lines for given float
+        tline   = fgetl(fid); % step to 1st line
+        % PREDIMENSION BASED ON EXISTANCE
+        while ischar(tline) && isempty(regexpi(tline,'^PREVIOUS','once'))
+            if regexp(tline,'^Oxygen','once')
+                QC.O.steps = [];
+            elseif regexp(tline,'^Nitrate','once')
+                QC.N.steps = [];
+            elseif regexp(tline,'^pH','once')
+                QC.pH.steps = [];
+            elseif regexp(tline,'^CHL','once')
+                QC.CHL.steps = [];
+            elseif regexp(tline,'^BB','once')
+                QC.BB.steps = [];
+            elseif regexp(tline,'^CDOM','once')
+                QC.CDOM.steps = [];
+            end
+            tline = fgetl(fid);
+        end
+        
+        % NOW GO BACK AND ADD QC STEP DATA
+        fseek(fid, file_pt, -1);
+        tline   = fgetl(fid); % step to 1st line
+        
+        while ischar(tline) && isempty(regexpi(tline,'^PREVIOUS','once'))
+            
+            if regexp(tline,'^Oxygen','once') % only gain value & ONLY 1 LINE
+                tmp = textscan(tline,'%s%f%f%f%f%s','Delimiter', ',');
+                QC.O.steps  =[QC.O.steps;[tmp{1,2},tmp{1,3},tmp{1,4} tmp{1,5}]];
+                QC.O.type   = 'Oxygen';
+            elseif regexp(tline,'^Nitrate','once')% cycle gain offset, drift
+                tmp = textscan(tline,'%s%f%f%f%f%s','Delimiter', ',');
+                QC.N.steps  =[QC.N.steps; tmp{1,2},tmp{1,3},tmp{1,4}, ...
+                    tmp{1,5}];
+                QC.N.type   = 'Nitrate';
+            elseif regexp(tline,'pH,\s+offset','once') % for pump ON V shift
+                tmp = textscan(tline,'%s%s%f%s','Delimiter', ',');
+                QC.pH.pHpumpoffset = tmp{3};
+            elseif regexp(tline,'^pH','once') % cycle, offset, drift
+                tmp = textscan(tline,'%s%f%f%f%s','Delimiter', ',');
+                QC.pH.steps =[QC.pH.steps;[tmp{1,2}, 1, tmp{1,3}, tmp{1,4}]];
+                QC.pH.type   = 'pH';
+            elseif regexp(tline,'^CHL','once') % gain, offset & ONLY 1 LINE
+                tmp = textscan(tline,'%s%f%f%s','Delimiter', ',');
+                QC.CHL.steps =[QC.CHL.steps;[1, tmp{1,2}, tmp{1,3}, 0]];
+                QC.CHL.type   = 'CHL';
+            elseif regexp(tline,'^BB','once') % gain, offset & ONLY 1 LINE
+                tmp = textscan(tline,'%s%f%f%s','Delimiter', ',');
+                QC.BB.steps =[QC.BB.steps;[1, tmp{1,2}, tmp{1,3}, 0]];
+                QC.BB.type   = 'BB';
+            elseif regexp(tline,'^CDOM','once') % gain, offset & ONLY 1 LINE
+                tmp = textscan(tline,'%s%f%f%s','Delimiter', ',');
+                QC.CDOM.steps =[QC.CDOM.steps;[1, tmp{1,2}, tmp{1,3}, 0]];
+                QC.CDOM.type   = 'CDOM';
+            end
+            tline = fgetl(fid);
+        end
+        fclose(fid);
+        
+        % NOW GET PROFILE TIMES FOR EACH QC STEP FROM MESSAGE FILES AND ADD
+        % TO QC DATA. TIME NEEDED FOR DRIFT CORRECTION
+        % [sdn cycle gain offset drift]
+        if isfield(QC,'O')
+            sdn = get_QCstep_dates(WMO,QC.O.steps,dirs);
+            QC.O.steps = [sdn,QC.O.steps];
+        end
+        if isfield(QC,'pH')
+            sdn = get_QCstep_dates(WMO,QC.pH.steps,dirs);
+            QC.pH.steps = [sdn,QC.pH.steps];
+        end
+        if isfield(QC,'N')
+            sdn = get_QCstep_dates(WMO,QC.N.steps,dirs);
+            QC.N.steps = [sdn,QC.N.steps];
+        end
+        if isfield(QC,'CHL')
+            sdn = get_QCstep_dates(WMO,QC.CHL.steps,dirs);
+            QC.CHL.steps = [sdn,QC.CHL.steps];
+        end
+        if isfield(QC,'BB')
+            sdn = get_QCstep_dates(WMO,QC.BB.steps,dirs);
+            QC.BB.steps = [sdn,QC.BB.steps];
+        end
+        if isfield(QC,'CDOM')
+            sdn = get_QCstep_dates(WMO,QC.CDOM.steps,dirs);
+            QC.CDOM.steps = [sdn,QC.CDOM.steps];
+        end
+    end
+    
+else
+    disp(['No list of QC adjustments found: ', ...
+        dirs.QCadj,QC_adj_file])
+    disp(['No QC adjustments for float: ',WMO])
+    disp('QC structure remains empty.')
+    QC = [];
 end
-
 clearvars -except QC

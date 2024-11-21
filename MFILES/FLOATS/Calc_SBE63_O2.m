@@ -77,7 +77,7 @@ if contains(cal.type,'SBE63') || tf_3X02 || (OptTvolt)
     OTV(tbad) = 3.3; % set bad to crazy value
 	L      = log(100000 * OTV  ./ (3.3 - OTV ));
 	denom  = (Tcf(1) + Tcf(2).*L + Tcf(3).*L.^2 + Tcf(4).*L.^3);
-	O2_T   = 1./denom - 273.15; % window temperature (degrees C)
+	O2_T   = 1./denom - 273.15 % window temperature (degrees C)
 else
 	O2_T = OTV;
 end

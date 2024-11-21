@@ -53,6 +53,7 @@ DirList2  = {};
 if isfolder(msg_path2)
     DirList2 = struct2cell(dir([msg_path2,'*.', file_type]))';
 end
+
 % IF SECONDARY (ALTERNATE) DIRECTORY LISTING EXISTS, COMPARE AND MERGE
 % USE FILE MODIFICATION SIZE TO DECIDE
 if ~isempty(DirList2)

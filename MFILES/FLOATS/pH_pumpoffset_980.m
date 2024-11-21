@@ -114,4 +114,8 @@ pH_pumpoffset_980_floats = [5905991;
 3902258; % SB 09/09/2024 Initial QC
 3902260; % SB 09/09/2024 Initial QC
 3902333; % SB 09/09/2024 Initial QC
-7902108]; % SB 09/13/2024 Initial QC
+7902108; % SB 09/13/2024 Initial QC
+7902109; % SB 09/30/2024 Initial QC
+7902110; % SB 10/01/2024 Initial QC
+3902559; % LG 10/17/2024 RTQC catch
+2903866]; %LG 10/17/2024 RTQC catch on NAVIS float that is still young

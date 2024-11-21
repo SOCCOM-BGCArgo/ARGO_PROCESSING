@@ -2417,10 +2417,145 @@
 % flts = '7902102|7902103';
 % Loop_ARGO_float('all',flts,''); exit
 
-% % SB 8/28/2024 Initial QC and pump offsets
+% SB 8/28/2024 Initial QC and pump offsets
 % flts = '7902101';
 % Loop_ARGO_float('all',flts,''); exit
 
-% LG 9/24/2024 Bringing floats back to life
-flts = 'ua19751';
-Loop_ARGO_float('all',flts,'');
+% TM 8/29/2024 qc review, pump offset added
+% flts = '4903755';
+% Loop_ARGO_float('all',flts,''); exit
+
+% LG 8/29/2024 some RTQC floats to be reprocessed (including the infamous ua19531)
+% flts = '2903472|7901108|5906439|5906561';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 8/30/2024 initial QC and pump offsets
+% flts = '7902103|7902104';
+% Loop_ARGO_float('all',flts,''); exit
+
+% LG 8/30/2024 RTQC floats, mostly non-threatening updates to changepoints, one pump offset addition :(
+% flts = '2903869|2903464|1902643|2903456|2903474';
+% Loop_ARGO_float('all',flts,''); exit
+
+% LG 9/3/2024 Reprocessing OCR test floats to populate floatviz files with data
+% flts = '5906446|5906320';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/03/2024 initial QC and pump offset
+% flts = '7902105';
+% Loop_ARGO_float('all',flts,''); exit
+
+% NG 9/4/2024 Reprocessing some BBP test floats because I accidentally
+% pushed results to sirocco (I turned off push to chem but not push to
+% sirocco)
+% flts = '5903717|5905102|5905078|5905107|5905077|5905108|5905104|5905105|5904860|5905079|5904855|5904982|5904854|5905635|5905130|5905368|5905639|5905969|5906007|5906032|5906031|5906034|5906044|5906043|5906249|5906238|5906244|5906296|5906317|5906342|5906297|5906488|5906439|5906294|5906474|5906507|5906483|5906530|5906502|5906525|5906561|5906581|5903612|5903718|5903593|5903592|5904180|5904183|5904104|5905075|5904396|5904469|5904684|5904676|5904761|5904765|5904475|2903863|5904479|5904672|5904984|5904673|5905071|5905072|5905988|5906540|4903273|4903274|4903463';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/05/2024 initial QC and pump offset
+% flts = '7902106';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/09/2024 initial QCs, pump offset, and add 3902333 cycle 4 to bad sample list
+% flts = '7902107|3902258|3902260|3902333';
+% Loop_ARGO_float('all',flts,''); exit
+
+% % LG 9/11/2024 Reprocessing some RTQC floats
+% flts = '5906317|6990585|1902368|1902489|1902494|5906293';
+% Loop_ARGO_float('all',flts,''); exit
+
+% % LG 9/12/2024 Oops, accidentally put wrong cycle on bad sample list for 1902489
+% flts = '1902489';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/12/2024 Received updated msg files from Aadu. Testing if
+% reprocessing fixes matfile issues
+% flts = '3902556|5906227';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/12/2024 Reprocess for Bfile audit
+% flts = '7901102';
+% Loop_ARGO_float('all',flts,''); exit
+
+% LG 9/13/2024 RTQC catch for PH refanom
+% flts = '5906440';
+% Loop_ARGO_float('all',flts,''); exit
+
+% % SB 9/13/2024 Initial QC and pump offset
+% flts = '7902108';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/13/2024 Reprocess for Bfile audit
+% flts = '1902494|5906302|5906548|2903858|5905971|5905993|5905994|5906446|5906539|5906225';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/16/2024 Initial QC
+% flts = '3902261';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/17/2024 Recieved missing or partial files from Aadu. Part of sept audit
+% flts = '2903858|5906302|5906539';
+% Loop_ARGO_float('all',flts,''); exit
+
+% LG 9/18/2024 reprocessing floats from RTQC catches
+% flts = '5906217|5906549|3902533|1902666|5907054|7901103|1902374|6990587';
+% Loop_ARGO_float('all',flts,''); exit
+
+% JP 9/21/2024 reprocessing to try and clear error. Runs fine on my local
+% computer with same Process_APEX_float
+% flts = 'ua19531';
+% Loop_ARGO_float('all',flts,''); exit
+
+% JP 9/23/2024 un1538 still on BSL but doen't need to be any more (had
+% wrong cal)
+% flts = 'un1538';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/23/2024 reprocessing floats caught on good/bad sensor list
+% flts = '7902107|3902258|3902333';
+% Loop_ARGO_float('all',flts,''); exit
+
+% SB 9/23/2024 reprocess float to correct gdac file rejection due to new
+% msg file transmission
+% flts = '4903456';
+% Loop_ARGO_float('all',flts,'');  exit
+
+% SB 9/25/2024 Recieved missing or partial files from Aadu. Part of sept audit
+% flts = '7901102';
+% Loop_ARGO_float('all',flts,'');  exit
+
+% % SB 9/30/2024 Initial QC and pump offset
+% flts = '7902109';
+% Loop_ARGO_float('all',flts,'');  exit
+
+% % SB 9/30/2024 Reprocessing due to OCR calibration
+% flts = '7901108';
+% Loop_ARGO_float('all',flts,'');  exit
+
+% SB 9/30/2024 Initial QC and pump offset
+% flts = '7902110';
+% Loop_ARGO_float('all',flts,'');  exit
+
+% TM 10/01/24; reprocess floats ID'd with bad profiles (discussed in lab
+% meeting).  Some additions to BSL for pH & O2
+% flts = '5906303|1902497|5906434';
+% Loop_ARGO_float('all',flts,'');  exit
+
+% JP 10/05/24 reprocess floats with late isus msg files to recapture
+% missing if possible before final sensor survival stats run
+% flts = 'ua19598|ua20060|ua20043|ua22185|un1118|ua21977';
+% Loop_ARGO_float('all',flts,'');  exit
+
+% SB 10/10/24 reprocess floats with files sent over from Aadu caught by Oct
+% audit
+% flts = '3902556|7902104|2903451|5906566|7902103|7902107';
+% Loop_ARGO_float('all',flts,'');  exit
+
+% % JP 10/14/24 reprocess float to incorperate late isus msg file for cycle 1
+% flts = 'ua22826';
+% Loop_ARGO_float('all',flts,'');  exit
+
+% LG 10/14/24 Change BSL list for pH recovery for 5906448 and put pH from
+% 5906521 on BSL from 80-
+flts = '5906448|5906521';
+Loop_ARGO_float('all',flts,'');  exit
+

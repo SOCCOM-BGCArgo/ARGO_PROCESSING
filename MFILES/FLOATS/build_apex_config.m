@@ -85,13 +85,7 @@
 % mbari_fn = 'ua20136'
 %mbari_fn = 'ua17465'
 %mbari_fn = 'ua21291'
-% mbari_fn = 'ua22751'
-% mbari_fn = 'ua22972'
-% mbari_fn = 'ua22365'
-% mbari_fn = 'ua22257'
-% mbari_fn = 'ua22508'
-% mbari_fn = 'ua22278'
-mbari_fn = 'ua22554'
+mbari_fn = 'ua22751'
 
 % ************************************************************************
 % DEFINE DIRS STRUCTURE

@@ -1,10 +1,6 @@
-function data = get_WOA_local(data_site,track, depth_bnds, ocean_var)
-%
-% UPDATED FROM get_WOA2018_local.m TO APPLY TO WOA2018 DATASET.
-% UPDATED 11/13/24 by TM to move to WOA2023.
-%
+function data = get_WOA2013_local(data_site,track, depth_bnds, ocean_var)
 % PURPOSE: 
-%   Extract a subset from the monthly WOAyyyy climatology for a given
+%   Extract a subset from the monthly WOA2013 climatology for a given
 %   variable and then interpolate data along the provided track. Access
 %   different data sets by adjusting paths and entries in the WOA_info
 %   cell array. My use is for profiling float data. Must Build 4D matrix
@@ -13,10 +9,10 @@ function data = get_WOA_local(data_site,track, depth_bnds, ocean_var)
 %   [1 x m x n x p]             => [12 x m x n x p]
 %
 % USAGE:
-%	data = get_WOA_local(data_site,track, depth_bnds, ocean_var)
+%	data = get_WOA2013(data_site,track, depth_bnds, ocean_var)
 %
 % INPUTS:
-%   data_site = path to local WOA data repo
+%   data_site = path to local WOA2013 data repo
 %   track      = n x 3 matrix [Matlab_SDN, Lat, Lon]
 %   depth_bnds = depth bounds [min depth  max depth]
 %	ocean_var  = a string, ocean parameter
@@ -24,19 +20,19 @@ function data = get_WOA_local(data_site,track, depth_bnds, ocean_var)
 %
 % OUTPUTS:
 %	data =   a data structure.
-%       data.d   = data matrix subset for WOA variable [depth x time]
+%       data.d   = data matrix subset for WOA2013 variable [depth x time]
 %       data.z   = depth array subset
 %              
 % EXAMPLES:
-%   data = get_WOA_local(track, [0 1000], 'NO3')
+%   data = get_WOA2013(track, [0 1000], 'NO3')
 %
 %   SCRIPT REQUIRES THESE HELPER FUNCTIONS / SCRIPTS / TOOLBOXES:
 %       NCTOOLBOX (from : https://code.google.com/p/nctoolbox/)
-%
-%      
+
+       
 % ***********************************************************************
-% **********************       WOA INFO       **********************
-% WOA file name format:  woaYY_all_[v][tp][ft][gr].[form_end]
+% **********************       WOA 2013 INFO       **********************
+% WOA2013 file name format:  woa13_all_[v][tp][ft][gr].[form_end]
 %    [v] = oceanographic variable (t s o n i p)
 %           t = temperature
 %           s = salinity
@@ -67,11 +63,11 @@ function data = get_WOA_local(data_site,track, depth_bnds, ocean_var)
 
 plot_it = 0; % 0 to turn off plotting
 % user_dir = getenv('USERPROFILE'); %returns user path,i.e. 'C:\Users\jplant'
-% data_site  = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\WOA2018\'];
+% data_site  = [user_dir, '\Documents\MATLAB\ARGO_PROCESSING\DATA\WOA2013\'];
 ST_path    = '';  % ARGO FLOAT BASED 2005 - 2012, 1 deg
 NUT_path   = '';   % All nutrients, 1 deg
 
-fn_str     = 'woa23_XXX_VNN_01.nc'; % file name template to modify 
+fn_str     = 'woa13_XXX_VNN_01.nc'; % file name template to modify 
 %O2_volume  =  22.3916; % L/ mole O2 @ STP
 
 % VARIABLES EXTRACTION TABLE
@@ -128,7 +124,7 @@ track(t1,2:3) = NaN;
 clear d t1
 
 % CONVERT LON TO -180 to +180 IF NECESSARY
-t1 = track(:,3) > 180; % WOA -180 + 180
+t1 = track(:,3) > 180; % WOA2013 -180 + 180
 track(:,3) = track(:,3) - (t1*360);
 
 % CHECK FOR -180 / +180 MERIDIAN TRACK CROSSING, GET AREA BOUNDS
@@ -146,7 +142,7 @@ lat_bnds = [min(track(:,2)) max(track(:,2))]; % lat
 clear s1 s2 r c t1
 
 % ***********************************************************************
-%   EXTRACT WOA MONTHLY CLIMATOLOGY SUBSETS & BUILD ANNUAL MATRIX (4D)
+%   EXTRACT WOA2013 MONTHLY CLIMATOLOGY SUBSETS & BUILD ANNUAL MATRIX (4D)
 %       FROM INDIVIDUAL MONTHS: [TIME x DEPTH x LAT x LON]
 %             Time for each month is singlton so squeeze
 % ***********************************************************************
@@ -161,7 +157,6 @@ var_name  = [WOA_info{var_ind,2},'_an']; % variable to extract
 annual_flag = 0;
 for i = 1:12 % STEP THROUGH MONTHLY CLIMATOLOGIES
     fname = regexprep(fn_str,'NN',num2str(i,'%02.0f')); % add month
-    [data_path,fname]
     ds    = ncdataset([data_path,fname]); % Create netCDF object   
     
     % GET EXTRACTION INDICES
@@ -205,7 +200,7 @@ for i = 1:12 % STEP THROUGH MONTHLY CLIMATOLOGIES
         
         % PREDIMMENSION 4D SUBSET MATRIX [TIME x DEPTH x LAT x LON]
         d = ones(12,length(Z),length(LAT),length(LON)); 
-        disp(['Extracting and merging WOA2023 monthly climatologies', ...
+        disp(['Extracting and merging WOA2013 monthly climatologies', ...
               ' for ', WOA_info{var_ind,1},' .......takes some time.....']);
     end
   
@@ -232,7 +227,7 @@ end
 %pause
 
 if annual_flag == 1 % GET DEEP ANNUAL NUTRIENT VALUES
-    fn_str     = 'woa23_XXX_VNN_01.nc';
+    fn_str     = 'woa13_XXX_VNN_01.nc';
     fn_str     = regexprep(fn_str,'V',WOA_info{var_ind,2}); % build name: add var
     fn_str     = regexprep(fn_str,'XXX',WOA_info{var_ind,4});% add data set
     var_name  = [WOA_info{var_ind,2},'_an']; % variable to extract
@@ -250,7 +245,7 @@ if annual_flag == 1 % GET DEEP ANNUAL NUTRIENT VALUES
     
     % PREDIMMENSION 4D SUBSET MATRIX [TIME x DEPTH x LAT x LON]
     d3 = ones(12,length(Z1),length(LAT),length(LON));
-    disp(['Extracting WOA2023 annual climatology', ...
+    disp(['Extracting WOA2013 annual climatology', ...
         ' for ', WOA_info{var_ind,1},' .......takes some time.....']);
     
     % EXTRACT SUBSET
@@ -284,7 +279,7 @@ clear lat lon z
 
 % ***********************************************************************
 % ***********************************************************************
-% NOW INTERPOLATE WOA ALONG THE FLOAT TRACK
+% NOW INTERPOLATE WOA2013 ALONG THE FLOAT TRACK
 % ***********************************************************************
 % ***********************************************************************
 stations = size(track(:,1),1); % get # of points to interpolate

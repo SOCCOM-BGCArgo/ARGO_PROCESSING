@@ -36,7 +36,7 @@ end
 % ************************************************************************
 %                       PREP FOR PLOT MAKING
 % ************************************************************************
-float_color  = [0 130 245]/255; %light blue
+float_color  = [0 102 204]/255; %light blue
 MLR_color    = [1 0 0]; %red
 DIFF_color   = [0 153 76]/255; %green
 GLODAP_color = [0   255 255;... % keep color and symbol count equal
@@ -209,8 +209,8 @@ end
 % AXIS 2: plot by cycle
 %**************************************************************************
 cla(gui.whichAX(2),'reset')
-plot(DATA.datasub(:,2),DATA.datasub(:,DATA.IND),'o','Parent',gui.whichAX(2),'MarkerSize',6, ...
-    'MarkerEdgeColor','k','LineWidth',1,'MarkerFaceColor', float_color);
+plot(DATA.datasub(:,2),DATA.datasub(:,DATA.IND),'o','Parent',gui.whichAX(2),'MarkerSize',4, ...
+    'MarkerEdgeColor','k','MarkerFaceColor', float_color);
 xlim(gui.whichAX(2),DATA.xlims{2});
 % ylim auto
 xlabel(gui.whichAX(2),'Cycle #')
@@ -220,8 +220,8 @@ ax2_tstr = [handles.info.WMO_ID,'   (',handles.info.float_name,')'];
 title(gui.whichAX(2), ax2_tstr, 'FontSize', 12)
 
 hold(gui.whichAX(2),'on')
-plot(DATA.datasub(:,2),DATA.refsub,'o','Parent',gui.whichAX(2),'MarkerSize',6, ...
-    'MarkerEdgeColor','k','LineWidth',1,'MarkerFaceColor', MLR_color);
+plot(DATA.datasub(:,2),DATA.refsub,'o','Parent',gui.whichAX(2),'MarkerSize',4, ...
+    'MarkerEdgeColor','k','MarkerFaceColor', MLR_color);
 hold(gui.whichAX(2),'on')
 
 inputs.data_str
@@ -333,8 +333,8 @@ end
 %**************************************************************************
 cla(gui.whichAX(4),'reset')
 if strcmp(DATA.paramtag,'NO3')==1 || strcmp(DATA.paramtag,'PH')==1
-    plot(DATA.datasub(:,2),DATA.diffsub,'o','MarkerSize',6,'Parent',gui.whichAX(4), ...
-    'MarkerEdgeColor','k','LineWidth',1,'MarkerFaceColor', DIFF_color);
+    plot(DATA.datasub(:,2),DATA.diffsub,'o','MarkerSize',4,'Parent',gui.whichAX(4), ...
+    'MarkerEdgeColor','k','MarkerFaceColor', DIFF_color);
     xlim(gui.whichAX(4),DATA.xlims{2});
     myxlim = get(gui.whichAX(4),'xlim');
 %     ylim auto

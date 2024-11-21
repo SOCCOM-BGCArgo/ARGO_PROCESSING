@@ -30,9 +30,6 @@ function d = get_GLODAPv2_local(datadir, track, tol, depth_bnds)
 % EDIT LOG
 %   11/30/2016 6960 waas not grabbing any GLODAP data. Fixed bug in lat
 %       & lon bounds max-tol should have been max+tol
-%
-%   LG 11/18/2024 Updated GLODAP_fn to include the latest GLODAP dataset
-%                 for 2023.
 
 %plot_it = 0; % 0 to turn off plotting
 
@@ -54,10 +51,9 @@ function d = get_GLODAPv2_local(datadir, track, tol, depth_bnds)
 % GLODAP_dir          = [user_dir,'\Documents\MATLAB\ARGO_PROCESSING\', ...
 %                       'DATA\GLODAP\'];
 % GLODAP_fn           = 'GLODAPv2 Merged Master 102716.mat';
-% GLODAP_fn           = 'GLODAPv2.2019_Merged_Master_File.mat';
-% GLODAP_fn			= 'GLODAPv2.2020_Merged_Master_File.mat';
-% GLODAP_fn			= 'GLODAPv2.2021_Merged_Master_File.mat';
-GLODAP_fn			= 'GLODAPv2.2023_Merged_Master_File.mat';
+%GLODAP_fn           = 'GLODAPv2.2019_Merged_Master_File.mat';
+%GLODAP_fn			= 'GLODAPv2.2020_Merged_Master_File.mat';
+GLODAP_fn			= 'GLODAPv2.2021_Merged_Master_File.mat';
 %GLODAP_expocode_fn  = 'GLODAPv2_ExpoCodes_102716.txt';
 
 % ***********************************************************************
