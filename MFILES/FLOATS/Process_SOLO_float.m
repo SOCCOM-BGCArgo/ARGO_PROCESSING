@@ -144,6 +144,9 @@ end
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % PARSE BAD SENSOR LIST-----------------------------------------------
+% SET DEFAULTS
+dirs.BSL.hdr  = [];
+dirs.BSL.list = [];
 bad_sensor_list = parse_bad_sensor_list([dirs.cal,'bad_sensor_list.txt']);
 iM   = find(strcmp('MBARI ID STR',bad_sensor_list.hdr) == 1);
 % CHECK IF SPECIFC FLOAT HAS BAD SENSOR ISSUES
@@ -155,9 +158,6 @@ if ~isempty(bad_sensor_list.list)
         BSL.list = BSL.list(tSENSOR,:);
         dirs.BSL = BSL;
         clear BSL
-    else
-        dirs.BSL.hdr  = [];
-        dirs.BSL.list = [];
     end
     clear tSENSOR
 end
@@ -170,6 +170,10 @@ ibsD   = find(strcmp('DEPTH',bad_sample_list.hdr) == 1);
 ibsDB   = find(strcmp('DEPTH BLOCKS',bad_sample_list.hdr) == 1);
 ibsFL   = find(strcmp('FLAG',bad_sample_list.hdr) == 1);
 
+% SET DEFAULTS FOR BSAML
+dirs.BSAML.hdr  = [];
+dirs.BSAML.list = [];
+yesBSAML = 0;
 % CHECK IF SPECIFC FLOAT HAS BAD SAMPLES NOT CAUGHT BY RT TESTS
 if ~isempty(bad_sample_list.list)
     tSENSOR = strcmp(MBARI_ID_str,bad_sample_list.list(:,iM));
@@ -180,10 +184,6 @@ if ~isempty(bad_sample_list.list)
         dirs.BSAML.list = BSAML.list(tSENSOR,:);
         yesBSAML = 1;
         %             clear BSL SbsIND
-    else
-        dirs.BSAML.hdr  = [];
-        dirs.BSAML.list = [];
-        yesBSAML = 0;
     end
     clear tSENSOR
 end
@@ -423,11 +423,11 @@ elseif strncmp(WMO,'^NO_WMO',6)
 end
 
 % CHECK FOR EXISTING WMO DIR, CREATE IF NOT THERE
-if exist([dirs.mat,WMO,'\'],'dir') ~= 7
-    status = mkdir([dirs.mat,WMO,'\']);
+if exist([dirs.mat,WMO,filesep],'dir') ~= 7
+    status = mkdir([dirs.mat,WMO,filesep]);
     if status == 0
         disp(['Directory could not be created at: ', ...
-            [dirs.mat,WMO,'\']]);
+            [dirs.mat,WMO,filesep]]);
         tf_float.status = 0;
         return
     end
@@ -435,11 +435,11 @@ end
 
 % IF UPDATE STR = ALL, CLEAR MAT FILES IN WMO DIR
 if strcmp(update_str,'all')
-    file_chk = ls([dirs.mat,WMO,'\*.mat']);
+    file_chk = ls([dirs.mat,WMO,'/*.mat']);
     if ~isempty(file_chk)
         disp(['Updating all files, clearing existing *.mat files from ',...
             dirs.mat,WMO,'\ first!'])
-        delete([dirs.mat,WMO,'\*.mat']);
+        delete([dirs.mat,WMO,'/*.mat']);
     end
 end
 
@@ -1269,7 +1269,7 @@ for msg_ct = 1:size(msg_list,1)
                 myOdata = [DOXarray.PRES(~t_nan) DOXarray.TEMPi(~t_nan) DOXarray.PSALi(~t_nan) dox_d((~t_nan),iPhase),dox_d((~t_nan),iTo)];
                 [ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myOdata, cal.O, 0); % jp 02/0924 looks like all SOLO's report Optode T  in deg C
                 %[ppoxdoxy, pH2O, O2_uM, O2_T] = Calc_SBE63_O2(myOdata, cal.O,cal.info.float_type);
-                DOXarray.DOXY(~t_nan) = O2_uM ./ DOX_den(~t_nan) .* 1000; % µmol/kg
+                DOXarray.DOXY(~t_nan) = O2_uM ./ DOX_den(~t_nan) .* 1000; % umol/kg
             else
                 disp('SBE83 not detected!!! Error in SOLO oxygen processing!')
             end
@@ -1460,7 +1460,7 @@ for msg_ct = 1:size(msg_list,1)
     end
 
     % ****************************************************************
-    % CALCULATE CHLOROPHYLL CONCENTRATION (µg/L or mg/m^3)
+    % CALCULATE CHLOROPHYLL CONCENTRATION (ug/L or mg/m^3)
     % ****************************************************************
 
     if (~isempty(iChl) && master_FLBB ~= 0) || ...
@@ -1891,7 +1891,7 @@ for msg_ct = 1:size(msg_list,1)
 
 
     % ****************************************************************
-    % CALCULATE pH (µmol / kg scale)
+    % CALCULATE pH (umol / kg scale)
     % ****************************************************************
     alkN = strfind(INFO.sensors,'ALK');
     alkN2 = find(~(cellfun('isempty',alkN)));
@@ -2155,9 +2155,9 @@ for msg_ct = 1:size(msg_list,1)
     end
 
     % ****************************************************************
-    % CALCULATE NITRATE (µmol / kg scale)
+    % CALCULATE NITRATE (umol / kg scale)
     % DO DEPTH CORRECTION 1st
-    % CONVERT TO µmol/kg
+    % CONVERT TO umol/kg
     % ****************************************************************
 
     if ~isempty(iNO3)
@@ -2195,14 +2195,14 @@ for msg_ct = 1:size(msg_list,1)
             spec.SDN = spec.DC*NaN;
             if ~isempty(UV_INTEN) && ~isempty(NO3array.PRES)
                 % [SDN, DarkCur, Pres, Temp, Sal, NO3, BL_int,BL_slope,
-                %  RMS_ER, Wl~240, ABS~240] !!! NITRATE STILL µmol/L !!!
+                %  RMS_ER, Wl~240, ABS~240] !!! NITRATE STILL umol/L !!!
 
                 NO3  = calc_FLOAT_NO3(spec, cal.N, 1); % ESW P corr
                 %NO3  = calc_APEX_NO3_JP(spec, cal.N, 0); % NO P corr
 
                 IX = (size(NO3,1):-1:1)'; % FLIP SHALLOW TO DEEP FOR ARGO
                 %[B,IX]   = sort(NO3(:,3)); % SORT SHALLOW TO DEEP FOR ARGO
-                NO3      = NO3(IX,:); % µmol/L
+                NO3      = NO3(IX,:); % umol/L
                 UV_INTEN = UV_INTEN(IX,:);
                 clear B IX
             end
@@ -2272,7 +2272,7 @@ for msg_ct = 1:size(msg_list,1)
             NO3_p0 = NO3(:,6) .* sw_dens(NO3(:,5),NpotT,0) ./ ...
                 sw_dens(NO3(:,5),NO3(:,4),NO3(:,3));
 
-            NO3_p0_kg         = NO3_p0 ./ N_den * 1000; % µmol/kg
+            NO3_p0_kg         = NO3_p0 ./ N_den * 1000; % umol/kg
             NO3array.NITRATE        = NO3_p0_kg;
             NO3array.NITRATE(t_nan) = fv.bio;
             % %             t_nan_NIT = isnan(DOXarray.DOXY);  %Not Needed for NO3??
@@ -2284,7 +2284,7 @@ for msg_ct = 1:size(msg_list,1)
 
             % ********************************************************
             % APPLY QC CORRECTIONS
-            % CORRECTIONS DETERMINED ON µmol/L scale so adjust on that
+            % CORRECTIONS DETERMINED ON umol/L scale so adjust on that
             % scale and then convert
             if isfield(cal,'N') && isfield(QC,'N')
                 QCD = [NO3array.PRES, NO3array.TEMPi, NO3array.PSALi,NO3_p0_kg];
@@ -2680,7 +2680,7 @@ for msg_ct = 1:size(msg_list,1)
     %         end
 
     cast_NUM = cast_num(end-2:end); %TM NOTE: Keep with MBARI standardized formatting for now.  SOLOs are using 4char cast number, our mat files use 3char.
-    save_str = [dirs.mat, WMO,'\', WMO,'.', cast_NUM,'.mat'];
+    save_str = [dirs.mat, WMO,filesep, WMO,'.', cast_NUM,'.mat'];
 
     % clear any remaining extraneous variables that would slip in with regexp
     clear BGCIND
@@ -2690,11 +2690,11 @@ for msg_ct = 1:size(msg_list,1)
         save(save_str,'-regexp','^BGC0*','LR','HR','INFO');
     end
     %     if msg_ct == 1
-    %         copyfile(fp_cal, [dirs.mat, WMO,'\']); % copy over cal file
+    %         copyfile(fp_cal, [dirs.mat, WMO,filesep]); % copy over cal file
     %     end
     clear BGC*
 end
-copyfile(fp_cal, [dirs.mat, WMO,'\']) % copy over cal file
+copyfile(fp_cal, [dirs.mat, WMO,filesep]) % copy over cal file
 %fprintf('\r\n')
 
 % *********************************************************************
