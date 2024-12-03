@@ -163,7 +163,13 @@ end
 hdr  = hdr(1:hdr_ct);
 
 % ADD PIXEL COUNTS TO HDR
-hdr = [hdr; cellstr(num2str(d.BISTb_data(:,1)))];
+if ~isempty(d.BISTb_data)
+    hdr = [hdr; cellstr(num2str(d.BISTb_data(:,1)))];
+else
+    warning('no NO3 data found!')
+    d.data = [];
+    return;
+end
 
 rhdr = size(hdr,1);
 data = ones(1000,rhdr) * NaN; % predim
